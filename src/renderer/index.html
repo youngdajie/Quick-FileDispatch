@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'" />
+<title>快捷文件分发服务@JIE</title>
+<link rel="icon" href="/assets/logo.svg" />
+<link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+
+<div class="app" id="appRoot">
+
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-logo" src="/assets/logo.svg" alt="" width="28" height="28" />
+      <span class="brand-name">快捷文件分发服务@JIE</span>
+    </div>
+
+    <button class="repo-chip" id="repoChip" title="点击前往设置">
+      <span class="dot" id="statusDot"></span>
+      <span id="repoChipText">未配置仓库</span>
+    </button>
+
+    <div class="topbar-spacer"></div>
+
+    <button class="icon-btn" id="btnOpenLocalDir" title="打开本地目录">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 7.5A2 2 0 0 1 5 5.5h3.6a2 2 0 0 1 1.4.6l1 1a2 2 0 0 0 1.4.6H19a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      </svg>
+    </button>
+    <button class="icon-btn" id="btnRefreshAll" title="刷新当前页">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>
+      </svg>
+    </button>
+  </header>
+
+  <div class="shell">
+
+    <nav class="sidebar" id="sidebar">
+      <button class="nav-item active" data-page="upload">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 15.5V5"/><path d="M8 9l4-4 4 4"/><path d="M4 16v2.5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V16"/>
+        </svg>
+        <span>上传</span>
+      </button>
+      <button class="nav-item" data-page="manage">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17"/><path d="M9 9.5v10"/>
+        </svg>
+        <span>文件管理</span>
+      </button>
+      <button class="nav-item" data-page="settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 15H2.8a2 2 0 1 1 0-4H3a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.6 4.4V4.2a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.2a2 2 0 1 1 0 4H20a1.6 1.6 0 0 0-1.5 1z"/>
+        </svg>
+        <span>设置</span>
+      </button>
+      <button class="nav-item" data-page="about">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="8" r=".9" fill="currentColor" stroke="none"/>
+        </svg>
+        <span>关于</span>
+      </button>
+
+      <div class="sidebar-foot">
+        <div class="cpu-badge" id="cpuBadge">CPU 核心 —</div>
+        <div class="ver-badge" id="verBadge">v1.2</div>
+      </div>
+    </nav>
+
+    <section class="content" id="content">
+
+      <!-- ============================ 上传 ============================ -->
+      <div class="page active" id="page-upload">
+        <div class="page-head">
+          <div>
+            <h1>上传</h1>
+            <p class="page-desc">图片走本地多核压缩、其他文件原样上传 —— 仓库装得下的，这里就传得上去</p>
+          </div>
+          <div class="head-actions">
+            <div class="quota-chip" id="quotaChip"></div>
+          </div>
+        </div>
+
+        <div class="up-target" id="upTarget">
+          <span class="ut-tag" id="utPlatform">—</span>
+          <span class="ut-title">当前上传目标</span>
+          <span class="ut-repo mono" id="utRepo">未配置仓库</span>
+          <span class="ut-spacer"></span>
+          <span class="ut-state" id="utState"></span>
+          <button class="btn btn-ghost btn-sm" id="btnUtSettings">更换仓库</button>
+        </div>
+
+        <div class="dropzone" id="dropzone">
+          <div class="dz-inner">
+            <div class="dz-icon">
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 16.5V6.8"/><path d="M8.4 10.4 12 6.8l3.6 3.6"/>
+                <path d="M4 17.5c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2"/>
+              </svg>
+            </div>
+            <div class="dz-title">把文件拖到这里</div>
+            <div class="dz-sub">也可以 <kbd>Ctrl</kbd>+<kbd>V</kbd> 粘贴剪贴板里的截图，或者</div>
+            <button class="btn btn-primary" id="btnPick">选择文件</button>
+            <div class="dz-hint" id="dzHint"></div>
+          </div>
+          <input type="file" id="fileInput" multiple hidden />
+        </div>
+
+        <div class="up-options" id="upOptions">
+          <label class="field">
+            <span class="field-label">目标目录</span>
+            <input type="text" id="upDir" placeholder="留空 = 仓库根目录，如 blog/2026" />
+          </label>
+          <label class="field">
+            <span class="field-label">文件名</span>
+            <select id="upRenameMode">
+              <option value="keep">保持原名</option>
+              <option value="hash">哈希化（保证唯一）</option>
+              <option value="timestamp">时间戳</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">前缀</span>
+            <input type="text" id="upPrefix" placeholder="如 cover-" />
+          </label>
+          <label class="field checkbox-field">
+            <input type="checkbox" id="upCompress" checked />
+            <span class="field-label">图片压缩 <span class="hint">仅对图片生效</span></span>
+          </label>
+          <label class="field">
+            <span class="field-label">质量 <b id="upQualityVal">80</b></span>
+            <input type="range" id="upQuality" min="10" max="100" value="80" />
+          </label>
+          <label class="field">
+            <span class="field-label">输出格式</span>
+            <select id="upFormat">
+              <option value="avif">AVIF（推荐，体积最小）</option>
+              <option value="auto">智能（按内容自动选）</option>
+              <option value="keep">保持原格式</option>
+              <option value="webp">WebP</option>
+              <option value="jpeg">JPEG</option>
+              <option value="png">PNG</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="queue-panel" id="queuePanel" hidden>
+          <div class="queue-head">
+            <div class="queue-title">
+              待上传 <b id="queueCount">0</b> 个
+              <span class="sep">·</span>
+              原始 <b id="queueOrig">0 B</b>
+              <span class="sep">→</span>
+              实际 <b class="accent" id="queueNew">0 B</b>
+              <span class="save-tag" id="queueSave" hidden></span>
+            </div>
+            <div class="queue-actions">
+              <button class="btn btn-ghost btn-sm" id="btnClearQueue">清空</button>
+              <button class="btn btn-primary btn-sm" id="btnUpload">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 15.5V5"/><path d="M8 9l4-4 4 4"/><path d="M4 16v2.5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V16"/>
+                </svg>
+                开始上传
+              </button>
+            </div>
+          </div>
+          <div class="progress" id="upProgress" hidden><div class="progress-bar" id="upProgressBar"></div></div>
+          <div class="queue-list" id="queueList"></div>
+        </div>
+
+        <div class="result-panel" id="resultPanel" hidden>
+          <div class="result-head">
+            <div class="queue-title">上传结果</div>
+            <div class="queue-actions">
+              <select id="resultFormat" class="mini-select"></select>
+              <button class="btn btn-ghost btn-sm" id="btnCopyAllResult">复制全部链接</button>
+              <button class="btn btn-ghost btn-sm" id="btnExportResult">导出 TXT</button>
+              <button class="btn btn-ghost btn-sm" id="btnCloseResult">关闭</button>
+            </div>
+          </div>
+          <div class="result-list" id="resultList"></div>
+        </div>
+      </div>
+
+      <!-- ============================ 文件管理 ============================ -->
+      <div class="page" id="page-manage">
+        <div class="page-head">
+          <div>
+            <h1>文件管理</h1>
+            <p class="page-desc">本地目录与云端仓库是同一份东西，两边都能直接改名、移动、替换内容</p>
+          </div>
+          <div class="head-actions">
+            <div class="seg" id="sourceSeg">
+              <button data-source="local" class="active">本地目录</button>
+              <button data-source="remote">云端仓库</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mg-toolbar">
+          <nav class="breadcrumb" id="breadcrumb"></nav>
+          <div class="mg-toolbar-right">
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+              <input type="text" id="mgSearch" placeholder="按文件名过滤当前目录" />
+            </div>
+            <button class="icon-btn" id="btnMgUp" title="返回上级">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6"/><path d="M6 11.5 12 5.5l6 6"/></svg>
+            </button>
+            <button class="icon-btn" id="btnMgRefresh" title="刷新">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+            </button>
+            <button class="icon-btn" id="btnMgPull" title="从云端拉取最新（对齐本地）">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v10.5"/><path d="M8 12l4 3.5 4-3.5"/><path d="M4 18.5h16"/></svg>
+            </button>
+            <button class="icon-btn" id="btnMgGrid" title="网格视图">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></svg>
+            </button>
+            <button class="icon-btn" id="btnMgList" title="列表视图">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="mg-selection" id="mgSelection" hidden>
+          <span>已选 <b id="mgSelCount">0</b> 项</span>
+          <div class="queue-actions">
+            <select id="mgFormat" class="mini-select"></select>
+            <button class="btn btn-ghost btn-sm" id="btnMgCopyLinks">复制链接</button>
+            <button class="btn btn-ghost btn-sm" id="btnMgCopyPath">复制路径</button>
+            <button class="btn btn-ghost btn-sm" id="btnMgRename">重命名 / 移动</button>
+            <button class="btn btn-ghost btn-sm" id="btnMgReplace">替换内容</button>
+            <button class="btn btn-ghost btn-sm" id="btnMgExport">导出清单</button>
+            <button class="btn btn-danger btn-sm" id="btnMgDelete">删除</button>
+            <button class="btn btn-ghost btn-sm" id="btnMgClearSel">取消选择</button>
+          </div>
+        </div>
+        <input type="file" id="mgReplaceInput" hidden />
+
+        <div class="mg-body">
+          <aside class="mg-side" id="mgSide">
+            <div class="side-head">位置</div>
+            <button class="side-node" id="mgRootNode" data-path="">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5-9 4.5z"/><path d="M3 12.5 12 17l9-4.5"/></svg>
+              <span>仓库根目录</span>
+            </button>
+            <div class="side-sep"></div>
+            <div class="side-head">当前目录</div>
+            <div class="side-path" id="mgCurPath">仓库根目录</div>
+            <div class="side-sep"></div>
+            <div class="side-head">状态</div>
+            <div class="side-git" id="mgGitState">—</div>
+          </aside>
+          <div class="mg-main">
+            <div class="mg-listhead" id="mgListHead" hidden>
+              <span class="lh-check"></span>
+              <span class="lh-icon"></span>
+              <button type="button" class="lh-sort lh-name" data-sort="name">名称</button>
+              <button type="button" class="lh-sort lh-size" data-sort="size">大小</button>
+              <button type="button" class="lh-sort lh-time" data-sort="mtime">修改时间</button>
+              <span class="lh-ops"></span>
+            </div>
+            <div class="mg-grid" id="mgGrid"></div>
+            <div class="mg-empty" id="mgEmpty" hidden></div>
+          </div>
+        </div>
+
+        <div class="mg-statusbar" id="mgStatusbar"></div>
+      </div>
+
+      <!-- ============================ 设置 ============================ -->
+      <div class="page" id="page-settings">
+        <div class="page-head">
+          <div>
+            <h1>设置</h1>
+            <p class="page-desc">所有配置只保存在本机，Token 使用系统级加密存储</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost" id="btnRerunGuide">重看新手指引</button>
+            <button class="btn btn-ghost" id="btnTest">测试连接</button>
+            <button class="btn btn-primary" id="btnSave">保存</button>
+          </div>
+        </div>
+
+        <div class="settings-wrap">
+
+          <section class="card">
+            <div class="card-head">
+              <h2>仓库 <span class="prof-count" id="profCount" hidden></span></h2>
+              <p>远端仓库和本地目录绑定成一份配置；验证通过后归档，随时切换</p>
+            </div>
+            <div class="card-body">
+              <div class="seg seg-lg" id="cfgPlatform">
+                <button data-platform="github" class="active">GitHub</button>
+                <button data-platform="gitee">Gitee</button>
+              </div>
+
+              <div class="grid-2">
+                <label class="field">
+                  <span class="field-label">用户名 / 组织名（owner）</span>
+                  <input type="text" id="cfgOwner" placeholder="your-name" />
+                </label>
+                <label class="field">
+                  <span class="field-label">仓库名（repo）</span>
+                  <input type="text" id="cfgRepo" placeholder="my-files" />
+                </label>
+              </div>
+
+              <label class="field">
+                <span class="field-label">分支 <span class="hint">默认 main，新建仓库基本都是它</span></span>
+                <input type="text" id="cfgBranch" placeholder="main" />
+              </label>
+
+              <label class="field">
+                <span class="field-label">
+                  访问令牌（Token）
+                  <span class="hint" id="tokenHint"></span>
+                </span>
+                <div class="input-row">
+                  <input type="password" id="cfgToken" placeholder="粘贴 Token，留空表示不修改" autocomplete="off" />
+                  <button class="btn btn-ghost btn-sm" id="btnToggleToken">显示</button>
+                  <button class="btn btn-ghost btn-sm" id="btnClearToken">清除</button>
+                </div>
+              </label>
+
+              <div class="callout" id="tokenHelp"></div>
+
+              <label class="field">
+                <span class="field-label">接口地址 <span class="hint">留空即官方地址；仅 GitHub Enterprise / 私有部署需要改</span></span>
+                <input type="text" id="cfgApiBase" placeholder="https://api.github.com" />
+              </label>
+
+              <div class="sub-sep"></div>
+
+              <div class="prof-actions">
+                <button class="btn btn-ghost btn-sm" id="btnProfNew">＋ 新建配置</button>
+                <button class="btn btn-primary btn-sm" id="btnProfArchive">验证并归档</button>
+                <span class="hint" id="profHint"></span>
+              </div>
+
+              <div class="prof-list" id="profileList"></div>
+              <div class="prof-empty" id="profileEmpty" hidden>
+                还没有归档的配置。填好上面的仓库信息和本地目录，点「验证并归档」——验证通过后会出现在这里，以后一键切换。
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>本地目录</h2>
+              <p>和上面的仓库绑定在一起 —— 换仓库配置时，本地目录会跟着一起换</p>
+            </div>
+            <div class="card-body">
+              <div class="input-row">
+                <input type="text" id="cfgLocalDir" placeholder="例如 D:\my-files" />
+                <button class="btn btn-ghost btn-sm" id="btnChooseDir">选择…</button>
+                <button class="btn btn-ghost btn-sm" id="btnClone">克隆到此处</button>
+              </div>
+              <div class="git-status" id="gitStatus"></div>
+              <div class="grid-2">
+                <label class="field checkbox-field">
+                  <input type="checkbox" id="cfgAutoPull" />
+                  <span class="field-label">上传 / 删除后自动对齐本地</span>
+                </label>
+                <label class="field">
+                  <span class="field-label">同步策略</span>
+                  <select id="cfgSyncStrategy">
+                    <option value="pull">常规 pull（本地有改动会提示）</option>
+                    <option value="reset">强制对齐云端（丢弃本地改动）</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><h2>存储路径与提交</h2></div>
+            <div class="card-body">
+              <label class="field">
+                <span class="field-label">路径模板 <span class="hint">可用占位符：{yyyy} {MM} {dd} {HH} {mm} {owner} {repo} {branch}</span></span>
+                <input type="text" id="cfgPathTemplate" placeholder="images/{yyyy}/{MM}/" />
+              </label>
+              <label class="field">
+                <span class="field-label">提交信息</span>
+                <input type="text" id="cfgCommitMessage" placeholder="chore: 通过 JIE 分发服务上传" />
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><h2>文件链接</h2><p>同一个文件可以按不同规则生成链接</p></div>
+            <div class="card-body">
+              <label class="field">
+                <span class="field-label">链接规则</span>
+                <select id="cfgLinkRule"></select>
+              </label>
+              <p class="rule-desc" id="linkRuleDesc"></p>
+              <label class="field" id="customDomainField" hidden>
+                <span class="field-label">自定义域名 / 前缀 <span class="hint">用 {path} 代表文件路径</span></span>
+                <input type="text" id="cfgCustomDomain" placeholder="https://files.example.com/{path}" />
+              </label>
+              <label class="field">
+                <span class="field-label">默认复制格式</span>
+                <select id="cfgLinkFormat"></select>
+              </label>
+              <div class="link-preview" id="linkPreview"></div>
+
+              <div class="sub-sep"></div>
+              <label class="field">
+                <span class="field-label">预览代理域名 <span class="hint">可选 · 只影响程序内的预览加载</span></span>
+                <input type="text" id="cfgProxyUrl" placeholder="https://cdn.yangjie.site" />
+              </label>
+              <p class="rule-desc" id="proxyDesc"></p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><h2>图片压缩</h2><p>压缩在本机用多核 CPU 并行完成，不上传原图，速度取决于你的电脑</p></div>
+            <div class="card-body">
+              <label class="field checkbox-field">
+                <input type="checkbox" id="cfgCompressEnabled" />
+                <span class="field-label">上传前自动压缩</span>
+              </label>
+              <div class="grid-2">
+                <label class="field">
+                  <span class="field-label">质量 <b id="cfgQualityVal">80</b></span>
+                  <input type="range" id="cfgQuality" min="10" max="100" />
+                </label>
+                <label class="field">
+                  <span class="field-label">输出格式</span>
+                  <select id="cfgFormat">
+                    <option value="avif">AVIF（推荐，体积最小）</option>
+                    <option value="auto">智能（按内容自动选）</option>
+                    <option value="keep">保持原格式</option>
+                    <option value="webp">WebP</option>
+                    <option value="jpeg">JPEG</option>
+                    <option value="png">PNG</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">最大宽度（px，0 = 不限制）</span>
+                  <input type="number" id="cfgMaxWidth" min="0" step="100" />
+                </label>
+                <label class="field">
+                  <span class="field-label">最大高度（px，0 = 不限制）</span>
+                  <input type="number" id="cfgMaxHeight" min="0" step="100" />
+                </label>
+                <label class="field">
+                  <span class="field-label">目标体积（KB，0 = 不限制）<span class="hint">自动二分质量逼近</span></span>
+                  <input type="number" id="cfgTargetSize" min="0" step="10" />
+                </label>
+                <label class="field">
+                  <span class="field-label">并行线程数 <span class="hint">0 = 自动（CPU 核心数）</span></span>
+                  <input type="number" id="cfgConcurrency" min="0" max="32" />
+                </label>
+              </div>
+              <div class="grid-2">
+                <label class="field checkbox-field">
+                  <input type="checkbox" id="cfgSkipSmaller" />
+                  <span class="field-label">压缩后反而变大时，保留原图</span>
+                </label>
+                <label class="field">
+                  <span class="field-label">小于该体积的图片跳过压缩（KB）</span>
+                  <input type="number" id="cfgSkipBelow" min="0" step="10" />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><h2>水印</h2></div>
+            <div class="card-body">
+              <label class="field checkbox-field">
+                <input type="checkbox" id="cfgWmEnabled" />
+                <span class="field-label">上传时添加文字水印</span>
+              </label>
+              <div class="grid-2">
+                <label class="field">
+                  <span class="field-label">水印文字</span>
+                  <input type="text" id="cfgWmText" placeholder="@your-name" />
+                </label>
+                <label class="field">
+                  <span class="field-label">位置</span>
+                  <select id="cfgWmPosition">
+                    <option value="bottom-right">右下角</option>
+                    <option value="bottom-left">左下角</option>
+                    <option value="top-right">右上角</option>
+                    <option value="top-left">左上角</option>
+                    <option value="center">居中</option>
+                    <option value="tile">平铺</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">不透明度 <b id="cfgWmOpacityVal">0.35</b></span>
+                  <input type="range" id="cfgWmOpacity" min="5" max="100" />
+                </label>
+                <label class="field">
+                  <span class="field-label">字号基准</span>
+                  <input type="number" id="cfgWmFontSize" min="8" max="96" />
+                </label>
+              </div>
+              <label class="field">
+                <span class="field-label">颜色</span>
+                <div class="wm-color">
+                  <span class="wm-swatch" id="wmSwatch" title="点击选择颜色">
+                    <input type="color" id="cfgWmColor" />
+                  </span>
+                  <input type="text" class="wm-hex" id="wmColorText" maxlength="7" spellcheck="false"
+                         placeholder="#1296db" aria-label="水印颜色十六进制值" />
+                  <span class="wm-presets" id="wmPresets"></span>
+                </div>
+              </label>
+            </div>
+          </section>
+
+          <section class="card card-danger">
+            <div class="card-head"><h2>危险操作</h2></div>
+            <div class="card-body">
+              <button class="btn btn-danger" id="btnResetConfig">恢复默认设置</button>
+              <p class="hint" style="margin-top:10px">不会删除仓库里的任何文件，只重置本机配置。</p>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+      <!-- ============================ 关于 ============================ -->
+      <div class="page" id="page-about">
+        <div class="page-head">
+          <div>
+            <h1>关于</h1>
+            <p class="page-desc">一个跑在 Windows 本地的 GitHub / Gitee 图床与云端文件管理器</p>
+          </div>
+        </div>
+        <div class="settings-wrap" id="aboutWrap"></div>
+      </div>
+
+    </section>
+  </div>
+</div>
+
+<div id="onboardWrap" class="onboard-wrap" hidden></div>
+<div id="toastWrap" class="toast-wrap"></div>
+<div id="modalWrap" class="modal-wrap" hidden></div>
+
+<!-- 无边框窗口的自绘「最小化 / 最大化 / 关闭」。放在 .app 外面：
+     任何遮罩（新手引导 / 弹窗 / 预览）都压不住它，「关闭」永远可点 -->
+<div class="win-controls" id="winControls">
+  <button class="wc-btn" id="btnWinMin" title="最小化" aria-label="最小化">
+    <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+      <path d="M2 6h8"/>
+    </svg>
+  </button>
+  <button class="wc-btn" id="btnWinMax" title="最大化" aria-label="最大化">
+    <svg class="ic-max" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
+      <rect x="2.5" y="2.5" width="7" height="7" rx="1"/>
+    </svg>
+    <svg class="ic-restore" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
+      <path d="M4.5 4.5V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.5"/><rect x="2.5" y="4.5" width="5" height="5" rx="1"/>
+    </svg>
+  </button>
+  <button class="wc-btn wc-close" id="btnWinClose" title="关闭" aria-label="关闭">
+    <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+      <path d="M3 3l6 6M9 3L3 9"/>
+    </svg>
+  </button>
+</div>
+
+<script src="/js/lib/errhooks.js"></script>
+<script src="/js/lib/links.js"></script>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

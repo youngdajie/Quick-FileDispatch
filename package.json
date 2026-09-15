@@ -1,0 +1,50 @@
+{
+  "name": "jie-dispatch",
+  "version": "2.0.0",
+  "description": "快捷文件分发服务@JIE —— 基于 GitHub / Gitee 仓库的本地图床与云端文件管理工具",
+  "main": "src/main/main.js",
+  "author": "小杰",
+  "homepage": "https://www.yangjie.site",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win --x64",
+    "dist:dir": "electron-builder --win --x64 --dir"
+  },
+  "devDependencies": {
+    "@jsquash/avif": "^2.1.1",
+    "electron": "^44.3.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "cn.yangjie.jie-dispatch",
+    "productName": "JIE-Dispatch",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "快捷文件分发服务@JIE"
+    }
+  }
+}

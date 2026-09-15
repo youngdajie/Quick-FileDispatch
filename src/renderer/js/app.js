@@ -1,0 +1,169 @@
+/** 应用入口：路由 + 顶栏状态 + 首次启动引导 */
+
+import { $, err, toast, paintRanges, paintRange } from './lib/dom.js';
+import { enhanceAll } from './lib/cselect.js';
+import { enhanceNumbers } from './lib/numfield.js';
+import * as fileIcons from './lib/fileicons.js';
+import state from './lib/state.js';
+import onboard from './lib/onboard.js';
+import uploadPage from './pages/upload.js';
+import managePage from './pages/manage.js';
+import settingsPage from './pages/settings.js';
+import aboutPage from './pages/about.js';
+
+const PAGES = {
+  upload: uploadPage,
+  manage: managePage,
+  settings: settingsPage,
+  about: aboutPage
+};
+
+let current = 'upload';
+
+function go(name) {
+  if (!PAGES[name]) return;
+  const first = current !== name;
+  current = name;
+
+  document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.page === name));
+  document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
+  $('#content').scrollTop = 0;
+
+  if (first && PAGES[name].onEnter) {
+    try {
+      PAGES[name].onEnter();
+    } catch (e) {
+      err(e.message || String(e));
+    }
+  }
+  // 页面里的滑块可能刚被 onConfigChanged 改过值，切页时顺手重画填充进度
+  paintRanges($('#page-' + name));
+}
+
+function updateChrome() {
+  const cfg = state.cfg || {};
+  const okRepo = !!(cfg.owner && cfg.repo);
+  $('#repoChipText').textContent = state.repoLabel;
+  const dot = $('#statusDot');
+  dot.className = 'dot ' + (okRepo && cfg.hasToken ? 'ok' : okRepo || cfg.hasToken ? 'bad' : '');
+  dot.parentElement.title = okRepo && cfg.hasToken ? '配置就绪' : '尚未完成配置，点击前往设置';
+
+  const info = state.info || {};
+  $('#cpuBadge').textContent = (info.cpuCount || navigator.hardwareConcurrency || '-') + ' 核';
+  $('#cpuBadge').title = '压缩线程池按 CPU 核心数并行';
+  $('#verBadge').textContent = 'v' + (info.version || '1.2');
+}
+
+function bindChrome() {
+  document.querySelectorAll('.nav-item').forEach((b) => {
+    b.onclick = () => {
+      if (onboard.isOpen() && b.dataset.page !== 'upload') {
+        toast('先把新手指引走完，就可以自由切换了', 'warn');
+        return;
+      }
+      go(b.dataset.page);
+    };
+  });
+  $('#repoChip').onclick = () => go('settings');
+
+  $('#btnOpenLocalDir').onclick = async () => {
+    const cfg = state.cfg || {};
+    if (!cfg.localDir) {
+      toast('还没配置本地目录，先到设置里选一个', 'warn');
+      go('settings');
+      return;
+    }
+    await window.cloudpic.shell.openLocalDir();
+  };
+
+  $('#btnRefreshAll').onclick = async () => {
+    await state.refresh();
+    // 本地改动可能来自外部编辑器，刷新时顺手重算 Git 状态
+    if (PAGES[current].refresh) PAGES[current].refresh();
+    else if (PAGES[current].onEnter) PAGES[current].onEnter();
+    toast('已刷新', 'ok', 1400);
+  };
+
+  const rerun = $('#btnRerunGuide');
+  if (rerun) rerun.onclick = () => onboard.open();
+
+  bindWindowControls();
+}
+
+/** 无边框窗口的自绘「最小化 / 最大化 / 关闭」按钮 */
+function bindWindowControls() {
+  const win = window.cloudpic && window.cloudpic.win;
+  if (!win) return;
+
+  $('#btnWinMin').onclick = () => win.minimize();
+  $('#btnWinClose').onclick = () => win.close();
+  $('#btnWinMax').onclick = async () => {
+    await win.maximize();
+  };
+
+  const applyMax = (v) => document.body.classList.toggle('is-maximized', !!v);
+
+  win.isMaximized().then(applyMax).catch(() => {});
+  if (typeof win.onMaximized === 'function') win.onMaximized(applyMax);
+}
+
+async function boot() {
+  await state.init();
+  updateChrome();
+
+  bindChrome();
+  Object.keys(PAGES).forEach((k) => {
+    try {
+      PAGES[k].init();
+    } catch (e) {
+      console.error('[init]', k, e);
+    }
+  });
+
+  state.on(() => {
+    updateChrome();
+    Object.keys(PAGES).forEach((k) => {
+      if (PAGES[k].onConfigChanged) {
+        try {
+          PAGES[k].onConfigChanged();
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    });
+    paintRanges();
+  });
+
+  // 滑块拖动时实时更新已填充进度
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.type === 'range') paintRange(e.target);
+  });
+
+  // 原生 select 统一升级成自绘下拉（选项都是静态写在 index.html 里的，初始化一次就够）
+  enhanceAll();
+  // 数字输入框：干掉原生上下角标，换成自绘步进
+  enhanceNumbers();
+  paintRanges();
+
+  // 无头自检用的调试钩子（--selftest 会在页面里读它）
+  window.__fi = fileIcons;
+  window.__nf = { enhanceNumbers };
+  window.__state = state;
+
+  window.addEventListener('cloudpic:changed', () => {
+    state.refresh();
+  });
+
+  go('upload');
+
+  // 没走完引导就不让用：配置齐全只是「能连上」，走完引导才算「会用了」
+  if (!state.cfg.onboarded || !state.configured) {
+    onboard.open();
+  }
+}
+
+boot().catch((e) => {
+  console.error(e);
+  document.body.innerHTML =
+    '<div style="padding:40px;color:#ff8f97;font-family:monospace">启动失败：' + (e && e.message) + '</div>';
+});

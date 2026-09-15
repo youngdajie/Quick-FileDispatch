@@ -1,0 +1,30 @@
+# 依赖
+node_modules/
+
+# 构建产物
+release/
+dist-app/
+dist/
+dist-win/
+
+# 界面截图（自检生成）
+.shots/
+
+# 日志
+*.log
+
+# 系统文件
+Thumbs.db
+.DS_Store
+
+# WorkBuddy 工作区数据（本机记忆等，不随源码发布）
+.workbuddy/
+
+# 测试设施：.demo 目录只保留「测试脚本」（mock 服务与探测脚本），
+# 其余全是运行时产物（配置、用户数据、缓存、假仓库），一律忽略。
+.demo/*
+!.demo/avif-probe.js
+!.demo/make-demo.py
+!.demo/mock-api-test.js
+!.demo/mock-gitee-test.js
+!.demo/mock-server.js
