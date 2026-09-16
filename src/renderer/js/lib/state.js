@@ -57,6 +57,24 @@ class State {
     return this.cfg;
   }
 
+  /**
+   * 导出 / 导入归档配置。
+   * 导出走主进程的系统保存框，导入读文件后由主进程合并，再把结果交回来。
+   * 导入不会带 Token（DPAPI 密文换台机器解不开），所以导入后的配置需要重新填 Token。
+   */
+  async exportProfiles() {
+    return window.cloudpic.profile.exportFile();
+  }
+
+  async importProfiles() {
+    const res = await window.cloudpic.profile.importFile();
+    if (res && res.ok) {
+      this.cfg = await window.cloudpic.config.get();
+      this.emit();
+    }
+    return res;
+  }
+
   /** 某个平台已有的配置（优先已验证的；没有就返回 null） */
   profileFor(platform) {
     const list = ((this.cfg && this.cfg.profiles) || []).filter(

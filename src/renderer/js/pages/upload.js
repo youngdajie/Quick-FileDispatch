@@ -1,6 +1,6 @@
 /** 上传页 */
 
-import { $, toast, err, ok, warn, previewImage, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
+import { $, toast, err, ok, warn, modal, previewImage, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
 import state from '../lib/state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from '../lib/compress.js';
 
@@ -537,6 +537,177 @@ const persistQuickOptions = debounce(() => {
   });
 }, 500);
 
+/* ---------------------------------------------------------------- 云端目录选择 */
+
+/**
+ * 目标目录不该靠手打。点「浏览云端…」直接列出现有目录，逐层点进去，
+ * 选中的路径写回 #upDir —— 和手动输入完全等价（同一个 input）。
+ */
+let pickDir = '';
+
+function dpCrumbs() {
+  const box = $('#dpCrumbs');
+  if (!box) return;
+  const parts = pickDir ? pickDir.split('/').filter(Boolean) : [];
+  const out = [
+    '<button type="button" class="dir-crumb' + (parts.length ? '' : ' last') + '" data-dir="">仓库根目录</button>'
+  ];
+  let acc = '';
+  parts.forEach((seg, i) => {
+    acc = acc ? acc + '/' + seg : seg;
+    out.push('<span class="dir-sep">/</span>');
+    out.push(
+      '<button type="button" class="dir-crumb' + (i === parts.length - 1 ? ' last' : '') +
+        '" data-dir="' + escapeHtml(acc) + '">' + escapeHtml(seg) + '</button>'
+    );
+  });
+  box.innerHTML = out.join('');
+}
+
+async function dpLoad(dir) {
+  pickDir = CPLinks.normalizePath(dir || '');
+  dpCrumbs();
+  const body = $('#dpBody');
+  const msg = $('#dpMsg');
+  if (!body) return;
+  body.innerHTML = '<div class="dir-pick-empty">读取中…</div>';
+  if (msg) msg.textContent = '';
+  try {
+    // 优先用本地仓库列目录（和云端同步时是一致的，而且秒出）；
+    // 本地没配/不是仓库时主进程会自动回退到远端接口。
+    let res = await window.cloudpic.cloud.list({ dir: pickDir, source: 'local' });
+    let dirs = (res.items || []).filter((i) => i.type === 'dir');
+
+    // 本地这一层是空的，不代表云端也是空的（可能还没 pull）—— 再问一次远端兜底
+    if (!dirs.length && res.source === 'local' && res.localReady) {
+      try {
+        const remote = await window.cloudpic.cloud.list({ dir: pickDir });
+        const rdirs = (remote.items || []).filter((i) => i.type === 'dir');
+        if (rdirs.length) {
+          res = remote;
+          dirs = rdirs;
+        }
+      } catch (e2) {
+        /* 远端拿不到就按本地结果展示 */
+      }
+    }
+
+    if (!dirs.length) {
+      body.innerHTML =
+        '<div class="dir-pick-empty">这个目录下没有子目录<br>直接点「选择此目录」就行，也可以先「新建子目录」</div>';
+    } else {
+      body.innerHTML = dirs
+        .map((d) => {
+          const rel = d.path || d.name;
+          return (
+            '<div class="dir-row" data-dir="' + escapeHtml(rel) + '">' +
+            '<span class="dr-ico">📁</span>' +
+            '<span class="dr-name">' + escapeHtml(d.name || rel) + '</span>' +
+            '<span class="dr-go">进入 ›</span>' +
+            '</div>'
+          );
+        })
+        .join('');
+    }
+    if (msg) {
+      msg.textContent =
+        (res.source === 'local' ? '本地仓库' : '云端仓库') + ' · ' + (pickDir || '根目录') +
+        ' · ' + dirs.length + ' 个子目录';
+    }
+  } catch (e) {
+    body.innerHTML = '<div class="dir-pick-empty">' + escapeHtml(friendlyError(e && e.message)) + '</div>';
+  }
+}
+
+function openDirPicker() {
+  const input = $('#upDir');
+  const start = CPLinks.normalizePath((input && input.value) || '');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'dir-pick';
+  wrap.innerHTML =
+    '<div class="dir-pick-head">' +
+    '<div class="dir-crumbs" id="dpCrumbs"></div>' +
+    '<button type="button" class="btn btn-ghost btn-sm" id="dpRefresh">刷新</button>' +
+    '</div>' +
+    '<div class="dir-pick-body" id="dpBody"></div>' +
+    '<div class="dir-pick-foot">' +
+    '<span class="dir-pick-msg" id="dpMsg"></span>' +
+    '<span style="display:flex;gap:6px;flex:0 0 auto">' +
+    '<button type="button" class="btn btn-ghost btn-sm" id="dpCancel">取消</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" id="dpNew">新建子目录</button>' +
+    '<button type="button" class="btn btn-primary btn-sm" id="dpUse">选择此目录</button>' +
+    '</span>' +
+    '</div>';
+
+  const dlg = modal({ title: '选择云端目录', node: wrap, buttons: false });
+
+  const close = () => dlg.close();
+
+  // 目录列表：点行进目录，点面包屑跳层
+  $('#dpBody').addEventListener('click', (e) => {
+    const row = e.target.closest('.dir-row');
+    if (!row) return;
+    dpLoad(row.dataset.dir);
+  });
+  $('#dpCrumbs').addEventListener('click', (e) => {
+    const c = e.target.closest('.dir-crumb');
+    if (!c) return;
+    dpLoad(c.dataset.dir);
+  });
+  $('#dpRefresh').onclick = () => dpLoad(pickDir);
+  $('#dpCancel').onclick = close;
+
+  $('#dpUse').onclick = () => {
+    if (input) {
+      input.value = pickDir;
+      persistQuickOptions();
+    }
+    close();
+    ok(pickDir ? '目标目录：' + pickDir : '目标目录：仓库根目录');
+  };
+
+  // 新建子目录：在当前层下面建一个（其实就是把路径补全到 input，目录会随上传一起创建）
+  $('#dpNew').onclick = () => {
+    const body = $('#dpBody');
+    if (!body || $('#dpNewName')) return;
+    const box = document.createElement('div');
+    box.style.cssText =
+      'display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--border-soft);background:var(--panel)';
+    box.innerHTML =
+      '<input type="text" id="dpNewName" placeholder="新目录名，如 2026/09" style="flex:1" />' +
+      '<button type="button" class="btn btn-ghost btn-sm" id="dpCreateCancel">取消</button>' +
+      '<button type="button" class="btn btn-primary btn-sm" id="dpCreate">创建</button>';
+    wrap.insertBefore(box, body);
+    const nameEl = box.querySelector('#dpNewName');
+    nameEl.focus();
+    const cancel = () => box.remove();
+    const create = () => {
+      const name = CPLinks.normalizePath(nameEl.value || '');
+      if (!name) {
+        warn('请填一个目录名');
+        return;
+      }
+      box.remove();
+      const next = CPLinks.normalizePath((pickDir ? pickDir + '/' : '') + name);
+      if (input) {
+        input.value = next;
+        persistQuickOptions();
+      }
+      close();
+      ok('目标目录：' + next);
+    };
+    box.querySelector('#dpCreate').onclick = create;
+    box.querySelector('#dpCreateCancel').onclick = cancel;
+    nameEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') create();
+      if (e.key === 'Escape') cancel();
+    });
+  };
+
+  dpLoad(start);
+}
+
 /* ---------------------------------------------------------------- 拖拽与粘贴 */
 
 function bindDrop() {
@@ -647,6 +818,13 @@ export default {
       persistQuickOptions();
     });
     $('#upDir').addEventListener('input', persistQuickOptions);
+    $('#btnUpDirPick').onclick = () => {
+      if (!state.configured) {
+        warn('还没配好仓库和 Token，先去设置里填一下才能列出云端目录');
+        return;
+      }
+      openDirPicker();
+    };
 
     $('#btnClearQueue').onclick = () => {
       if (running) return;

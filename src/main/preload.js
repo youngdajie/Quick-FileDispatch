@@ -6,7 +6,8 @@ const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 
 contextBridge.exposeInMainWorld('cloudpic', {
   app: {
-    info: () => invoke('app:info')
+    info: () => invoke('app:info'),
+    setBackground: (color) => invoke('ui:setBackground', color)
   },
   config: {
     get: () => invoke('config:get'),
@@ -19,7 +20,11 @@ contextBridge.exposeInMainWorld('cloudpic', {
     activate: (payload) => invoke('profile:activate', payload),
     update: (payload) => invoke('profile:update', payload),
     remove: (payload) => invoke('profile:delete', payload),
-    verify: (payload) => invoke('profile:verify', payload)
+    verify: (payload) => invoke('profile:verify', payload),
+    /** 单份配置的可用性体检（本地目录 + 云端仓库） */
+    check: (payload) => invoke('profile:check', payload),
+    exportFile: () => invoke('profile:export'),
+    importFile: () => invoke('profile:import')
   },
   dialog: {
     chooseDir: (opts) => invoke('dialog:chooseDir', opts)

@@ -88,30 +88,6 @@
     return FILE_LIMITS[platform === 'gitee' ? 'gitee' : 'github'];
   }
 
-  function pad(n, w) {
-    return String(n).padStart(w || 2, '0');
-  }
-
-  function renderPathTemplate(tpl, ctx) {
-    const d = ctx.date || new Date();
-    const map = {
-      '{yyyy}': String(d.getFullYear()),
-      '{yy}': String(d.getFullYear()).slice(2),
-      '{MM}': pad(d.getMonth() + 1),
-      '{dd}': pad(d.getDate()),
-      '{HH}': pad(d.getHours()),
-      '{mm}': pad(d.getMinutes()),
-      '{ss}': pad(d.getSeconds()),
-      '{owner}': ctx.owner || '',
-      '{repo}': ctx.repo || '',
-      '{branch}': ctx.branch || '',
-      '{name}': ctx.name || ''
-    };
-    let out = String(tpl == null ? '' : tpl);
-    for (const k of Object.keys(map)) out = out.split(k).join(map[k]);
-    return out;
-  }
-
   function normalizePath(p) {
     return String(p || '')
       .replace(/\\/g, '/')
@@ -247,7 +223,6 @@
     LINK_FORMATS,
     FILE_LIMITS,
     limitOf,
-    renderPathTemplate,
     normalizePath,
     joinPath,
     encodePath,

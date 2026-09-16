@@ -2,6 +2,7 @@
 
 import { $, $$, ok, err, warn, confirmDialog, modal, escapeHtml, debounce } from '../lib/dom.js';
 import state from '../lib/state.js';
+import { applyTheme, applyFont, stackFor, installedFontGroups, installFontCount } from '../lib/appearance.js';
 
 const CPLinks = window.CPLinks;
 let tokenTouched = false;
@@ -22,6 +23,13 @@ const TOKEN_HELP = {
     'Token 只保存在本机，用 Windows 系统级加密存储。'
 };
 
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const SLIDE_OUT = 190;
+const SLIDE_IN = 300;
+
+/** 平台切换时先滑出、换内容、再滑入；滑动期间压掉自动重画，否则图层会闪 */
+let slideLock = false;
+
 /* ---------------------------------------------------------------- 归档配置 */
 
 function fmtDate(ms) {
@@ -29,6 +37,10 @@ function fmtDate(ms) {
   const d = new Date(ms);
   const p = (n) => String(n).padStart(2, '0');
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+function profileLabel(p) {
+  return p.name || [p.owner, p.repo].filter(Boolean).join('/') || '未命名配置';
 }
 
 function profileRow(p) {
@@ -70,16 +82,18 @@ function profileRow(p) {
   );
 }
 
+function sortProfiles(a, b) {
+  if (!!a.verified !== !!b.verified) return a.verified ? -1 : 1;
+  return (b.verifiedAt || b.createdAt || 0) - (a.verifiedAt || a.createdAt || 0);
+}
+
 /**
  * 归档列表。排序：已归档在前（按验证时间倒序），待验证的沉底。
  * 面板只在「切平台 / 切配置 / 验证归档 / 删除 / 改名」后重建，
  * 不参与每次按键的刷新，免得正在填表时列表跳动。
  */
 function renderProfiles() {
-  const list = state.profiles.slice().sort((a, b) => {
-    if (!!a.verified !== !!b.verified) return a.verified ? -1 : 1;
-    return (b.verifiedAt || b.createdAt || 0) - (a.verifiedAt || a.createdAt || 0);
-  });
+  const list = state.profiles.slice().sort(sortProfiles);
   const box = $('#profileList');
   const empty = $('#profileEmpty');
   const count = $('#profCount');
@@ -101,6 +115,37 @@ function renderProfiles() {
       (cur.owner && cur.repo ? cur.owner + '/' + cur.repo : '未填写仓库') +
       (cur.localDir ? ' ←→ ' + cur.localDir : ' ←→ 未绑定本地目录');
   }
+  fillProfilePick();
+}
+
+/** 仓库标题右边的「归档配置」下拉：列出全部配置 + 新建入口 */
+function fillProfilePick() {
+  const sel = $('#profilePick');
+  if (!sel) return;
+  const list = state.profiles.slice().sort(sortProfiles);
+  const cur = (state.cfg && state.cfg.activeProfileId) || '';
+  const opt = (v, t, dis) =>
+    '<option value="' + escapeHtml(v) + '"' + (dis ? ' disabled' : '') + '>' + escapeHtml(t) + '</option>';
+
+  let html = '';
+  if (!list.length) {
+    html += opt('', '还没有归档配置', true);
+  } else {
+    html += list
+      .map((p) =>
+        opt(
+          p.id,
+          profileLabel(p) +
+            '（' + (PLATFORM_NAME[p.platform] || 'GitHub') + '）' +
+            (p.verified ? '' : ' · 待验证')
+        )
+      )
+      .join('');
+    html += opt('__sep__', '──────────────', true);
+  }
+  html += opt('__new__', '＋ 新建一份空白配置…');
+  sel.innerHTML = html;
+  sel.value = list.some((p) => p.id === cur) ? cur : list.length ? list[0].id : '__new__';
 }
 
 /** 新建一份空白配置（远端仓库 + 本地目录都清空，避免覆盖现有配置） */
@@ -108,11 +153,6 @@ async function newProfile() {
   const platform = (state.cfg && state.cfg.platform) || 'github';
   await state.newProfile({ platform: platform });
   ok('已新建一份空白配置，填好后点「验证并归档」');
-}
-
-async function useProfile(id) {
-  await state.activateProfile(id);
-  ok('已切换到该配置');
 }
 
 async function renameProfile(id) {
@@ -147,10 +187,9 @@ async function renameProfile(id) {
 async function removeProfile(id) {
   const p = state.profiles.find((x) => x.id === id);
   if (!p) return;
-  const label = p.name || [p.owner, p.repo].filter(Boolean).join('/') || '这份配置';
   const yes = await confirmDialog(
     '删除配置',
-    '将从本机移除「' + label + '」及其 Token。仓库里的文件不受影响。',
+    '将从本机移除「' + profileLabel(p) + '」及其 Token。仓库里的文件不受影响。',
     '删除'
   );
   if (!yes) return;
@@ -158,26 +197,314 @@ async function removeProfile(id) {
   ok('已删除');
 }
 
+/* ---------------------------------------------------------------- 平台图层滑动 */
+
+function playOut(back) {
+  const pane = $('#repoPane');
+  if (!pane) return;
+  pane.classList.remove('slide-out-left', 'slide-in-right', 'slide-out-right', 'slide-in-left');
+  void pane.offsetWidth;
+  pane.classList.add(back ? 'slide-out-right' : 'slide-out-left');
+}
+
+function playIn(back) {
+  const pane = $('#repoPane');
+  if (!pane) return;
+  pane.classList.remove('slide-out-left', 'slide-out-right', 'slide-in-left', 'slide-in-right');
+  void pane.offsetWidth;
+  pane.classList.add(back ? 'slide-in-left' : 'slide-in-right');
+  setTimeout(
+    () => pane.classList.remove('slide-in-left', 'slide-in-right'),
+    SLIDE_IN + 40
+  );
+}
+
 /**
- * 验证并归档：先做「云端仓库 + 本地目录」的强制绑定校验，
- * 再跑一次真实连接测试，全部通过才把这份配置标记为可用。
+ * 切到某一份配置。平台不同就整块左右滑动 —— GitHub / Gitee 是两张图层，
+ * 往右滑是去 Gitee，往左滑是回 GitHub，左边的主题色条跟着换。
  */
+async function switchToProfile(id) {
+  const target = state.profiles.find((x) => x.id === id);
+  if (!target) return;
+  if (target.id === (state.cfg && state.cfg.activeProfileId)) {
+    fillPlatform();
+    return;
+  }
+  const curPlat = (state.cfg && state.cfg.platform) || 'github';
+  const nextPlat = target.platform || 'github';
+  const changed = curPlat !== nextPlat;
+  const back = curPlat === 'gitee' && nextPlat === 'github';
+
+  slideLock = true;
+  try {
+    // 先把当前表单落盘，免得切走丢数据（不弹提示，避免噪音）
+    await save({ silent: true });
+    if (changed) {
+      playOut(back);
+      await wait(SLIDE_OUT);
+    }
+    await state.activateProfile(id);
+    fill();
+  } catch (e) {
+    err(e.message || String(e));
+  } finally {
+    slideLock = false;
+  }
+  if (changed) playIn(back);
+  ok('已切换到「' + profileLabel(target) + '」');
+}
+
+/** 切到某个平台：已有配置就整份切过去，没有就开一份空白的当落点 */
+async function switchToPlatform(platform) {
+  const curPlat = (state.cfg && state.cfg.platform) || 'github';
+  if (platform === curPlat) {
+    fillPlatform();
+    return;
+  }
+  const target = state.profileFor(platform);
+  if (target) {
+    await switchToProfile(target.id);
+    return;
+  }
+  const back = curPlat === 'gitee' && platform === 'github';
+  slideLock = true;
+  try {
+    await save({ silent: true });
+    playOut(back);
+    await wait(SLIDE_OUT);
+    await state.newProfile({ platform: platform });
+    fill();
+  } catch (e) {
+    err(e.message || String(e));
+  } finally {
+    slideLock = false;
+  }
+  playIn(back);
+  warn('还没有 ' + PLATFORM_NAME[platform] + ' 的配置，已开一份空白的，填好后点「验证并归档」');
+}
+
+/* ---------------------------------------------------------------- 导出 / 导入 */
+
+function skipLine(s) {
+  const p = s.profile || {};
+  const name = [p.owner, p.repo].filter(Boolean).join('/') || p.name || '（无仓库信息）';
+  return (
+    '<div class="imp-item">' +
+    '<span class="ii-tag">跳过</span>' +
+    '<div class="ii-main"><div class="ii-name">' + escapeHtml(name) + '</div>' +
+    '<div class="ii-why">' + escapeHtml(s.reason || '未导入') + '</div></div>' +
+    '</div>'
+  );
+}
+
+async function exportProfiles() {
+  if (!state.profiles.length) {
+    warn('还没有归档配置，先在下面填一份并「验证并归档」');
+    return;
+  }
+  const btn = $('#btnProfExport');
+  btn.disabled = true;
+  try {
+    const r = await state.exportProfiles();
+    if (!r || r.canceled) return;
+    if (!r.ok) {
+      err(r.error || '导出失败');
+      return;
+    }
+    ok('已导出 ' + r.count + ' 份配置到 ' + r.filePath);
+  } catch (e) {
+    err(e.message || String(e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** 逐份跑可用性体检，结果渲染成一列卡片，每张都写清楚「哪里不可用、去哪儿改」 */
+async function renderAvailability(results) {
+  return results
+    .map(({ p, r }) => {
+      if (!r || r.missing) {
+        return (
+          '<div class="imp-item bad">' +
+          '<span class="ii-tag bad">?</span>' +
+          '<div class="ii-main"><div class="ii-name">' + escapeHtml(profileLabel(p)) + '</div>' +
+          '<div class="ii-why">' + escapeHtml((r && r.error) || '体检失败，切到这份配置手动点「验证并归档」看看') + '</div></div>' +
+          '</div>'
+        );
+      }
+      const line = (title, part) => {
+        if (!part) return '';
+        const cls = part.ok ? 'ok' : 'bad';
+        const mark = part.ok ? '✓' : '✗';
+        return (
+          '<div class="ii-why">' +
+          '<span class="ii-tag ' + cls + '">' + mark + ' ' + escapeHtml(title) + '</span> ' +
+          escapeHtml(part.message || '') +
+          (!part.ok && part.fix ? '<br><span style="color:var(--warn)">→ ' + escapeHtml(part.fix) + '</span>' : '') +
+          '</div>'
+        );
+      };
+      return (
+        '<div class="imp-item ' + (r.ok ? 'ok' : 'bad') + '">' +
+        '<span class="ii-tag ' + (r.ok ? 'ok' : 'bad') + '">' + (r.ok ? '可用' : '待修') + '</span>' +
+        '<div class="ii-main">' +
+        '<div class="ii-name">' +
+        escapeHtml(profileLabel(p)) +
+        '<span class="hint" style="margin-left:8px;font-family:var(--mono)">' +
+        escapeHtml((PLATFORM_NAME[r.platform] || 'GitHub') + ' · ' + (p.owner || '?') + '/' + (p.repo || '?')) +
+        '</span></div>' +
+        line('仓库信息', r.cloud) +
+        line('本地目录', r.local) +
+        '</div>' +
+        '</div>'
+      );
+    })
+    .join('');
+}
+
+async function importProfiles() {
+  const btn = $('#btnProfImport');
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '导入中…';
+
+  let res = null;
+  try {
+    res = await state.importProfiles();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = old;
+    err(e.message || String(e));
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = old;
+
+  if (!res || res.canceled) return;
+  if (!res.ok) {
+    err(res.error || '导入失败');
+    return;
+  }
+
+  const added = res.profiles || [];
+  const skipped = res.skippedDetail || [];
+
+  if (!added.length) {
+    modal({
+      title: '没有新增配置',
+      html:
+        '<p class="hint" style="margin:0 0 10px">文件里的配置本机都已经有了，没有导入新的。</p>' +
+        (skipped.length ? '<div class="imp-report">' + skipped.map(skipLine).join('') + '</div>' : ''),
+      buttons: [{ label: '好', primary: true }]
+    });
+    fill();
+    return;
+  }
+
+  // 体检：逐份查本地目录 + 云端仓库
+  const box = document.createElement('div');
+  box.className = 'imp-report';
+  box.innerHTML =
+    '<div class="imp-item"><div class="ii-main"><div class="ii-name">正在体检 ' + added.length + ' 份配置…</div>' +
+    '<div class="ii-why">逐份检查本地目录在不在、云端仓库连不连得上</div></div></div>';
+  const dlg = modal({ title: '导入完成 · 可用性体检', node: box, buttons: false });
+  const foot = document.createElement('div');
+  foot.className = 'modal-foot';
+  foot.innerHTML = '<button class="btn btn-primary" disabled>体检中…</button>';
+  dlg.box.appendChild(foot);
+
+  const results = [];
+  for (const p of added) {
+    let r = null;
+    try {
+      r = await window.cloudpic.profile.check({ id: p.id });
+    } catch (e) {
+      r = { ok: false, error: e.message || String(e) };
+    }
+    results.push({ p: p, r: r });
+  }
+
+  const usable = results.filter((x) => x.r && x.r.ok).length;
+  const needFix = results.length - usable;
+  box.innerHTML =
+    '<p class="hint" style="margin:0 0 10px">' +
+    '导入 <b class="accent">' + added.length + '</b> 份，其中 <b class="accent">' + usable + '</b> 份可用' +
+    (needFix ? '，<b style="color:var(--warn)">' + needFix + '</b> 份需要修一下' : '') +
+    '。' +
+    (skipped.length ? '另有 ' + skipped.length + ' 份被跳过。' : '') +
+    '</p>' +
+    '<div class="imp-report">' +
+    (await renderAvailability(results)) +
+    (skipped.length ? skipped.map(skipLine).join('') : '') +
+    '</div>' +
+    (needFix
+      ? '<p class="rule-desc" style="margin:10px 0 0">修的方式：用标题右边的「归档配置」下拉切到那一份，' +
+        '按上面的提示改「仓库信息 / 本地目录」，改完点「验证并归档」。' +
+        'Token 不会跟着导出（换机器解不开），所以导入后要重新填一次。</p>'
+      : '');
+
+  foot.innerHTML = '';
+  const bClose = document.createElement('button');
+  bClose.className = 'btn ' + (needFix ? 'btn-ghost' : 'btn-primary');
+  bClose.textContent = '知道了';
+  bClose.onclick = () => dlg.close();
+  foot.appendChild(bClose);
+
+  if (needFix) {
+    const bFix = document.createElement('button');
+    bFix.className = 'btn btn-primary';
+    bFix.textContent = '去修第一份';
+    bFix.onclick = async () => {
+      dlg.close();
+      const first = results.find((x) => x.r && !x.r.ok);
+      if (first) await switchToProfile(first.p.id);
+    };
+    foot.appendChild(bFix);
+  }
+
+  fill();
+}
+
+/* ---------------------------------------------------------------- 验证并归档 */
+
+/** 三块（仓库信息 / 本地目录 / 文件链接）分别校验，缺哪块就指哪块 */
 async function archiveProfile() {
   const owner = $('#cfgOwner').value.trim();
   const repo = $('#cfgRepo').value.trim();
   const dir = $('#cfgLocalDir').value.trim();
+  const ruleId = $('#cfgLinkRule').value;
+  const rule = CPLinks.LINK_RULES.find((r) => r.id === ruleId);
+  const custom = $('#cfgCustomDomain').value.trim();
+  const typedToken = $('#cfgToken').value.trim();
+
   if (!owner || !repo) {
-    warn('请先填写用户名和仓库名');
+    warn('「仓库信息」还没填完：请填写用户名和仓库名');
+    $('#cfgOwner').focus();
+    return;
+  }
+  if (!typedToken && !(state.cfg && state.cfg.hasToken)) {
+    warn('「仓库信息」缺少访问令牌：在下面粘贴 Token，再点「验证并归档」');
+    $('#cfgToken').focus();
     return;
   }
   if (!dir) {
-    warn('云端仓库和本地目录是绑定的：请先在下面选择本地目录');
+    warn('「本地目录」还没绑定：云端仓库和本地目录是一份配置，缺一块不算归档');
     $('#cfgLocalDir').focus();
     return;
   }
+  if (!rule) {
+    warn('「文件链接」还没选链接规则');
+    return;
+  }
+  if (ruleId === 'custom' && !custom) {
+    warn('「文件链接」选了自定义域名，但没填域名 / 前缀');
+    $('#cfgCustomDomain').focus();
+    return;
+  }
+
   const id = (state.cfg && state.cfg.activeProfileId) || '';
   if (!id) {
-    err('没有可归档的配置，请先点「新建配置」');
+    err('没有可归档的配置，请先点「＋ 新建」');
     return;
   }
 
@@ -185,25 +512,36 @@ async function archiveProfile() {
   const old = btn.textContent;
   btn.disabled = true;
   btn.textContent = '验证中…';
+
+  const renderSteps = (chk) => {
+    const line = (title, part) =>
+      (part && part.ok ? '<span class="ok">✓</span> ' : '<span class="bad">✗</span> ') +
+      '<b>' + escapeHtml(title) + '</b>：' +
+      escapeHtml((part && part.message) || '未检查') +
+      (part && !part.ok && part.fix ? '<br><span class="bad">　→ ' + escapeHtml(part.fix) + '</span>' : '');
+    return [
+      line('仓库信息', chk.cloud),
+      line('本地目录', chk.local),
+      '<span class="ok">✓</span> <b>文件链接</b>：规则「' + escapeHtml(rule.name) + '」'
+    ].join('<br>');
+  };
+
   try {
     await save({ silent: true });
-    const res = await window.cloudpic.cloud.verify();
-    const lines = (res.steps || [])
-      .map((s) => (s.ok ? '<span class="ok">✓</span> ' : '<span class="bad">✗</span> ') + escapeHtml(s.name) + '：' + escapeHtml(s.message))
-      .join('<br>');
+    const chk = await window.cloudpic.profile.check({ id: id });
 
-    if (!res.ok) {
+    if (!chk.ok) {
       const wrap = document.createElement('div');
-      wrap.innerHTML = lines + '<br><br><span class="bad">验证没通过，先修好再归档。</span>';
+      wrap.innerHTML = renderSteps(chk) + '<br><span class="bad">三块里还有没通过的，先修好再归档。</span>';
       modal({ title: '验证未通过', node: wrap, buttons: [{ label: '好', primary: true }] });
       return;
     }
 
     await state.verifyProfile(id, {
-      userName: (res.user && (res.user.name || res.user.login)) || '',
-      repo: res.repo || null
+      userName: chk.cloud.userName || '',
+      repo: chk.cloud.repoInfo || { fullName: (chk.cloud.owner || '') + '/' + (chk.cloud.repo || '') }
     });
-    ok('已验证可用，已归档：' + owner + '/' + repo);
+    ok('三块全部通过，已归档：' + owner + '/' + repo);
   } catch (e) {
     err(e.message || String(e));
   } finally {
@@ -249,14 +587,91 @@ function renderWmPresets() {
   ).join('');
 }
 
+/* ---------------------------------------------------------------- 外观 */
+
+function currentTheme() {
+  return ((state.cfg && state.cfg.ui && state.cfg.ui.theme) === 'light' ? 'light' : 'dark');
+}
+
+function fillThemeCards() {
+  const cur = currentTheme();
+  $$('#themeCards .theme-card').forEach((c) => c.classList.toggle('on', c.dataset.theme === cur));
+}
+
+function applyFontPreview(font) {
+  const box = $('#fontSample');
+  if (!box) return;
+  box.style.fontFamily = stackFor(font);
+}
+
+/** 字体清单只探测一次（要量几十款字体的宽度，别在每次自动保存时重跑） */
+let fontsBuilt = false;
+function ensureFontOptions(cur) {
+  const sel = $('#cfgFont');
+  if (!sel) return;
+  if (!fontsBuilt) {
+    let html = '<option value="">系统默认（微软雅黑 / Segoe UI）</option>';
+    installedFontGroups().forEach((g) => {
+      html += '<option value="" disabled>— ' + escapeHtml(g.group) + ' —</option>';
+      html += g.fonts
+        .map((f) => '<option value="' + escapeHtml(f) + '">' + escapeHtml(f) + '</option>')
+        .join('');
+    });
+    sel.innerHTML = html;
+    fontsBuilt = true;
+    const cnt = $('#fontCount');
+    if (cnt) cnt.textContent = '本机检测到 ' + installFontCount() + ' 款';
+  }
+  const f = String(cur || '').trim();
+  const has = Array.from(sel.options).some((o) => o.value === f && !o.disabled);
+  if (f && !has) {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.textContent = f + '（当前）';
+    sel.appendChild(opt);
+  }
+  sel.value = f;
+  applyFontPreview(f);
+}
+
+async function setTheme(theme) {
+  const t = theme === 'light' ? 'light' : 'dark';
+  applyTheme(t);
+  fillThemeCards();
+  await state.patch({ ui: { theme: t } });
+}
+
+async function setFont(font) {
+  const f = String(font || '').trim();
+  applyFont(f);
+  applyFontPreview(f);
+  await state.patch({ ui: { font: f } });
+  ok(f ? '界面字体已换成 ' + f : '界面字体已恢复系统默认');
+}
+
 /* ---------------------------------------------------------------- 填充 */
 
 function fillPlatform() {
   const c = state.cfg || {};
-  const isGitee = (c.platform || 'github') === 'gitee';
+  const plat = (c.platform || 'github') === 'gitee' ? 'gitee' : 'github';
+  const isGitee = plat === 'gitee';
+
   document.querySelectorAll('#cfgPlatform button').forEach((b) => {
-    b.classList.toggle('active', b.dataset.platform === (c.platform || 'github'));
+    b.classList.toggle('active', b.dataset.platform === plat);
   });
+
+  // 平台图层：左边那条主题色竖条靠 data-platform 决定，徽标文案也跟着换
+  const pane = $('#repoPane');
+  if (pane) pane.dataset.platform = plat;
+  const badge = $('#platBadgeText');
+  if (badge) badge.textContent = PLATFORM_NAME[plat];
+  const hint = $('#platHint');
+  if (hint) {
+    hint.textContent = isGitee
+      ? '正在编辑 Gitee 的配置 · 左侧竖条为 Gitee 主题色'
+      : '正在编辑 GitHub 的配置 · 左侧竖条为 GitHub 主题色';
+  }
+
   $('#tokenHelp').innerHTML = TOKEN_HELP[isGitee ? 'gitee' : 'github'];
   const api = $('#cfgApiBase');
   if (api) api.placeholder = isGitee ? 'https://gitee.com/api/v5' : 'https://api.github.com';
@@ -322,6 +737,7 @@ function fill() {
   const cmp = c.compress || {};
   const wm = c.watermark || {};
   const sync = c.sync || {};
+  const ui = c.ui || {};
 
   fillPlatform();
   $('#cfgOwner').value = c.owner || '';
@@ -336,7 +752,6 @@ function fill() {
   $('#cfgAutoPull').checked = sync.autoPull !== false;
   $('#cfgSyncStrategy').value = sync.strategy || 'pull';
 
-  $('#cfgPathTemplate').value = c.pathTemplate || '';
   $('#cfgCommitMessage').value = c.commitMessage || '';
 
   fillLinkRules();
@@ -345,6 +760,10 @@ function fill() {
   $('#cfgLinkFormat').innerHTML = CPLinks.LINK_FORMATS.map((f) => '<option value="' + f.id + '">' + f.name + '</option>').join('');
   $('#cfgLinkFormat').value = c.linkFormat || 'markdown';
   updateProxyDesc();
+
+  // 外观（主题 / 字体）
+  fillThemeCards();
+  ensureFontOptions(ui.font || '');
 
   $('#cfgCompressEnabled').checked = cmp.enabled !== false;
   $('#cfgQuality').value = cmp.quality || 80;
@@ -379,7 +798,6 @@ function collect() {
     branch: $('#cfgBranch').value.trim() || 'main',
     apiBase: $('#cfgApiBase').value.trim(),
     localDir: $('#cfgLocalDir').value.trim(),
-    pathTemplate: $('#cfgPathTemplate').value,
     commitMessage: $('#cfgCommitMessage').value.trim() || 'chore: 通过 JIE 分发服务上传',
     linkRule: $('#cfgLinkRule').value,
     customDomain: $('#cfgCustomDomain').value.trim(),
@@ -462,7 +880,6 @@ async function test() {
       .join('<br>');
     const wrap = document.createElement('div');
     wrap.innerHTML = lines + (res.ok ? '<br><br><span class="ok">一切正常，可以开始上传了。</span>' : '');
-    const { modal } = await import('../lib/dom.js');
     modal({ title: res.ok ? '连接正常' : '连接存在问题', node: wrap, buttons: [{ label: '好', primary: true }] });
   } catch (e) {
     err(e.message || String(e));
@@ -519,33 +936,27 @@ export default {
     renderWmPresets();
     fill();
 
+    // 平台：两个图层左右滑动，不是简单换字段
     document.querySelectorAll('#cfgPlatform button').forEach((b) => {
-      b.onclick = async () => {
-        const platform = b.dataset.platform;
-        const cur = (state.cfg && state.cfg.platform) || 'github';
-        if (platform === cur) {
-          fillPlatform();
-          return;
-        }
-        try {
-          // 先把当前表单落盘，免得切走丢数据（不弹提示，避免噪音）
-          await save({ silent: true });
-          const target = state.profileFor(platform);
-          if (target) {
-            // 该平台已有配置：整份切过去，下面的字段会随之整体刷新
-            await state.activateProfile(target.id);
-            ok('已切到 ' + PLATFORM_NAME[platform] + ' 的配置：' + target.label);
-          } else {
-            // 还没有该平台的配置：开一份空白配置当落点，表单随之清空
-            await state.newProfile({ platform: platform });
-            warn('还没有 ' + PLATFORM_NAME[platform] + ' 的配置，已开一份空白的，填好后点「验证并归档」');
-          }
-        } catch (e) {
-          err(e.message || String(e));
-          fillPlatform();
-        }
-      };
+      b.onclick = () => switchToPlatform(b.dataset.platform);
     });
+
+    // 归档配置下拉
+    $('#profilePick').addEventListener('change', async () => {
+      const v = $('#profilePick').value;
+      if (v === '__new__') {
+        await newProfile();
+        fillProfilePick();
+        return;
+      }
+      if (!v) return;
+      if (v === (state.cfg && state.cfg.activeProfileId)) return;
+      await switchToProfile(v);
+    });
+
+    $('#btnProfNew').onclick = () => newProfile();
+    $('#btnProfExport').onclick = exportProfiles;
+    $('#btnProfImport').onclick = importProfiles;
 
     $('#cfgToken').addEventListener('input', () => {
       tokenTouched = true;
@@ -569,7 +980,6 @@ export default {
 
     $('#btnSave').onclick = () => save();
     $('#btnTest').onclick = test;
-    $('#btnProfNew').onclick = newProfile;
     $('#btnProfArchive').onclick = archiveProfile;
 
     // 归档列表：切换 / 改名 / 删除
@@ -579,11 +989,11 @@ export default {
       if (!row) return;
       const id = row.dataset.id;
       if (!btn) {
-        if (!row.classList.contains('active')) useProfile(id);
+        if (!row.classList.contains('active')) switchToProfile(id);
         return;
       }
       const act = btn.dataset.act;
-      if (act === 'use') useProfile(id);
+      if (act === 'use') switchToProfile(id);
       else if (act === 'rename') renameProfile(id);
       else if (act === 'del') removeProfile(id);
     });
@@ -597,6 +1007,18 @@ export default {
       ok('已恢复默认设置');
       window.dispatchEvent(new CustomEvent('cloudpic:changed'));
     };
+
+    // 外观：主题卡片
+    $('#themeCards').addEventListener('click', (e) => {
+      const card = e.target.closest('.theme-card');
+      if (!card) return;
+      if (card.dataset.theme === currentTheme()) return;
+      setTheme(card.dataset.theme).catch((err2) => err(err2.message || String(err2)));
+    });
+    // 外观：字体
+    $('#cfgFont').addEventListener('change', () => {
+      setFont($('#cfgFont').value).catch((err2) => err(err2.message || String(err2)));
+    });
 
     const live = (sel, handler) => {
       const el = $(sel);
@@ -655,9 +1077,9 @@ export default {
     const autoSave = debounce(() => {
       save({ silent: true }).catch(() => {});
     }, 1400);
-    ['#cfgOwner', '#cfgRepo', '#cfgBranch', '#cfgPathTemplate', '#cfgCommitMessage', '#cfgProxyUrl', '#cfgWmColor'].forEach((s) => {
+    ['#cfgOwner', '#cfgRepo', '#cfgBranch', '#cfgCommitMessage', '#cfgProxyUrl', '#cfgWmColor'].forEach((s) => {
       const el = $(s);
-      el.addEventListener('change', autoSave);
+      if (el) el.addEventListener('change', autoSave);
     });
   },
 
@@ -666,6 +1088,8 @@ export default {
   },
 
   onConfigChanged() {
+    // 平台滑动过程中不重画，否则「滑出 → 换内容 → 滑入」会被打断
+    if (slideLock) return;
     fill();
   }
 };

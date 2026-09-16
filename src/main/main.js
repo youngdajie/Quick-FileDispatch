@@ -794,6 +794,191 @@ function runSelfTest() {
           await window.__state.activateProfile(baseProf.id);
           await sleep(1200);
 
+          // —— 8. 外观：主题（白天/黑夜）+ 界面字体
+          document.querySelector('.nav-item[data-page="settings"]').click();
+          await sleep(900);
+
+          const themeCards = document.querySelectorAll('#themeCards .theme-card');
+          if (themeCards.length !== 2) failed.push('主题卡片不是两张：' + themeCards.length);
+          document.querySelector('#themeCards .theme-card[data-theme="light"]').click();
+          await sleep(700);
+          const themeNow = document.documentElement.dataset.theme;
+          const cfgTheme = (window.__state.cfg.ui || {}).theme;
+          const themeOn = Array.from(document.querySelectorAll('#themeCards .theme-card.on')).map((c) => c.dataset.theme);
+          const lightBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+          const lightText = getComputedStyle(document.body).color;
+          log.push({ step: 'theme-light', themeNow, cfgTheme, on: themeOn, bg: lightBg, color: lightText });
+          eq(themeNow, 'light', '点浅色主题后 <html data-theme> 没变成 light');
+          eq(cfgTheme, 'light', '点浅色主题后配置里 ui.theme 没落盘');
+          eq(themeOn.join(','), 'light', '主题卡片高亮没跟着走');
+          // 浅色主题必须是浅底 + 深字，不然「白天」主题等于没做
+          const lum = (c) => {
+            const s = String(c || '');
+            let r = 255, g = 255, b = 255;
+            const hex = /#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(s);
+            const rgb = /rgba?\\(\\s*(\\d+)[,\\s]+(\\d+)[,\\s]+(\\d+)/i.exec(s);
+            if (hex) {
+              r = parseInt(hex[1], 16); g = parseInt(hex[2], 16); b = parseInt(hex[3], 16);
+            } else if (rgb) {
+              r = Number(rgb[1]); g = Number(rgb[2]); b = Number(rgb[3]);
+            } else {
+              return 1;
+            }
+            return (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+          };
+          if (lum(lightBg) < 0.5) failed.push('浅色主题的 --bg 还是深色：' + lightBg);
+          if (lum(lightText) > 0.6) failed.push('浅色主题的文字还是浅色（会看不清）：' + lightText);
+          document.querySelector('#themeCards .theme-card[data-theme="dark"]').click();
+          await sleep(700);
+          eq(document.documentElement.dataset.theme, 'dark', '切回深色主题失败');
+
+          // 字体清单：探测本机已装字体，并验证选中后会落盘 + 改 --font-ui
+          const fontSel = document.getElementById('cfgFont');
+          if (!fontSel) failed.push('设置页没有字体下拉 #cfgFont');
+          else {
+            const fontOpts = Array.from(fontSel.options).filter((o) => o.value && !o.disabled);
+            log.push({
+              step: 'fonts',
+              count: fontOpts.length,
+              total: fontSel.options.length,
+              sample: fontOpts.slice(0, 6).map((o) => o.value)
+            });
+            if (fontOpts.length < 3) failed.push('本机字体探测几乎没结果，字体清单只有 ' + fontOpts.length + ' 款');
+            const pickFont = fontOpts[0] ? fontOpts[0].value : '';
+            if (pickFont) {
+              fontSel.value = pickFont;
+              fontSel.dispatchEvent(new Event('change', { bubbles: true }));
+              await sleep(900);
+              const stack = getComputedStyle(document.documentElement).getPropertyValue('--font-ui');
+              log.push({ step: 'font-applied', pick: pickFont, cfg: (window.__state.cfg.ui || {}).font, stack: stack.trim() });
+              eq((window.__state.cfg.ui || {}).font, pickFont, '选字体会后没写进配置');
+              if (stack.indexOf(pickFont) < 0) failed.push('--font-ui 没有换成所选字体');
+              // 字样本体也要跟着换
+              const sampleFont = getComputedStyle(document.getElementById('fontSample')).fontFamily || '';
+              if (sampleFont.indexOf(pickFont) < 0) failed.push('字体样本没有跟着换字体');
+              fontSel.value = '';
+              fontSel.dispatchEvent(new Event('change', { bubbles: true }));
+              await sleep(800);
+              eq((window.__state.cfg.ui || {}).font, '', '恢复「系统默认」字体失败');
+            }
+          }
+
+          // —— 9. 归档配置下拉：默认指向当前那份，条目数对得上
+          const pick = document.getElementById('profilePick');
+          if (!pick) failed.push('仓库标题右边没有归档配置下拉');
+          else {
+            const pickOpts = Array.from(pick.options).filter((o) => o.value && !o.disabled && o.value !== '__new__');
+            log.push({
+              step: 'profile-pick',
+              value: pick.value,
+              active: window.__state.cfg.activeProfileId,
+              opts: pickOpts.map((o) => o.textContent)
+            });
+            eq(pick.value, window.__state.cfg.activeProfileId, '归档配置下拉没有默认选中当前生效的那份');
+            eq(pickOpts.length, (window.__state.cfg.profiles || []).length, '归档配置下拉的条目数和配置数对不上');
+          }
+
+          // —— 10. 平台图层：切平台时块上要挂滑动动画类，且左边色条跟着换
+          {
+            const pane = document.getElementById('repoPane');
+            if (!pane) failed.push('仓库模块里没有平台图层 #repoPane');
+            else {
+              eq(pane.dataset.platform, 'github', '平台图层初始色条不是 GitHub');
+              document.querySelector('#cfgPlatform button[data-platform="gitee"]').click();
+              await sleep(120);
+              const midCls = pane.className;
+              await sleep(2000);
+              log.push({ step: 'slide-gitee', midCls: midCls, endPlatform: pane.dataset.platform, badge: (document.getElementById('platBadgeText') || {}).textContent });
+              if (!/slide-out-left|slide-in-right/.test(midCls)) failed.push('切到 Gitee 时平台图层没有滑动动画');
+              eq(pane.dataset.platform, 'gitee', '平台图层的色条没有跟着切到 Gitee');
+              // 平台胶囊必须是一颗完整的胶囊：被别的同名样式压成 22px 方块的话，内容会被裁掉
+              const badgeEl = document.getElementById('platBadge');
+              const badgeBox = badgeEl.getBoundingClientRect();
+              log.push({ step: 'plat-badge', w: Math.round(badgeBox.width), h: Math.round(badgeBox.height), scrollW: badgeEl.scrollWidth, clientW: badgeEl.clientWidth });
+              if (badgeEl.scrollWidth > badgeEl.clientWidth + 1) {
+                failed.push('平台胶囊内容被裁掉了（' + badgeEl.scrollWidth + ' > ' + badgeEl.clientWidth + '），样式可能撞名');
+              }
+              // 左边那条主题色竖条也要跟着换成 Gitee 色
+              const bar = getComputedStyle(pane, '::before').backgroundColor;
+              const giteeColor = getComputedStyle(pane).getPropertyValue('--plat-gitee').trim();
+              log.push({ step: 'plat-bar', bar: bar, giteeColor: giteeColor });
+              if (!bar || bar === 'rgba(0, 0, 0, 0)') failed.push('平台图层左侧色条没渲染出来');
+              document.querySelector('#cfgPlatform button[data-platform="github"]').click();
+              await sleep(2200);
+              eq(pane.dataset.platform, 'github', '平台图层的色条没有切回 GitHub');
+            }
+          }
+
+          // —— 11. 可用性体检（导入配置后的引导就靠它）
+          {
+            const chk = await window.cloudpic.profile.check({ id: baseProf.id });
+            log.push({
+              step: 'profile-check',
+              ok: chk && chk.ok,
+              local: chk && chk.local && { ok: chk.local.ok, code: chk.local.code, msg: chk.local.message },
+              cloud: chk && chk.cloud && { ok: chk.cloud.ok, code: chk.cloud.code, msg: chk.cloud.message }
+            });
+            if (!chk || !chk.local || !chk.cloud) failed.push('可用性体检没有返回本地/云端两块结果');
+            else {
+              if (!chk.local.ok) failed.push('可用性体检误判本地目录不可用：' + chk.local.message);
+              if (!chk.cloud.ok) failed.push('可用性体检误判云端仓库不可达：' + chk.cloud.message);
+            }
+            // 本地目录不存在时，必须说清楚「去哪儿改」
+            await window.__state.newProfile({ platform: MOCK_PLATFORM });
+            await window.__state.patch({
+              owner: MOCK_OWNER, repo: MOCK_REPO, apiBase: MOCK_API,
+              localDir: 'D:/__no_such_dir__/__nope__', token: 'ghp_fake_token_for_test_0001'
+            });
+            await sleep(700);
+            const badId = window.__state.cfg.activeProfileId;
+            const badChk = await window.cloudpic.profile.check({ id: badId });
+            log.push({
+              step: 'profile-check-bad',
+              local: badChk && badChk.local && { ok: badChk.local.ok, code: badChk.local.code, fix: badChk.local.fix }
+            });
+            if (!badChk || !badChk.local || badChk.local.ok) failed.push('本地目录不存在时体检居然判为可用');
+            else if (!badChk.local.fix) failed.push('本地目录不可用时没有给出修改引导文案');
+            await window.__state.removeProfile(badId);
+            await window.__state.activateProfile(baseProf.id);
+            await sleep(900);
+          }
+
+          // —— 12. 上传页目标目录：能列出现有云端目录并写回
+          document.querySelector('.nav-item[data-page="upload"]').click();
+          await sleep(900);
+          {
+            const dirInput = document.getElementById('upDir');
+            const pickBtn = document.getElementById('btnUpDirPick');
+            if (!pickBtn) failed.push('上传页目标目录没有「浏览云端…」按钮');
+            else {
+              pickBtn.click();
+              await sleep(2200);
+              const crumbs = document.getElementById('dpCrumbs');
+              const rows = document.querySelectorAll('#dpBody .dir-row');
+              log.push({
+                step: 'dir-picker',
+                crumbs: crumbs ? crumbs.innerText : '',
+                rows: rows.length,
+                first: rows[0] ? rows[0].dataset.dir : '',
+                msg: (document.getElementById('dpMsg') || {}).textContent
+              });
+              if (!crumbs) failed.push('目录选择器没有渲染面包屑');
+              if (!rows.length) failed.push('目录选择器没有列出任何云端目录');
+              else {
+                const firstDir = rows[0].dataset.dir;
+                rows[0].click();
+                await sleep(1800);
+                const use = document.getElementById('dpUse');
+                if (use) use.click();
+                await sleep(700);
+                log.push({ step: 'dir-picker-pick', input: dirInput ? dirInput.value : '' });
+                eq(dirInput ? dirInput.value : '', firstDir, '从目录选择器选中的路径没有写回目标目录');
+              }
+            }
+          }
+          document.querySelector('.nav-item[data-page="settings"]').click();
+          await sleep(700);
+
           // —— 收尾：删掉测试造出来的配置，只留指向假 API 的那份，保证下次跑还准
           await window.__state.activateProfile(baseProf.id);
           await sleep(1200);
@@ -805,13 +990,19 @@ function runSelfTest() {
           }
           await window.__state.activateProfile(baseProf.id);
           // 水印色也还原成默认，别让测试值留在配置里
-          await window.__state.patch({ watermark: { color: '#1296db' } });
+          await window.__state.patch({
+            watermark: { color: '#1296db' },
+            lastUploadDir: '',
+            ui: { theme: 'dark', font: '' }
+          });
           await sleep(800);
           log.push({
             step: 'teardown',
             cleaned: cleaned,
             left: (window.__state.cfg.profiles || []).map((p) => p.label + '@' + p.platform),
-            wmColor: val('cfgWmColor')
+            wmColor: val('cfgWmColor'),
+            theme: document.documentElement.dataset.theme,
+            font: (window.__state.cfg.ui || {}).font
           });
 
           return { log, failed };
@@ -1053,6 +1244,78 @@ function runSelfTest() {
         }
       } catch (e) {
         errors.push('shot settings profiles failed: ' + e.message);
+      }
+
+      // 新版块：仓库大模块（平台图层 + 归档下拉）/ 外观（主题 + 字体）/ 浅色主题 / 云端目录选择器
+      try {
+        await wc.reload();
+        await new Promise((r) => setTimeout(r, 2600));
+        await wc.executeJavaScript(`document.querySelector('.nav-item[data-page="settings"]').click();`);
+        await new Promise((r) => setTimeout(r, 1500));
+
+        // 仓库大模块顶部：标题右边的归档下拉 + 三个子模块
+        await wc.executeJavaScript(`document.querySelector('.repo-module').scrollIntoView({ block: 'start' });`);
+        await new Promise((r) => setTimeout(r, 900));
+        const imgRepo = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-repo-module.png'), imgRepo.toPNG());
+        console.log('SHOT settings-repo-module');
+
+        // 平台图层特写：左边那条平台主题色 + 平台徽标 + 当前编辑的平台
+        await shotZoom('settings-platform-layer-zoom.png', '#platBadge', 2.2);
+
+        // 外观：主题卡片 + 字体下拉 + 字体样本
+        await wc.executeJavaScript(`document.getElementById('themeCards').scrollIntoView({ block: 'center' });`);
+        await new Promise((r) => setTimeout(r, 900));
+        const imgLook = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-appearance.png'), imgLook.toPNG());
+        console.log('SHOT settings-appearance');
+
+        // 浅色主题：整页
+        await wc.executeJavaScript(`document.querySelector('#themeCards .theme-card[data-theme="light"]').click();`);
+        await new Promise((r) => setTimeout(r, 1400));
+        await wc.executeJavaScript(`document.getElementById('content').scrollTop = 0;`);
+        await new Promise((r) => setTimeout(r, 700));
+        const imgLight = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-light.png'), imgLight.toPNG());
+        console.log('SHOT settings-light');
+
+        // 浅色 + 仓库模块（平台图层在浅色下的样子）
+        await wc.executeJavaScript(`document.querySelector('.repo-module').scrollIntoView({ block: 'start' });`);
+        await new Promise((r) => setTimeout(r, 800));
+        const imgLightRepo = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-light-repo.png'), imgLightRepo.toPNG());
+        console.log('SHOT settings-light-repo');
+
+        // 浅色的上传页
+        await wc.executeJavaScript(`document.querySelector('.nav-item[data-page="upload"]').click();`);
+        await new Promise((r) => setTimeout(r, 1100));
+        const imgLightUp = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'upload-light.png'), imgLightUp.toPNG());
+        console.log('SHOT upload-light');
+
+        // 目标目录：输入框 + 浏览按钮
+        await wc.executeJavaScript(`document.getElementById('upOptions').scrollIntoView({ block: 'center' });`);
+        await new Promise((r) => setTimeout(r, 700));
+        const imgUpDir = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'upload-target-dir.png'), imgUpDir.toPNG());
+        console.log('SHOT upload-target-dir');
+
+        // 云端目录选择器
+        await wc.executeJavaScript(`document.getElementById('btnUpDirPick').click();`);
+        await new Promise((r) => setTimeout(r, 2400));
+        const imgPick = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'upload-dir-picker.png'), imgPick.toPNG());
+        console.log('SHOT upload-dir-picker');
+        await wc.executeJavaScript(`document.body.click();`);
+        await new Promise((r) => setTimeout(r, 500));
+
+        // 回深色，别把后面的截图染成浅色
+        await wc.executeJavaScript(`document.querySelector('.nav-item[data-page="settings"]').click();`);
+        await new Promise((r) => setTimeout(r, 900));
+        await wc.executeJavaScript(`document.querySelector('#themeCards .theme-card[data-theme="dark"]').click();`);
+        await new Promise((r) => setTimeout(r, 900));
+      } catch (e) {
+        errors.push('shot new-ui failed: ' + e.message);
       }
 
       // 新手指引（从设置页重新触发）
@@ -1351,6 +1614,162 @@ function registerIpc() {
     const p = payload || {};
     return store.verifyProfile(String(p.id || ''), p.info || {});
   });
+  // 导出归档配置（不含 Token，DPAPI 密文换机器解不开）
+  ipcMain.handle('profile:export', async () => {
+    const data = store.exportProfiles();
+    const stamp = new Date().toISOString().slice(0, 10);
+    const r = await dialog.showSaveDialog(mainWindow, {
+      title: '导出归档配置',
+      defaultPath: 'jie-profiles-' + stamp + '.json',
+      filters: [{ name: 'JSON 配置', extensions: ['json'] }, { name: '所有文件', extensions: ['*'] }]
+    });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(r.filePath, JSON.stringify(data, null, 2), 'utf8');
+    return { ok: true, filePath: r.filePath, count: data.profiles.length };
+  });
+  // 导入归档配置：读文件 → 合并 → 交给渲染层做可用性体检
+  ipcMain.handle('profile:import', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: '导入归档配置',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON 配置', extensions: ['json'] }, { name: '所有文件', extensions: ['*'] }]
+    });
+    if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
+    const file = r.filePaths[0];
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (e) {
+      throw new Error('不是有效的配置文件：' + e.message);
+    }
+    // 兼容两种写法：带信封的 {profiles:[...]} 和裸数组
+    const payload = Array.isArray(parsed) ? { profiles: parsed } : parsed;
+    if (!payload || !Array.isArray(payload.profiles)) {
+      throw new Error('配置文件里没有 profiles 列表');
+    }
+    if (payload.kind && payload.kind !== 'jie-dispatch-profiles') {
+      throw new Error('这不像本程序导出的配置（kind=' + payload.kind + '）');
+    }
+    const res = store.importProfiles(payload);
+    return Object.assign({ ok: true, filePath: file }, res);
+  });
+
+  /**
+   * 单份配置的可用性体检：本地目录 + 云端仓库各查一遍。
+   * 导入之后靠它告诉用户「哪一块不可用、该去哪里改」，而不是丢一句「导入失败」。
+   */
+  ipcMain.handle('profile:check', async (e, payload) => {
+    const id = String((payload && payload.id) || '');
+    const p = store.profileById(id);
+    if (!p) return { ok: false, missing: true, error: '配置不存在，可能已被删除' };
+
+    const out = {
+      ok: true,
+      id: id,
+      label: p.name || [p.owner, p.repo].filter(Boolean).join('/') || '未命名配置',
+      platform: p.platform || 'github',
+      local: { ok: false, code: 'missing', message: '没有填写本地目录', fix: '到「本地目录」选一个文件夹' },
+      cloud: { ok: false, code: 'missing', message: '没有填写仓库信息', fix: '到「仓库信息」填写用户名与仓库名' }
+    };
+
+    /* ---- 本地目录 ---- */
+    const dir = String(p.localDir || '').trim();
+    if (dir) {
+      if (!local.exists(dir)) {
+        out.local = {
+          ok: false,
+          code: 'not-exist',
+          dir: dir,
+          message: '目录不存在：' + dir,
+          fix: '点「选择…」重新指到本机的仓库目录，或点「克隆到此处」把仓库拉下来'
+        };
+      } else if (!(await git.isRepo(dir))) {
+        out.local = {
+          ok: false,
+          code: 'not-repo',
+          dir: dir,
+          message: '目录存在，但不是 Git 仓库（没有 .git）',
+          fix: '点「克隆到此处」把仓库克隆到这个目录'
+        };
+      } else {
+        const sum = (await git.repoSummary(dir)) || {};
+        const st = (await git.status(dir)) || {};
+        out.local = {
+          ok: true,
+          code: 'ready',
+          dir: dir,
+          branch: sum.branch || '',
+          dirty: !!st.dirty,
+          message: '本地仓库就绪' + (sum.branch ? '（分支 ' + sum.branch + '）' : '')
+        };
+      }
+    }
+
+    /* ---- 云端仓库 ---- */
+    if (p.owner && p.repo) {
+      const token = store.getProfileToken(id);
+      if (!token) {
+        out.cloud = {
+          ok: false,
+          code: 'no-token',
+          owner: p.owner,
+          repo: p.repo,
+          message: p.owner + '/' + p.repo + '：本机没有可用 Token',
+          fix:
+            '导出的配置不含 Token（DPAPI 密文换台机器解不开）。把「归档配置」切到这一份，' +
+            '在「仓库信息 → 访问令牌」补上 Token，再点「验证并归档」'
+        };
+      } else {
+        try {
+          const client = new CloudClient({
+            platform: p.platform || 'github',
+            owner: p.owner,
+            repo: p.repo,
+            branch: p.branch || 'main',
+            token: token,
+            apiBase: p.apiBase || undefined
+          });
+          const user = await client.whoami();
+          const info = await client.repoInfo();
+          await client.listDir('');
+          out.cloud = {
+            ok: true,
+            code: 'ready',
+            owner: p.owner,
+            repo: p.repo,
+            userName: user.name || user.login,
+            repoInfo: info,
+            message: '云端可达：' + info.fullName + ' · ' + (info.private ? '私有' : '公开')
+          };
+        } catch (err2) {
+          out.cloud = {
+            ok: false,
+            code: 'unreachable',
+            owner: p.owner,
+            repo: p.repo,
+            message: friendlyError(err2),
+            fix:
+              '检查「仓库信息」里的 owner / 仓库名 / 分支是否写对，平台（GitHub / Gitee）是否选错；' +
+              '私有仓库还要确认 Token 有仓库读写权限'
+          };
+        }
+      }
+    }
+
+    out.ok = out.local.ok && out.cloud.ok;
+    return out;
+  });
+
+  // 无边框窗口的底色跟着主题走，免得调整窗口大小时闪一下另一种颜色
+  ipcMain.handle('ui:setBackground', (e, color) => {
+    if (!mainWindow) return false;
+    try {
+      mainWindow.setBackgroundColor(/^#[0-9a-fA-F]{6}$/.test(String(color)) ? String(color) : '#070b12');
+      return true;
+    } catch (err) {
+      return false;
+    }
+  });
 
   ipcMain.handle('dialog:chooseDir', async (e, opts) => {
     const r = await dialog.showOpenDialog(mainWindow, {
@@ -1444,18 +1863,12 @@ function registerIpc() {
     const results = [];
     const accepted = [];
 
-    const now = new Date();
     for (const f of files) {
       const buf = Buffer.from(f.data);
       const safeName = CPLinks.sanitizeName(f.name);
-      const tpl = CPLinks.renderPathTemplate(cfg.pathTemplate || '', {
-        date: now,
-        owner: cfg.owner,
-        repo: cfg.repo,
-        branch: cfg.branch,
-        name: safeName
-      });
-      const rel = CPLinks.joinPath(subDir, tpl, safeName);
+      // 路径模板已取消：上传到哪里完全由上传页选的「目标目录」决定，
+      // 不再叠加一层隐式的日期 / 仓库占位符目录。
+      const rel = CPLinks.joinPath(subDir, safeName);
 
       if (buf.length > limit) {
         results.push({

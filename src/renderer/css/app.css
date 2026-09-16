@@ -37,7 +37,82 @@
   --inner: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 
   --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  /* 界面字体：留空即用这套系统默认；设置页可换成任意本机已装字体 */
+  --font-ui: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, -apple-system, sans-serif;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* 零散色：深色下就是原来写死的那些值，浅色主题会整套换掉，
+     这样主题切换只需要覆盖变量，不用满文件找魔法色值 */
+  --scroll: #22324b;
+  --scroll-hi: #33486a;
+  --placeholder: #53657c;
+  --knob: #eaf2ff;
+  --border-hover: #2b3f5d;
+  --accent-grad-a: #4e9bea;
+  --accent-grad-b: #3a86d6;
+  --accent-grad-line: #2f74bd;
+  --danger-text: #ff8f97;
+  --gitee: #e8737b;
+  --tile-border-hover: #2c415f;
+  --thumb-bg: #080c13;
+  --thumb-fg: #34455c;
+  --thumb-badge: rgba(8, 12, 19, 0.6);
+
+  /* 平台标识色：仓库模块左侧竖条 + 归档徽标用它，一眼看出在编辑哪个平台 */
+  --plat-github: #4e9bea;
+  --plat-gitee: #e8737b;
+}
+
+/* ============================================================
+   浅色主题
+   保持同一套设计语言（扁平、硬朗、细边框），只换色。
+   所有界面颜色都走上面的变量，所以这一块基本就是变量覆盖。
+   ============================================================ */
+html[data-theme="light"] {
+  --bg: #eef1f6;
+  --bg-soft: #f7f9fc;
+  --panel: #ffffff;
+  --panel-2: #f1f5fa;
+  --panel-3: #e5ecf5;
+  --border: #cfd9e6;
+  --border-soft: #e1e8f1;
+  --hair: rgba(30, 70, 130, 0.07);
+
+  --text: #16202e;
+  --text-dim: #44546b;
+  --muted: #7a8a9e;
+
+  --accent: #2f7fd6;
+  --accent-hi: #1f6dc2;
+  --accent-deep: #0b4a9c;
+  --accent-soft: rgba(47, 127, 214, 0.1);
+  --accent-line: rgba(47, 127, 214, 0.36);
+
+  --ok: #12916b;
+  --warn: #a86c12;
+  --danger: #d33a4c;
+  --danger-soft: rgba(211, 58, 76, 0.09);
+
+  --shadow: 0 18px 38px -22px rgba(20, 42, 74, 0.32);
+  --inner: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --scroll: #c4d0e0;
+  --scroll-hi: #a8b8cc;
+  --placeholder: #9aa9bc;
+  --knob: #ffffff;
+  --border-hover: #b3c3d6;
+  --accent-grad-a: #4b96e6;
+  --accent-grad-b: #2f7fd6;
+  --accent-grad-line: #2a72c2;
+  --danger-text: #c22f42;
+  --gitee: #c71d23;
+  --tile-border-hover: #b9c8db;
+  --thumb-bg: #dde5ef;
+  --thumb-fg: #93a4bb;
+  --thumb-badge: rgba(255, 255, 255, 0.82);
+
+  --plat-github: #2f7fd6;
+  --plat-gitee: #c71d23;
 }
 
 * { box-sizing: border-box; }
@@ -49,7 +124,7 @@ html, body {
   margin: 0; padding: 0; height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-ui);
   font-size: 13.5px;
   line-height: 1.6;
   overflow: hidden;
@@ -62,8 +137,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #22324b; border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: #33486a; background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-hi); background-clip: content-box; }
 
 .mono { font-family: var(--mono); }
 .muted { color: var(--muted); }
@@ -215,19 +290,19 @@ body.is-maximized .wc-btn .ic-restore { display: block; }
   font-size: 12.5px; white-space: nowrap;
   transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.08s;
 }
-.btn:hover { color: var(--text); border-color: #2b3f5d; background: var(--panel-3); }
+.btn:hover { color: var(--text); border-color: var(--border-hover); background: var(--panel-3); }
 .btn:active { transform: translateY(1px) scale(0.99); }
 .btn:disabled { opacity: 0.42; cursor: not-allowed; transform: none; }
 .btn-primary {
-  background: linear-gradient(180deg, var(--accent), #3a86d6);
-  border-color: #2f74bd; color: #fff; font-weight: 600;
+  background: linear-gradient(180deg, var(--accent), var(--accent-grad-b));
+  border-color: var(--accent-grad-line); color: #fff; font-weight: 600;
   box-shadow: var(--inner), 0 8px 18px -10px rgba(78, 155, 234, 0.75);
 }
 .btn-primary:hover { background: linear-gradient(180deg, var(--accent-hi), var(--accent)); color: #fff; }
 .btn-ghost { background: transparent; }
 .btn-ghost:hover { background: var(--panel-2); }
 .btn-danger { background: var(--danger-soft); border-color: rgba(239, 85, 96, 0.3); color: #ff8f97; }
-.btn-danger:hover { background: rgba(239, 85, 96, 0.18); color: #ffb0b5; }
+.btn-danger:hover { background: rgba(239, 85, 96, 0.18); color: var(--danger-text); }
 .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 7px; }
 
 .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--border-soft); border-radius: 8px; padding: 3px; gap: 2px; }
@@ -252,7 +327,7 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--accent); background: var(--panel);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-input::placeholder { color: #53657c; }
+input::placeholder { color: var(--placeholder); }
 input[type="color"] { width: 44px; height: 32px; padding: 2px; cursor: pointer; }
 /*
  * 滑块：原生 range 的默认外观在不同机器上差别很大，这里整个自绘。
@@ -270,7 +345,7 @@ input[type="range"]::-webkit-slider-runnable-track {
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 15px; height: 15px; margin-top: -5px;
-  border-radius: 50%; background: #eaf2ff;
+  border-radius: 50%; background: var(--knob);
   border: 2px solid var(--accent);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
   transition: transform 0.12s var(--ease), box-shadow 0.12s;
@@ -281,7 +356,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px 
 input[type="range"]::-moz-range-track { height: 5px; border-radius: 999px; background: var(--panel-3); }
 input[type="range"]::-moz-range-progress { height: 5px; border-radius: 999px; background: var(--accent); }
 input[type="range"]::-moz-range-thumb {
-  width: 13px; height: 13px; border-radius: 50%; background: #eaf2ff; border: 2px solid var(--accent);
+  width: 13px; height: 13px; border-radius: 50%; background: var(--knob); border: 2px solid var(--accent);
 }
 input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 select { cursor: pointer; }
@@ -391,7 +466,7 @@ select.csel-native {
   padding: 1px 6px; border-radius: 4px;
   border: 1px solid var(--border); color: var(--text-dim);
 }
-.pf-platform.pf-gitee { color: #e8737b; border-color: rgba(232, 115, 123, 0.3); }
+.pf-platform.pf-gitee { color: var(--gitee); border-color: color-mix(in srgb, var(--gitee) 30%, transparent); }
 
 .pf-name {
   font-size: 12.5px; font-family: var(--mono); color: var(--text);
@@ -603,6 +678,10 @@ select.csel-native {
   border-radius: var(--radius); padding: 15px 16px 3px; margin-top: 14px;
 }
 .up-options .field { margin-bottom: 12px; }
+/* 目标目录是最常改的一项，窗口够宽时给它双倍宽度，路径才看得全 */
+@media (min-width: 720px) {
+  .up-options > .field:first-child { grid-column: span 2; }
+}
 
 .queue-panel, .result-panel {
   margin-top: 14px; background: var(--panel);
@@ -679,7 +758,7 @@ select.csel-native {
 .r-info { flex: 1; min-width: 0; }
 .r-path { font-size: 12px; font-family: var(--mono); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .r-link { font-size: 11px; font-family: var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-.r-err { font-size: 11.5px; color: #ff8f97; }
+.r-err { font-size: 11.5px; color: var(--danger-text); }
 
 /* ============================================================ 管理页 */
 
@@ -781,12 +860,12 @@ select.csel-native {
   transition: border-color 0.15s, transform 0.15s var(--ease), box-shadow 0.18s;
 }
 @keyframes tileIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
-.tile:hover { border-color: #2c415f; transform: translateY(-2px); box-shadow: var(--shadow); }
+.tile:hover { border-color: var(--tile-border-hover); transform: translateY(-2px); box-shadow: var(--shadow); }
 .tile.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .tile-thumb {
   aspect-ratio: 1 / 1; width: 100%; position: relative; overflow: hidden;
-  background: #080c13 center/cover no-repeat;
-  display: grid; place-items: center; color: #34455c;
+  background: var(--thumb-bg) center/cover no-repeat;
+  display: grid; place-items: center; color: var(--thumb-fg);
 }
 .tile-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tile-thumb .fi { width: 46%; height: 46%; max-width: 56px; max-height: 56px; }
@@ -798,7 +877,7 @@ select.csel-native {
 .tile-check {
   position: absolute; top: 7px; left: 7px; width: 19px; height: 19px;
   border-radius: 5px; border: 1.5px solid rgba(255, 255, 255, 0.5);
-  background: rgba(8, 12, 19, 0.6); display: grid; place-items: center;
+  background: var(--thumb-badge); display: grid; place-items: center;
   opacity: 0; transition: opacity 0.14s, transform 0.14s var(--ease); color: #fff; font-size: 11px;
   transform: scale(0.85);
 }
@@ -1092,7 +1171,8 @@ body.is-onboarding .toast-wrap { filter: none; }
 .plat-card .pn { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
 .plat-card .pd { font-size: 12px; color: var(--muted); line-height: 1.7; }
 .plat-card .pt { font-size: 11px; font-family: var(--mono); color: var(--accent-hi); }
-.plat-badge { width: 22px; height: 22px; border-radius: 6px; background: var(--accent-deep); display: grid; place-items: center; color: #fff; font-size: 11px; font-family: var(--mono); font-weight: 700; }
+/* 新手指引里的平台小方块徽标（限定在 .plat-card 内，别和设置页的平台胶囊撞名） */
+.plat-card .plat-badge { width: 22px; height: 22px; border-radius: 6px; background: var(--accent-deep); display: grid; place-items: center; color: #fff; font-size: 11px; font-family: var(--mono); font-weight: 700; }
 
 .ob-note {
   background: var(--bg-soft); border: 1px dashed var(--border); border-radius: 8px;
@@ -1175,3 +1255,170 @@ body.is-onboarding .toast-wrap { filter: none; }
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================ 浅色主题微调 */
+/* 深色下好看的文件图标色，直接搬到白底会发飘；浅色主题单独压深一档 */
+html[data-theme="light"] .fi-dir { --fc: #c07a12; }
+html[data-theme="light"] .fi-text { --fc: #5f7c9a; }
+html[data-theme="light"] .fi-default { --fc: #64748b; }
+html[data-theme="light"] .fi-app { --fc: #64748b; }
+html[data-theme="light"] .fi-ebook { --fc: #9a6f34; }
+html[data-theme="light"] .fi-archive { --fc: #b3801f; }
+
+/* ============================================================ 仓库大模块 */
+/* 仓库信息 / 本地目录 / 文件链接合成一块；左侧竖条用平台主题色，
+   一眼看出「现在编辑的是 GitHub 还是 Gitee」 */
+.repo-module { position: relative; }
+.repo-module .card-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.repo-module .card-head .head-main { flex: 1; min-width: 220px; }
+.repo-module .card-head .head-tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
+/* 归档配置下拉：紧贴「仓库」标题右侧 */
+.archive-pick { display: flex; align-items: center; gap: 7px; }
+.archive-pick .csel { min-width: 190px; }
+.archive-pick-label { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+
+/* 平台图层：外框 + 左侧主题色竖条 */
+.plat-frame {
+  position: relative;
+  border: 1px solid var(--border-soft); border-radius: var(--radius);
+  background: var(--bg-soft);
+  padding: 16px 16px 16px 20px;
+  overflow: hidden;
+}
+.plat-frame::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--plat);
+  transition: background 0.28s var(--ease);
+}
+.plat-frame[data-platform="github"] { --plat: var(--plat-github); }
+.plat-frame[data-platform="gitee"] { --plat: var(--plat-gitee); }
+
+/* 平台标识胶囊 */
+.plat-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+  color: var(--plat);
+  border: 1px solid color-mix(in srgb, var(--plat) 34%, transparent);
+  background: color-mix(in srgb, var(--plat) 10%, transparent);
+}
+.plat-badge .pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--plat); }
+
+/* 两个图层左右滑动：切换平台时旧图层滑出、新图层滑入 */
+.plat-layer { will-change: transform, opacity; }
+.plat-layer.slide-out-left { animation: platOutLeft 0.2s var(--ease) both; }
+.plat-layer.slide-in-right { animation: platInRight 0.26s var(--ease) both; }
+.plat-layer.slide-out-right { animation: platOutRight 0.2s var(--ease) both; }
+.plat-layer.slide-in-left { animation: platInLeft 0.26s var(--ease) both; }
+@keyframes platOutLeft { to { opacity: 0; transform: translateX(-26px); } }
+@keyframes platInRight { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
+@keyframes platOutRight { to { opacity: 0; transform: translateX(26px); } }
+@keyframes platInLeft { from { opacity: 0; transform: translateX(-26px); } to { opacity: 1; transform: none; } }
+
+/* 大模块里的二级小标题（仓库信息 / 本地目录 / 文件链接） */
+.mod-sec { margin-top: 18px; }
+.mod-sec:first-child { margin-top: 0; }
+.mod-sec-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 11px; padding-bottom: 7px;
+  border-bottom: 1px dashed var(--border-soft);
+}
+.mod-sec-head h3 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.2px; }
+.mod-sec-head .hint { margin: 0; }
+
+/* ============================================================ 外观设置 */
+.theme-cards { display: flex; gap: 10px; flex-wrap: wrap; }
+.theme-card {
+  flex: 1 1 168px; cursor: pointer; text-align: left;
+  border: 1px solid var(--border-soft); border-radius: var(--radius);
+  background: var(--panel-2); padding: 11px 12px;
+  transition: border-color 0.16s, background 0.16s, transform 0.1s var(--ease);
+}
+.theme-card:hover { border-color: var(--border); transform: translateY(-1px); }
+.theme-card.on { border-color: var(--accent); background: var(--accent-soft); }
+.theme-card .tc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.theme-card .tc-name { font-size: 12.5px; font-weight: 700; }
+.theme-card .tc-tick { color: var(--accent); opacity: 0; transition: opacity 0.16s; }
+.theme-card.on .tc-tick { opacity: 1; }
+/* 迷你界面预览：左边一条侧栏 + 右边内容区，示意明暗 */
+.theme-card .tc-preview {
+  margin-top: 9px; height: 44px; border-radius: 7px; overflow: hidden;
+  border: 1px solid var(--border-soft); display: flex;
+}
+.theme-card .tc-preview i { display: block; }
+.tc-dark i:nth-child(1) { width: 26%; background: #101926; border-right: 1px solid #1b2940; }
+.tc-dark i:nth-child(2) { width: 74%; background: #070b12; }
+.tc-light i:nth-child(1) { width: 26%; background: #dbe3ee; border-right: 1px solid #c3cfdf; }
+.tc-light i:nth-child(2) { width: 74%; background: #ffffff; }
+
+/* 字体选择：右侧给个实时样例 */
+.font-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.font-row .csel { flex: 1 1 260px; max-width: 340px; }
+.font-sample {
+  flex: 1 1 200px; min-width: 180px;
+  padding: 7px 11px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  color: var(--text-dim); font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ============================================================ 导入体检报告 */
+.imp-report { max-height: 52vh; overflow-y: auto; }
+.imp-group { margin-bottom: 14px; }
+.imp-group > .ig-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 700; margin-bottom: 8px;
+}
+.imp-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 11px; border-radius: 8px; margin-bottom: 7px;
+  border: 1px solid var(--border-soft); background: var(--panel-2);
+}
+.imp-item .ii-main { flex: 1; min-width: 0; }
+.imp-item .ii-name { font-size: 12.5px; font-weight: 600; font-family: var(--mono); }
+.imp-item .ii-why { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.7; }
+.imp-item.ok { border-color: color-mix(in srgb, var(--ok) 34%, transparent); }
+.imp-item.bad { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.imp-item .ii-tag {
+  font-size: 10.5px; padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+  border: 1px solid currentColor; flex: 0 0 auto;
+}
+.imp-item .ii-tag.ok { color: var(--ok); }
+.imp-item .ii-tag.bad { color: var(--warn); }
+
+/* ============================================================ 云端目录选择 */
+.dir-pick { border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--panel-2); overflow: hidden; }
+.dir-pick-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border-soft);
+  background: var(--panel); font-size: 11.5px; color: var(--muted);
+}
+.dir-crumbs { flex: 1; display: flex; align-items: center; gap: 2px; flex-wrap: wrap; min-width: 0; }
+.dir-crumb {
+  border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
+  padding: 2px 6px; border-radius: 5px; font-size: 11.5px; font-family: var(--mono);
+}
+.dir-crumb:hover { background: var(--panel-3); color: var(--text); }
+.dir-crumb.last { color: var(--accent); font-weight: 600; }
+.dir-sep { color: var(--muted); font-size: 11px; }
+.dir-pick-body { max-height: 216px; overflow-y: auto; padding: 6px; }
+.dir-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; border-radius: 7px; cursor: pointer;
+  border: 1px solid transparent; font-size: 12.5px;
+  transition: background 0.13s, border-color 0.13s;
+}
+.dir-row:hover { background: var(--panel); border-color: var(--border-soft); }
+.dir-row .dr-ico { color: var(--fi-dir, #e3a33f); flex: 0 0 auto; display: grid; place-items: center; }
+.dir-row .dr-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.dir-row .dr-go { font-size: 11px; color: var(--muted); }
+.dir-pick-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; border-top: 1px solid var(--border-soft); background: var(--panel);
+}
+.dir-pick-empty { padding: 18px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+.dir-pick-msg { font-size: 11.5px; color: var(--muted); flex: 1; min-width: 0; }
+
+/* 目标目录这一行：输入框 + 浏览按钮 */
+.dir-input-row { display: flex; gap: 8px; align-items: center; }
+.dir-input-row input { flex: 1; }

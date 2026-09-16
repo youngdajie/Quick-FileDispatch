@@ -11,7 +11,7 @@ const path = require('path');
 const { app, safeStorage } = require('electron');
 
 const DEFAULT_CONFIG = {
-  version: 4,
+  version: 5,
   onboarded: false,
   platform: 'github', // github | gitee
   owner: '',
@@ -19,7 +19,6 @@ const DEFAULT_CONFIG = {
   branch: 'main',
   apiBase: '',
   localDir: '',
-  pathTemplate: 'images/{yyyy}/{MM}/',
   commitMessage: 'chore: 通过 JIE 分发服务上传',
 
   /**
@@ -83,7 +82,12 @@ const DEFAULT_CONFIG = {
   },
 
   ui: {
-    theme: 'dark',
+    theme: 'dark', // dark | light
+    /**
+     * 界面字体。留空 = 跟随系统默认（微软雅黑 UI / Segoe UI）。
+     * 只影响界面，不参与渲染产物。
+     */
+    font: '',
     pageSize: 60
   }
 };
@@ -130,6 +134,12 @@ function migrate(cfg) {
       cfg.watermark.color = '#1296db';
     }
     cfg.version = 4;
+  }
+  if (v < 5) {
+    // 路径模板取消：上传目标目录改到上传页自己选，占位符那套不再生效。
+    // 这里把残留值删掉，免得老配置里留个看不见、却还会影响上传路径的字段。
+    delete cfg.pathTemplate;
+    cfg.version = 5;
   }
   if (!Array.isArray(cfg.profiles)) cfg.profiles = [];
   // 保证永远至少有一个 profile：切换平台 / 新建配置都要有落点
@@ -263,6 +273,32 @@ class Store {
     this.data.activeProfileId = p.id;
   }
 
+  /**
+   * 取某份配置的明文 Token（只给主进程内部用，不会经过 IPC 出去）。
+   * 自己没存，就顺着「同平台 + 同 owner/repo/branch」找一份有 Token 的借用 ——
+   * 导入进来的配置天生不带凭据，靠这条把可用性体检做得有意义。
+   */
+  getProfileToken(id) {
+    const list = this.data.profiles || [];
+    const p = list.find((x) => x.id === id);
+    if (!p) return '';
+    const own = this._decryptToken(p);
+    if (own) return own;
+    const same = list.find(
+      (x) =>
+        x.id !== p.id &&
+        (x.platform || 'github') === (p.platform || 'github') &&
+        (x.owner || '') === (p.owner || '') &&
+        (x.repo || '') === (p.repo || '') &&
+        (x.branch || 'main') === (p.branch || 'main')
+    );
+    return same ? this._decryptToken(same) : '';
+  }
+
+  profileById(id) {
+    return (this.data.profiles || []).find((x) => x.id === id) || null;
+  }
+
   _decryptToken(holder) {
     if (holder && holder._tokenEnc) {
       try {
@@ -389,6 +425,101 @@ class Store {
 
   getToken() {
     return this._decryptToken(this.data);
+  }
+
+  /* ------------------------------------------------- 归档配置：导出 / 导入 */
+
+  /**
+   * 导出为可移植的 JSON。
+   *
+   * 故意不导出 Token：落盘的 Token 是 Windows DPAPI 加密的，密钥绑在这台机器上，
+   * 换台电脑根本解不开；与其导出一串废密文，不如明确告诉用户「导入后要补 Token」。
+   */
+  exportProfiles() {
+    return {
+      kind: 'jie-dispatch-profiles',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      profiles: (this.data.profiles || []).map((p) => {
+        const o = {
+          name: p.name || '',
+          note: p.note || '',
+          platform: p.platform || 'github',
+          owner: p.owner || '',
+          repo: p.repo || '',
+          branch: p.branch || 'main',
+          apiBase: p.apiBase || '',
+          localDir: p.localDir || ''
+        };
+        if (p.userName) o.userName = p.userName;
+        return o;
+      })
+    };
+  }
+
+  /**
+   * 导入归档配置。
+   *
+   * - 一律分配新 id，避免和本机已有配置撞车；
+   * - 一律标记为「未验证」：换台机器后 Token 没了、本地目录也未必在，
+   *   必须由用户补 Token 后重新跑一次验证，不能直接冒充「已验证」；
+   * - 同名同仓库同目录的视为重复，默认跳过（除非同一文件里出现两次）。
+   *
+   * 返回 { added, skipped, profiles }，由渲染层接手「可用性体检 + 引导修改」。
+   */
+  importProfiles(payload) {
+    const incoming = (payload && payload.profiles) || [];
+    if (!Array.isArray(incoming) || !incoming.length) {
+      throw new Error('文件里没有可导入的配置');
+    }
+    this.data.profiles = this.data.profiles || [];
+    const added = [];
+    const skipped = [];
+
+    const keyOf = (p) =>
+      [p.platform || 'github', (p.owner || '').toLowerCase(), (p.repo || '').toLowerCase(), p.localDir || ''].join('|');
+    const seen = new Set(this.data.profiles.map(keyOf));
+
+    for (const raw of incoming) {
+      const p = {
+        id: newProfileId(),
+        name: String(raw.name || '').slice(0, 60),
+        note: String(raw.note || '').slice(0, 200),
+        platform: raw.platform === 'gitee' ? 'gitee' : 'github',
+        owner: String(raw.owner || '').trim(),
+        repo: String(raw.repo || '').trim(),
+        branch: String(raw.branch || 'main').trim() || 'main',
+        apiBase: String(raw.apiBase || '').trim(),
+        localDir: String(raw.localDir || '').trim(),
+        verified: false,
+        verifiedAt: 0,
+        createdAt: Date.now(),
+        imported: true
+      };
+      if (raw.userName) p.userName = String(raw.userName).slice(0, 80);
+      const k = keyOf(p);
+      if (!p.owner || !p.repo) {
+        skipped.push({ profile: p, reason: '缺少用户名或仓库名' });
+        continue;
+      }
+      if (seen.has(k)) {
+        skipped.push({ profile: p, reason: '本机已有相同配置' });
+        continue;
+      }
+      seen.add(k);
+      this.data.profiles.push(p);
+      added.push(p);
+    }
+
+    if (added.length) this._write();
+    const out = this.get();
+    return {
+      added: added.length,
+      skipped: skipped.length,
+      skippedDetail: skipped.map((s) => ({ label: s.profile.owner + '/' + s.profile.repo, reason: s.reason })),
+      profiles: out.profiles,
+      cfg: out
+    };
   }
 
   setToken(token) {

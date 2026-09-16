@@ -5,6 +5,7 @@ import { enhanceAll } from './lib/cselect.js';
 import { enhanceNumbers } from './lib/numfield.js';
 import * as fileIcons from './lib/fileicons.js';
 import state from './lib/state.js';
+import * as appearance from './lib/appearance.js';
 import onboard from './lib/onboard.js';
 import uploadPage from './pages/upload.js';
 import managePage from './pages/manage.js';
@@ -109,6 +110,8 @@ function bindWindowControls() {
 
 async function boot() {
   await state.init();
+  // 主题和字体必须在其它页面 init 之前落下去，否则会先按默认深色画一帧再跳色
+  appearance.applyAppearance(state.cfg);
   updateChrome();
 
   bindChrome();
@@ -120,7 +123,8 @@ async function boot() {
     }
   });
 
-  state.on(() => {
+  state.on((cfg) => {
+    appearance.applyAppearance(cfg);
     updateChrome();
     Object.keys(PAGES).forEach((k) => {
       if (PAGES[k].onConfigChanged) {
@@ -149,6 +153,7 @@ async function boot() {
   window.__fi = fileIcons;
   window.__nf = { enhanceNumbers };
   window.__state = state;
+  window.__appearance = appearance;
 
   window.addEventListener('cloudpic:changed', () => {
     state.refresh();

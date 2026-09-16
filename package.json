@@ -1,6 +1,6 @@
 {
   "name": "jie-dispatch",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "快捷文件分发服务@JIE —— 基于 GitHub / Gitee 仓库的本地图床与云端文件管理工具",
   "main": "src/main/main.js",
   "author": "小杰",
