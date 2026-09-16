@@ -320,7 +320,7 @@
               <div class="plat-frame plat-layer" id="repoPane" data-platform="github" style="margin-top:13px">
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                   <span class="plat-badge" id="platBadge">
-                    <span class="pdot"></span><span id="platBadgeText">GitHub</span>
+                    <span class="pb-ico" id="platBadgeIcon"></span><span id="platBadgeText">GitHub</span>
                   </span>
                   <span class="hint" id="platHint" style="margin:0"></span>
                 </div>
@@ -513,13 +513,19 @@
                   </select>
                 </label>
                 <label class="field">
-                  <span class="field-label">最大宽度（px，0 = 不限制）</span>
-                  <input type="number" id="cfgMaxWidth" min="0" step="100" />
+                  <span class="field-label">最大宽度 <span class="hint">px · 0 = 不限制</span></span>
+                  <input type="number" id="cfgMaxWidth" min="0" step="100" placeholder="0" />
                 </label>
                 <label class="field">
-                  <span class="field-label">最大高度（px，0 = 不限制）</span>
-                  <input type="number" id="cfgMaxHeight" min="0" step="100" />
+                  <span class="field-label">最大高度 <span class="hint">px · 0 = 不限制</span></span>
+                  <input type="number" id="cfgMaxHeight" min="0" step="100" placeholder="0" />
                 </label>
+                <p class="field-help span-2">
+                  两个都留 <b>0</b>（默认）就<b>不改动图片原始尺寸</b>，只按上面的质量与格式重新编码，
+                  小图不会因为这里而被放大。填了数字才会等比缩放到不超过该尺寸 ——
+                  比如宽高都填 <b>1920</b>，4000×3000 会变成 1920×1440，而 1200×900 原样保留。
+                  只想限制某一边，另一个留 0 即可。
+                </p>
                 <label class="field">
                   <span class="field-label">目标体积（KB，0 = 不限制）<span class="hint">自动二分质量逼近</span></span>
                   <input type="number" id="cfgTargetSize" min="0" step="10" />
@@ -577,9 +583,10 @@
               <label class="field">
                 <span class="field-label">颜色</span>
                 <div class="wm-color">
-                  <span class="wm-swatch" id="wmSwatch" title="点击选择颜色">
-                    <input type="color" id="cfgWmColor" />
-                  </span>
+                  <button type="button" class="wm-swatch" id="wmSwatch" title="点击选择颜色" aria-haspopup="dialog" aria-expanded="false">
+                    <span class="wm-swatch-fill"></span>
+                  </button>
+                  <input type="hidden" id="cfgWmColor" />
                   <input type="text" class="wm-hex" id="wmColorText" maxlength="7" spellcheck="false"
                          placeholder="#1296db" aria-label="水印颜色十六进制值" />
                   <span class="wm-presets" id="wmPresets"></span>

@@ -28,3 +28,4 @@ Thumbs.db
 !.demo/mock-api-test.js
 !.demo/mock-gitee-test.js
 !.demo/mock-server.js
+!.demo/scan-escape.js

@@ -5,6 +5,7 @@
 
 import { $, escapeHtml, ok, err, warn } from './dom.js';
 import state from './state.js';
+import { brandIcon } from './brandicons.js';
 
 const CPLinks = window.CPLinks;
 
@@ -14,14 +15,12 @@ const PLATFORMS = [
   {
     id: 'github',
     name: 'GitHub',
-    badge: 'GH',
     desc: '全球最大代码托管平台，私有仓库免费。raw 域名国内访问偶有波动，可切 CDN。',
     tip: '单文件 ≤ 100MB · 单仓库建议 ≤ 1GB'
   },
   {
     id: 'gitee',
     name: 'Gitee',
-    badge: 'GE',
     desc: '国内直连速度最快，无需代理。社区版个人账号有容量与文件数上限。',
     tip: '单文件 ≤ 50MB · 单仓库 ≤ 500MB'
   }
@@ -78,7 +77,8 @@ function panePlatform() {
   const cards = PLATFORMS.map(
     (p) =>
       '<button class="plat-card' + (draft.platform === p.id ? ' active' : '') + '" data-platform="' + p.id + '">' +
-      '<span class="pn"><span class="plat-badge">' + p.badge + '</span>' + escapeHtml(p.name) + '</span>' +
+      '<span class="pn"><span class="plat-mark plat-mark-' + p.id + '">' + brandIcon(p.id, 15) + '</span>' +
+      escapeHtml(p.name) + '</span>' +
       '<span class="pd">' + escapeHtml(p.desc) + '</span>' +
       '<span class="pt">' + escapeHtml(p.tip) + '</span>' +
       '</button>'
@@ -531,4 +531,8 @@ export function isOpen() {
   return !!(wrap && !wrap.hidden);
 }
 
-export default { open, close, isOpen };
+const api = { open: open, close: close, isOpen: isOpen };
+export default api;
+
+// 自检（--uitest）要能开一次向导看看渲染结果，再关掉继续跑后面的用例
+if (typeof window !== 'undefined') window.CPOnboard = api;

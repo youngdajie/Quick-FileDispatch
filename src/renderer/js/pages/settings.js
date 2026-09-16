@@ -3,6 +3,8 @@
 import { $, $$, ok, err, warn, confirmDialog, modal, escapeHtml, debounce } from '../lib/dom.js';
 import state from '../lib/state.js';
 import { applyTheme, applyFont, stackFor, installedFontGroups, installFontCount } from '../lib/appearance.js';
+import { brandIcon } from '../lib/brandicons.js';
+import { openColorPicker, closeColorPicker, normalizeHex } from '../lib/colorpicker.js';
 
 const CPLinks = window.CPLinks;
 let tokenTouched = false;
@@ -553,29 +555,48 @@ async function archiveProfile() {
 
 /* ---------------------------------------------------------------- 水印颜色 */
 
-/** #abc -> #aabbcc；非法值返回空串 */
-function normalizeHex(s) {
-  let t = String(s || '').trim();
-  if (!t) return '';
-  if (t[0] !== '#') t = '#' + t;
-  if (/^#[0-9a-fA-F]{3}$/.test(t)) return ('#' + t[1] + t[1] + t[2] + t[2] + t[3] + t[3]).toLowerCase();
-  if (/^#[0-9a-fA-F]{6}$/.test(t)) return t.toLowerCase();
-  return '';
-}
+/** 自绘选择器的句柄；开着的时候拖色板要实时同步给它 */
+let wmPicker = null;
+let autoSave = null;
 
 /**
- * 色块 / 原生 color / hex 文本框三处同步。
- * 原生 color 始终持有「最后一个合法值」，collect() 只读它，
- * 所以用户在 hex 框里敲到一半的非法值不会污染配置。
+ * 色块 / 隐藏的原生色值输入 / hex 文本框三处同步。
+ * `#cfgWmColor` 仍然是唯一的数据源（collect() 只读它），
+ * 只是从「原生 type=color」换成了隐藏输入，弹层改由自绘选择器负责。
  */
 function setWmColor(hex) {
   const norm = normalizeHex(hex) || '#1296db';
-  $('#cfgWmColor').value = norm;
-  $('#wmColorText').value = norm;
+  const valueEl = $('#cfgWmColor');
+  if (valueEl) valueEl.value = norm;
+  const textEl = $('#wmColorText');
+  if (textEl) textEl.value = norm;
   const sw = $('#wmSwatch');
   if (sw) sw.style.setProperty('--sw', norm);
   $$('#wmPresets .wm-pre').forEach((b) => b.classList.toggle('on', b.dataset.color === norm));
+  if (wmPicker) wmPicker.setColor(norm);
   return norm;
+}
+
+function openWmPicker() {
+  const sw = $('#wmSwatch');
+  if (!sw) return;
+  if (wmPicker) {
+    closeColorPicker();
+    wmPicker = null;
+    return;
+  }
+  wmPicker = openColorPicker({
+    anchor: sw,
+    color: $('#cfgWmColor').value || '#1296db',
+    presets: WM_PRESETS,
+    onChange: (hex) => {
+      setWmColor(hex);
+      if (autoSave) autoSave();
+    },
+    onClose: () => {
+      wmPicker = null;
+    }
+  });
 }
 
 function renderWmPresets() {
@@ -660,9 +681,11 @@ function fillPlatform() {
     b.classList.toggle('active', b.dataset.platform === plat);
   });
 
-  // 平台图层：左边那条主题色竖条靠 data-platform 决定，徽标文案也跟着换
+  // 平台图层：左边那条主题色竖条靠 data-platform 决定，徽标文案与图标也跟着换
   const pane = $('#repoPane');
   if (pane) pane.dataset.platform = plat;
+  const badgeIcon = $('#platBadgeIcon');
+  if (badgeIcon) badgeIcon.innerHTML = brandIcon(plat, 14);
   const badge = $('#platBadgeText');
   if (badge) badge.textContent = PLATFORM_NAME[plat];
   const hint = $('#platHint');
@@ -933,13 +956,15 @@ async function doClone() {
 
 export default {
   init() {
+    // 平台按钮带上品牌标志（官方 SVG），比纯文字更好认
+    document.querySelectorAll('#cfgPlatform button').forEach((b) => {
+      const plat = b.dataset.platform;
+      b.innerHTML = brandIcon(plat, 15) + '<span>' + escapeHtml(PLATFORM_NAME[plat] || plat) + '</span>';
+      b.onclick = () => switchToPlatform(plat);
+    });
+
     renderWmPresets();
     fill();
-
-    // 平台：两个图层左右滑动，不是简单换字段
-    document.querySelectorAll('#cfgPlatform button').forEach((b) => {
-      b.onclick = () => switchToPlatform(b.dataset.platform);
-    });
 
     // 归档配置下拉
     $('#profilePick').addEventListener('change', async () => {
@@ -1033,15 +1058,17 @@ export default {
     live('#cfgWmOpacity', () => {
       $('#cfgWmOpacityVal').textContent = (Number($('#cfgWmOpacity').value) / 100).toFixed(2);
     });
-    live('#cfgWmColor', () => {
-      setWmColor($('#cfgWmColor').value);
-    });
+    // 色块点开自绘选择器（原生 type=color 的系统面板和界面完全不搭）
+    $('#wmSwatch').onclick = (e) => {
+      e.preventDefault();
+      openWmPicker();
+    };
     // hex 文本框：随时输入随时生效，非法值不写回（等用户补全）
     const applyHex = () => {
       const norm = normalizeHex($('#wmColorText').value);
       if (!norm) return;
       setWmColor(norm);
-      autoSave();
+      if (autoSave) autoSave();
     };
     $('#wmColorText').addEventListener('input', applyHex);
     $('#wmColorText').addEventListener('blur', () => {
@@ -1052,7 +1079,7 @@ export default {
       const b = e.target.closest('.wm-pre');
       if (!b) return;
       setWmColor(b.dataset.color);
-      autoSave();
+      if (autoSave) autoSave();
     });
     ['#cfgOwner', '#cfgRepo', '#cfgBranch', '#cfgCustomDomain'].forEach((s) => live(s, updateLinkPreview));
     live('#cfgProxyUrl', updateProxyDesc);
@@ -1074,10 +1101,10 @@ export default {
     });
 
     // 输入后自动保存（防抖），避免用户忘记点保存
-    const autoSave = debounce(() => {
+    autoSave = debounce(() => {
       save({ silent: true }).catch(() => {});
     }, 1400);
-    ['#cfgOwner', '#cfgRepo', '#cfgBranch', '#cfgCommitMessage', '#cfgProxyUrl', '#cfgWmColor'].forEach((s) => {
+    ['#cfgOwner', '#cfgRepo', '#cfgBranch', '#cfgCommitMessage', '#cfgProxyUrl'].forEach((s) => {
       const el = $(s);
       if (el) el.addEventListener('change', autoSave);
     });

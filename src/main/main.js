@@ -750,6 +750,94 @@ function runSelfTest() {
           await sleep(200);
           eq(val('cfgWmColor'), '#00aaff', '非法 hex 把颜色污染了');
 
+          // —— 6b. 自绘取色器：开合、拖色、常用色、内部滚动不误关
+          {
+            const sw = document.getElementById('wmSwatch');
+            if (!sw) failed.push('颜色那行没有自绘色块按钮 #wmSwatch');
+            else {
+              sw.click();
+              await sleep(250);
+              let pop = document.querySelector('.cp-pop');
+              log.push({ step: 'cp-open', opened: !!pop });
+              if (!pop) failed.push('点色块没有弹出取色面板');
+              else {
+                const sv = pop.querySelector('.cp-sv');
+                const hueBar = pop.querySelector('.cp-hue');
+                const presetsBox = pop.querySelectorAll('.cp-presets .cp-pre');
+                const hexRead = pop.querySelector('.cp-hex');
+                log.push({
+                  step: 'cp-parts',
+                  sv: !!sv,
+                  hue: !!hueBar,
+                  presets: presetsBox.length,
+                  h: sv ? sv.style.getPropertyValue('--h') : '',
+                  hex: hexRead ? hexRead.textContent : '',
+                  swatchOn: sw.classList.contains('is-open')
+                });
+                if (!sv || !hueBar) failed.push('取色面板缺 SV 方块 / 色相条');
+                if (presetsBox.length < 4) failed.push('取色面板常用色太少：' + presetsBox.length);
+                if (sv && !sv.style.getPropertyValue('--h')) failed.push('SV 方块没有 --h，渐变不会跟着色相走');
+                if (!sw.classList.contains('is-open')) failed.push('面板开着时色块没进 is-open 态');
+
+                // 拖 SV 方块：中心点应当落到约 s=50% / v=50%，颜色随之改变
+                if (sv) {
+                  const before = val('cfgWmColor');
+                  const r = sv.getBoundingClientRect();
+                  const at = (fx, fy) => ({
+                    bubbles: true, cancelable: true, button: 0, pointerId: 7, isPrimary: true,
+                    clientX: r.left + r.width * fx, clientY: r.top + r.height * fy
+                  });
+                  sv.dispatchEvent(new PointerEvent('pointerdown', at(0.5, 0.5)));
+                  await sleep(120);
+                  const mid = val('cfgWmColor');
+                  const knob = pop.querySelector('.cp-sv .cp-knob');
+                  document.dispatchEvent(new PointerEvent('pointermove', at(0.75, 0.25)));
+                  await sleep(80);
+                  document.dispatchEvent(new PointerEvent('pointerup', at(0.75, 0.25)));
+                  await sleep(120);
+                  const afterDrag = val('cfgWmColor');
+                  log.push({
+                    step: 'cp-drag',
+                    before: before, mid: mid, after: afterDrag,
+                    knobLeft: knob ? knob.style.left : '', knobTop: knob ? knob.style.top : ''
+                  });
+                  if (mid === before) failed.push('在 SV 方块上按下没有取到颜色');
+                  if (afterDrag === mid) failed.push('拖动 SV 方块的圆点没有连续改色');
+                  if (knob && !knob.style.left) failed.push('SV 圆点没有跟着指针移动');
+
+                  // 拖完再点常用色，必须精确回到那个色
+                  const red = Array.from(presetsBox).find((b) => b.dataset.color === '#ff4d4f');
+                  if (!red) failed.push('取色面板里没有 #ff4d4f 这个常用色');
+                  else {
+                    red.click();
+                    await sleep(150);
+                    log.push({ step: 'cp-preset', color: val('cfgWmColor'), hex: (pop.querySelector('.cp-hex') || {}).textContent });
+                    eq(val('cfgWmColor'), '#ff4d4f', '取色面板点常用色没有写回颜色');
+                  }
+                }
+
+                // 面板内部滚动（长列表 / 触摸板）绝不能把自己关掉
+                pop.dispatchEvent(new Event('scroll', { bubbles: true }));
+                await sleep(150);
+                if (!document.querySelector('.cp-pop')) failed.push('取色面板内部滚动把面板误关了');
+
+                // Escape 收起
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                await sleep(150);
+                if (document.querySelector('.cp-pop')) failed.push('Escape 没能收起取色面板');
+                if (sw.classList.contains('is-open')) failed.push('收起后色块还留着 is-open 态');
+
+                // 再开一次，点面板外面要收起
+                sw.click();
+                await sleep(200);
+                document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                await sleep(150);
+                log.push({ step: 'cp-dismiss', outsideClosed: !document.querySelector('.cp-pop') });
+                if (document.querySelector('.cp-pop')) failed.push('点面板外面没有收起取色面板');
+              }
+            }
+          }
+
           // —— 7. 换配置后管理页要回到根目录重载（不然会继续显示旧仓库的文件）
           document.querySelector('.nav-item[data-page="manage"]').click();
           await sleep(2800);
@@ -860,6 +948,86 @@ function runSelfTest() {
               fontSel.dispatchEvent(new Event('change', { bubbles: true }));
               await sleep(800);
               eq((window.__state.cfg.ui || {}).font, '', '恢复「系统默认」字体失败');
+
+              // —— 8b. 自绘下拉：真点得中、滚轮/内部滚动不误关、筛选能用
+              //     （这几个正是「下拉选不中、点一下就消失」那次回归的核心）
+              const wrap = fontSel.closest('.csel');
+              const cbtn = wrap && wrap.querySelector('.csel-btn');
+              log.push({ step: 'csel-wrap', hasWrap: !!wrap, hasBtn: !!cbtn });
+              if (!wrap || !cbtn) failed.push('字体下拉没有被自绘下拉接管（缺 .csel / .csel-btn）');
+              else {
+                const isOpen = () => !!document.querySelector('.csel-panel');
+                cbtn.click();
+                await sleep(250);
+                let panel = document.querySelector('.csel-panel');
+                log.push({ step: 'csel-open', open: !!panel, btnOpen: cbtn.classList.contains('is-open') });
+                if (!panel) failed.push('点字体下拉后面板没出来');
+                else {
+                  const opts = panel.querySelectorAll('.csel-opt');
+                  const filter = panel.querySelector('.csel-filter');
+                  log.push({ step: 'csel-parts', opts: opts.length, filter: !!filter });
+                  if (opts.length < 3) failed.push('字体下拉面板里没有选项：' + opts.length);
+                  if (fontSel.options.length > 20 && !filter) failed.push('字体这么多项却没有筛选框');
+
+                  // 面板自己滚（滚轮/触摸板压在上面）绝不能把面板关掉
+                  panel.dispatchEvent(new Event('scroll', { bubbles: true }));
+                  await sleep(150);
+                  log.push({ step: 'csel-scroll-inside', stillOpen: isOpen() });
+                  if (!isOpen()) failed.push('在面板里滚动把下拉关掉了（这正是 bug 本身）');
+
+                  // 焦点落在里面也不能触发滚动把自己关掉
+                  if (!isOpen()) failed.push('面板丢了，后面没法继续');
+                  else {
+                    if (filter) {
+                      // 用本机真实存在的某款字体名当关键字，保证一定筛得到
+                      const probeFont = fontOpts[Math.min(5, fontOpts.length - 1)].value;
+                      filter.value = probeFont;
+                      filter.dispatchEvent(new Event('input', { bubbles: true }));
+                      await sleep(200);
+                      const shown = Array.from(panel.querySelectorAll('.csel-opt')).filter((o) => !o.hidden);
+                      log.push({ step: 'csel-filter', q: probeFont, shown: shown.length, total: opts.length, stillOpen: isOpen() });
+                      if (!shown.length) failed.push('筛选「' + probeFont + '」后一个字体都没剩下');
+                      if (shown.length === opts.length) failed.push('筛选框没有真的过滤掉选项');
+                      if (!isOpen()) failed.push('输入筛选词把下拉关掉了');
+                    }
+                    // 选一个真实存在的项：面板必须关掉、值必须写回、字体跟着换
+                    const pick2 = Array.from(panel.querySelectorAll('.csel-opt:not([disabled]):not([hidden])'))
+                      .find((o) => o.dataset.index != null && fontSel.options[Number(o.dataset.index)].value);
+                    if (!pick2) failed.push('筛选后找不到可选项来点选');
+                    else {
+                      const wantVal = fontSel.options[Number(pick2.dataset.index)].value;
+                      pick2.click();
+                      await sleep(900);
+                      log.push({
+                        step: 'csel-pick',
+                        want: wantVal, got: fontSel.value,
+                        panelGone: !isOpen(),
+                        cfg: (window.__state.cfg.ui || {}).font,
+                        label: (wrap.querySelector('.csel-label') || {}).textContent
+                      });
+                      eq(fontSel.value, wantVal, '点下拉项没有写回原生 select');
+                      if (isOpen()) failed.push('选中后下拉面板没有收起');
+                      eq((window.__state.cfg.ui || {}).font, wantVal, '从下拉里选字体没有落盘');
+                      const stack2 = getComputedStyle(document.documentElement).getPropertyValue('--font-ui');
+                      if (stack2.indexOf(wantVal) < 0) failed.push('从下拉里选字体后 --font-ui 没生效');
+                      const lbl = (wrap.querySelector('.csel-label') || {}).textContent || '';
+                      if (lbl.indexOf(wantVal) < 0) failed.push('下拉按钮上的文字没有跟着换：' + lbl);
+                      fontSel.value = '';
+                      fontSel.dispatchEvent(new Event('change', { bubbles: true }));
+                      await sleep(800);
+                    }
+                  }
+                }
+                // 点按钮开、再点一次应当收起（不要把面板点没又点不出来）
+                cbtn.click();
+                await sleep(200);
+                const opened2 = isOpen();
+                cbtn.click();
+                await sleep(200);
+                log.push({ step: 'csel-toggle', opened: opened2, closed: !isOpen() });
+                if (!opened2) failed.push('第二次点字体下拉打不开了');
+                if (isOpen()) failed.push('再点一次下拉没有收起');
+              }
             }
           }
 
@@ -903,6 +1071,58 @@ function runSelfTest() {
               const giteeColor = getComputedStyle(pane).getPropertyValue('--plat-gitee').trim();
               log.push({ step: 'plat-bar', bar: bar, giteeColor: giteeColor });
               if (!bar || bar === 'rgba(0, 0, 0, 0)') failed.push('平台图层左侧色条没渲染出来');
+
+              // —— 10b. 平台图标必须是品牌 SVG，不是字母方块
+              const segIcons = Array.from(document.querySelectorAll('#cfgPlatform button .brand-ico'));
+              const badgeIco = document.querySelector('#platBadgeIcon .brand-ico');
+              const brandApi = window.CPBrand && window.CPBrand.brandIcon;
+              log.push({
+                step: 'brand-icons',
+                segIcons: segIcons.length,
+                badgeIco: !!badgeIco,
+                badgePath: badgeIco ? (badgeIco.querySelector('path') ? badgeIco.querySelector('path').getAttribute('d').slice(0, 24) : '') : '',
+                hasApi: typeof brandApi === 'function'
+              });
+              if (segIcons.length < 2) failed.push('平台切换按钮上没有品牌 SVG 图标：' + segIcons.length);
+              if (!badgeIco) failed.push('仓库标题右边的平台胶囊里没有品牌 SVG 图标');
+              if (!badgeIco || !badgeIco.querySelector('path')) failed.push('平台图标 SVG 里没有 path（图标是空的）');
+              // 字母方块时代的遗留：图标位里不该再出现两三个大写字母
+              const badgeTxt = (document.querySelector('#platBadgeIcon') || {}).textContent || '';
+              if (/^[A-Z]{2}$/.test(badgeTxt.trim())) failed.push('平台图标还是字母方块：' + badgeTxt);
+              if (typeof brandApi === 'function') {
+                const gh = brandApi('github', 15);
+                const ge = brandApi('gitee', 15);
+                if (!/viewBox="0 0 24 24"/.test(gh) || !/<path d="M/.test(gh)) failed.push('品牌图标生成器没有吐出合法 SVG');
+                if (gh === ge) failed.push('GitHub 与 Gitee 的品牌图标一模一样');
+              } else {
+                failed.push('没有暴露 window.CPBrand.brandIcon');
+              }
+              // 新手向导里的平台卡片（用户最先看到的那两个图标）也必须是品牌 SVG
+              const ob = window.CPOnboard;
+              if (!ob || typeof ob.open !== 'function') failed.push('没有暴露 window.CPOnboard，无法验证向导图标');
+              else {
+                ob.open();
+                await sleep(600);
+                const cards = document.querySelectorAll('#onboardWrap .plat-card[data-platform]');
+                const marks = document.querySelectorAll('#onboardWrap .plat-card .plat-mark .brand-ico');
+                const legacyBadge = document.querySelectorAll('#onboardWrap .plat-card .plat-badge');
+                const marksBox = document.querySelector('#onboardWrap .plat-card .plat-mark');
+                const mb = marksBox ? marksBox.getBoundingClientRect() : null;
+                log.push({
+                  step: 'brand-onboard',
+                  cards: cards.length,
+                  marks: marks.length,
+                  legacy: legacyBadge.length,
+                  markSize: mb ? Math.round(mb.width) + 'x' + Math.round(mb.height) : ''
+                });
+                if (!cards.length) failed.push('新手向导第一步没有平台卡片');
+                if (marks.length < 2) failed.push('向导平台卡片上的品牌 SVG 图标缺失：' + marks.length);
+                if (legacyBadge.length) failed.push('向导里还留着字母方块 .plat-badge：' + legacyBadge.length);
+                if (mb && Math.round(mb.width) < 20) failed.push('向导平台图标被压扁了：' + Math.round(mb.width) + 'px');
+                ob.close();
+                await sleep(300);
+                if (ob.isOpen()) failed.push('向导关不掉，会挡住后面的步骤');
+              }
               document.querySelector('#cfgPlatform button[data-platform="github"]').click();
               await sleep(2200);
               eq(pane.dataset.platform, 'github', '平台图层的色条没有切回 GitHub');
@@ -978,6 +1198,82 @@ function runSelfTest() {
           }
           document.querySelector('.nav-item[data-page="settings"]').click();
           await sleep(700);
+
+          // —— 13. 压缩尺寸默认不设限 + 帮助文本；仓库设置的说明文字与右侧归档下拉的间距
+          document.querySelector('.nav-item[data-page="settings"]').click();
+          await sleep(900);
+          {
+            // 13.1 新建一份配置，看「最大宽/高」的默认值 —— 必须是不限制
+            await window.__state.newProfile({ platform: MOCK_PLATFORM });
+            await sleep(700);
+            const freshId = window.__state.cfg.activeProfileId;
+            const freshCmp = window.__state.cfg.compress || {};
+            log.push({ step: 'compress-default', maxWidth: freshCmp.maxWidth, maxHeight: freshCmp.maxHeight });
+            if (Number(freshCmp.maxWidth || 0) !== 0) {
+              failed.push('新配置的「最大宽度」默认不是 0（依然在替用户预先限死尺寸）：' + freshCmp.maxWidth);
+            }
+            if (Number(freshCmp.maxHeight || 0) !== 0) {
+              failed.push('新配置的「最大高度」默认不是 0（依然在替用户预先限死尺寸）：' + freshCmp.maxHeight);
+            }
+            await window.__state.removeProfile(freshId);
+            await window.__state.activateProfile(baseProf.id);
+            await sleep(900);
+
+            // 13.2 输入框本身要允许 0，并且下面有帮助文本讲清楚
+            const mw2 = document.getElementById('cfgMaxWidth');
+            const mh2 = document.getElementById('cfgMaxHeight');
+            if (!mw2 || !mh2) failed.push('压缩设置里没有最大宽度 / 最大高度输入框');
+            else {
+              log.push({ step: 'compress-ui', minW: mw2.min, phW: mw2.placeholder, minH: mh2.min, phH: mh2.placeholder });
+              if (mw2.min !== '0' || mh2.min !== '0') failed.push('最大宽度 / 高度不允许填 0');
+              if (mw2.placeholder !== '0' || mh2.placeholder !== '0') failed.push('最大宽度 / 高度的占位提示不是 0');
+              const lblTxt = (mw2.closest('.field') || {}).textContent || '';
+              if (!/0\\s*=\\s*不限制/.test(lblTxt)) failed.push('「最大宽度」标签没写「0 = 不限制」：' + lblTxt);
+              const help = mw2.closest('.field').parentNode.querySelector('.field-help');
+              const helpTxt = help ? help.textContent : '';
+              log.push({ step: 'compress-help', has: !!help, txt: helpTxt.replace(/\\s+/g, ' ').trim().slice(0, 72) });
+              if (!help) failed.push('压缩尺寸下面没有帮助文本');
+              else if (!/不改动图片原始尺寸/.test(helpTxt)) failed.push('帮助文本没讲清「留 0 就不改动原始尺寸」');
+              else if (!/4000×3000/.test(helpTxt)) failed.push('帮助文本没给具体的缩放例子');
+              // 两个都填 0（也就是不限制）时，保存后配置里不该被塞回某个数字
+              mw2.value = '0';
+              mh2.value = '0';
+              mw2.dispatchEvent(new Event('change', { bubbles: true }));
+              mh2.dispatchEvent(new Event('change', { bubbles: true }));
+              const saveBtn = document.getElementById('btnSave');
+              if (saveBtn) saveBtn.click();
+              await sleep(1600);
+              const savedCmp = window.__state.cfg.compress || {};
+              log.push({ step: 'compress-persist', maxWidth: savedCmp.maxWidth, maxHeight: savedCmp.maxHeight });
+              if (Number(savedCmp.maxWidth || 0) !== 0 || Number(savedCmp.maxHeight || 0) !== 0) {
+                failed.push('把宽高都填 0 之后配置里还是被塞了数字：' + savedCmp.maxWidth + '×' + savedCmp.maxHeight);
+              }
+            }
+
+            // 13.3 仓库设置：左侧那段说明文字不能贴到右侧「归档配置」上
+            const headMain = document.querySelector('.repo-module .card-head .head-main');
+            const headTools = document.querySelector('.repo-module .card-head .head-tools');
+            const headP = document.querySelector('.repo-module .card-head .head-main p');
+            if (!headMain || !headTools) failed.push('仓库模块标题区缺 .head-main / .head-tools（说明文字和归档配置挤在一起了）');
+            else {
+              const a = (headP || headMain).getBoundingClientRect();
+              const b = headTools.getBoundingClientRect();
+              const sameRow = b.top < a.bottom && a.top < b.bottom;
+              const gap = sameRow ? b.left - a.right : NaN;
+              log.push({
+                step: 'repo-spacing',
+                sameRow: sameRow,
+                gap: Number.isFinite(gap) ? Math.round(gap) : null,
+                mainW: Math.round(headMain.getBoundingClientRect().width),
+                maxW: getComputedStyle(headMain).maxWidth,
+                toolsW: Math.round(b.width)
+              });
+              if (sameRow && gap < 16) failed.push('仓库设置的说明文字离右侧归档配置太近：' + Math.round(gap) + 'px');
+              if (sameRow && Math.round(headMain.getBoundingClientRect().width) < 200) {
+                failed.push('说明文字那一栏被压得太窄了：' + Math.round(headMain.getBoundingClientRect().width) + 'px');
+              }
+            }
+          }
 
           // —— 收尾：删掉测试造出来的配置，只留指向假 API 的那份，保证下次跑还准
           await window.__state.activateProfile(baseProf.id);
@@ -1209,11 +1505,16 @@ function runSelfTest() {
         fs.writeFileSync(path.join(dir, 'settings-profiles.png'), imgProf.toPNG());
         console.log('SHOT settings-profiles -> ' + madeTmp);
 
-        // 数字步进器：聚焦数字框，让自绘的上下按钮淡入
-        // 选「最大高度」(1920) 而不是「最大宽度」(0)：后者上/下都贴到 min，
-        // 两个按钮都是禁用态（半透明），截出来看不出样式。
+        // 数字步进器：聚焦数字框，让自绘的上下按钮淡入。
+        // 宽/高默认都是 0（= 不限制），上/下按钮会双双贴到 min 变成禁用态，
+        // 截出来灰扑扑看不出样式 —— 先点一下「+」把值抬起来再拍。
         await wc.executeJavaScript(
           `document.getElementById('cfgMaxHeight').scrollIntoView({ block: 'center' }); document.getElementById('cfgMaxHeight').focus();`
+        );
+        await new Promise((r) => setTimeout(r, 500));
+        await wc.executeJavaScript(
+          `(function(){ var n=document.getElementById('cfgMaxHeight').closest('.numfield');` +
+            ` var b=n && n.querySelector('.nf-btn[data-step="up"]'); if(b) b.click(); })()`
         );
         await new Promise((r) => setTimeout(r, 800));
         const imgNum = await wc.capturePage();
@@ -1232,6 +1533,35 @@ function runSelfTest() {
 
         // 水印配色行特写
         await shotZoom('settings-wmcolor-zoom.png', '.wm-color', 2.5);
+
+        // 自绘取色盘：先调好缩放再滚动 + 打开 —— 浮层是 fixed 定位，
+        // 缩放会顺带改变滚动位置并触发 scroll，顺序反了浮层会被关掉/摆到屏幕外。
+        const openWmPicker = async () => {
+          await wc.executeJavaScript(`document.getElementById('wmSwatch').scrollIntoView({ block: 'center' });`);
+          await new Promise((r) => setTimeout(r, 700));
+          await wc.executeJavaScript(`document.getElementById('wmSwatch').click();`);
+          await new Promise((r) => setTimeout(r, 700));
+          return await wc.executeJavaScript(`!!document.querySelector('.cp-pop')`);
+        };
+        wc.setZoomFactor(2.2);
+        await new Promise((r) => setTimeout(r, 900));
+        let cpOpen = await openWmPicker();
+        if (!cpOpen) cpOpen = await openWmPicker(); // 缩放后的余波滚动可能刚把面板收掉，再来一次
+        const imgCpz = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-colorpicker-zoom.png'), imgCpz.toPNG());
+        console.log('SHOT settings-colorpicker-zoom.png zoom=2.2 open=' + cpOpen);
+        await wc.executeJavaScript(`document.getElementById('wmSwatch').click();`);
+        await new Promise((r) => setTimeout(r, 400));
+        wc.setZoomFactor(1);
+        await new Promise((r) => setTimeout(r, 900));
+
+        // 再拍一张正常倍率的（整块设置页 + 浮层）
+        const cpOpen2 = await openWmPicker();
+        const imgCp = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-colorpicker.png'), imgCp.toPNG());
+        console.log('SHOT settings-colorpicker open=' + cpOpen2);
+        await wc.executeJavaScript(`document.getElementById('wmSwatch').click();`);
+        await new Promise((r) => setTimeout(r, 400));
 
         // 收尾：删掉临时配置并切回基准配置
         if (madeTmp) {
@@ -1269,6 +1599,24 @@ function runSelfTest() {
         const imgLook = await wc.capturePage();
         fs.writeFileSync(path.join(dir, 'settings-appearance.png'), imgLook.toPNG());
         console.log('SHOT settings-appearance');
+
+        // 字体下拉：选项多到 59 条，靠顶部的筛选框输关键字直接跳
+        await wc.executeJavaScript(
+          `document.getElementById('cfgFont').closest('.csel').querySelector('.csel-btn').click();`
+        );
+        await new Promise((r) => setTimeout(r, 700));
+        await wc.executeJavaScript(
+          `(function(){ var f=document.querySelector('.csel-panel .csel-filter');` +
+            ` if(f){ f.value='Hei'; f.dispatchEvent(new Event('input',{bubbles:true})); } })()`
+        );
+        await new Promise((r) => setTimeout(r, 600));
+        const imgFont = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-font-filter.png'), imgFont.toPNG());
+        console.log('SHOT settings-font-filter');
+        await wc.executeJavaScript(
+          `(function(){ var b=document.querySelector('.csel-btn.is-open'); if(b) b.click(); })()`
+        );
+        await new Promise((r) => setTimeout(r, 500));
 
         // 浅色主题：整页
         await wc.executeJavaScript(`document.querySelector('#themeCards .theme-card[data-theme="light"]').click();`);

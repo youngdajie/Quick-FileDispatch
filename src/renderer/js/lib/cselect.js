@@ -71,11 +71,23 @@ export function enhanceSelect(sel) {
     const panel = document.createElement('div');
     panel.className = 'csel-panel';
     panel.setAttribute('role', 'listbox');
+    // 选项多的下拉（如本机字体清单，动辄五六十项）给个筛选框，
+    // 否则只能靠滚轮一项项找，很难用
+    let filter = null;
+    if (sel.options.length > 20) {
+      filter = document.createElement('input');
+      filter.type = 'text';
+      filter.className = 'csel-filter';
+      filter.placeholder = '输入关键字筛选…';
+      filter.setAttribute('autocomplete', 'off');
+      filter.setAttribute('spellcheck', 'false');
+      panel.appendChild(filter);
+    }
     Array.from(sel.options).forEach((o, i) => {
       if (o.hidden) return;
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'csel-opt' + (i === sel.selectedIndex ? ' is-sel' : '');
+      item.className = 'csel-opt' + (i === sel.selectedIndex ? ' is-sel' : '') + (o.disabled ? ' is-group' : '');
       item.setAttribute('role', 'option');
       item.setAttribute('aria-selected', i === sel.selectedIndex ? 'true' : 'false');
       item.dataset.index = String(i);
@@ -85,19 +97,26 @@ export function enhanceSelect(sel) {
       if (o.disabled) item.disabled = true;
       panel.appendChild(item);
     });
+    panel.__filter = filter;
     return panel;
   }
 
   function place(panel) {
     const r = btn.getBoundingClientRect();
-    const h = panel.offsetHeight;
-    const below = window.innerHeight - r.bottom;
-    const up = below < h + 12 && r.top > h + 12;
+    const filterH = panel.__filter ? panel.__filter.offsetHeight + 10 : 0;
+    const maxH = 320;
+    const h = Math.min(panel.scrollHeight + filterH + 10, maxH);
+    const below = window.innerHeight - r.bottom - 12;
+    const up = below < Math.min(h, 180) && r.top > Math.min(h, 180);
+    const room = up ? r.top - 12 : below;
+    // 面板永远不会超出视口：装不下就自己内部滚动，别让用户在屏幕外找选项
+    panel.style.maxHeight = Math.max(150, Math.min(maxH, room)) + 'px';
     panel.style.left = Math.round(r.left) + 'px';
     panel.style.minWidth = Math.round(r.width) + 'px';
-    panel.style.maxWidth = Math.round(Math.max(r.width, Math.min(340, window.innerWidth - r.left - 12))) + 'px';
-    if (up) panel.style.top = Math.round(r.top - h - 6) + 'px';
-    else panel.style.top = Math.round(r.bottom + 6) + 'px';
+    panel.style.maxWidth = Math.round(Math.max(r.width, Math.min(360, window.innerWidth - r.left - 12))) + 'px';
+    const realH = panel.offsetHeight;
+    if (up) panel.style.top = Math.round(Math.max(8, r.top - realH - 6)) + 'px';
+    else panel.style.top = Math.round(Math.min(window.innerHeight - realH - 8, r.bottom + 6)) + 'px';
   }
 
   function open() {
@@ -117,27 +136,37 @@ export function enhanceSelect(sel) {
       closeOpen();
     };
     const onKey = (e) => {
+      // 焦点在筛选框里时不抢方向键（Enter / ↑↓ 由筛选框自己处理）
+      if (panel.__filter && document.activeElement === panel.__filter && e.key !== 'Escape') return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         closeOpen();
-        btn.focus();
+        btn.focus({ preventScroll: true });
         return;
       }
-      const items = Array.from(panel.querySelectorAll('.csel-opt:not([disabled])'));
+      const items = Array.from(panel.querySelectorAll('.csel-opt:not([disabled]):not([hidden])'));
       if (!items.length) return;
       let cur = items.indexOf(document.activeElement);
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         if (cur < 0) cur = e.key === 'ArrowDown' ? -1 : items.length;
         const next = e.key === 'ArrowDown' ? (cur + 1) % items.length : (cur - 1 + items.length) % items.length;
-        items[next].focus();
+        items[next].focus({ preventScroll: false });
       } else if (e.key === 'Enter' || e.key === ' ') {
         if (cur < 0) return;
         e.preventDefault();
         items[cur].click();
       }
     };
-    const onScroll = () => closeOpen();
+    /**
+     * 面板内部自己滚动（长列表）绝不能把面板关掉 —— 这里曾经用
+     * 「window 捕获期 scroll 一律 close」的写法，结果滚轮一碰列表面板就消失，
+     * 用户根本选不中。只有面板之外的滚动才该关。
+     */
+    const onScroll = (e) => {
+      if (e && e.target && e.target.nodeType === 1 && panel.contains(e.target)) return;
+      closeOpen();
+    };
 
     document.addEventListener('mousedown', onDocDown, true);
     document.addEventListener('keydown', onKey, true);
@@ -148,7 +177,7 @@ export function enhanceSelect(sel) {
 
     panel.addEventListener('click', (e) => {
       const item = e.target.closest('.csel-opt');
-      if (!item || item.disabled) return;
+      if (!item || item.disabled || item.hidden) return;
       const idx = Number(item.dataset.index);
       const target = sel.options[idx];
       if (!target) return;
@@ -156,12 +185,56 @@ export function enhanceSelect(sel) {
       sel.value = target.value;
       sync();
       closeOpen();
-      btn.focus();
+      btn.focus({ preventScroll: true });
       if (changed) sel.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
-    const selected = panel.querySelector('.csel-opt.is-sel:not([disabled])') || panel.querySelector('.csel-opt:not([disabled])');
-    if (selected) selected.focus();
+    if (panel.__filter) {
+      const filter = panel.__filter;
+      filter.addEventListener('input', () => {
+        const q = filter.value.trim().toLowerCase();
+        panel.querySelectorAll('.csel-opt').forEach((it) => {
+          const txt = (it.querySelector('.csel-opt-txt') || {}).textContent || '';
+          it.hidden = !!q && txt.toLowerCase().indexOf(q) < 0;
+        });
+        place(panel);
+      });
+      filter.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const first = panel.querySelector('.csel-opt:not([disabled]):not([hidden])');
+          if (first) first.click();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (filter.value) {
+            filter.value = '';
+            panel.querySelectorAll('.csel-opt').forEach((it) => (it.hidden = false));
+            place(panel);
+          } else {
+            closeOpen();
+            btn.focus({ preventScroll: true });
+          }
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const first = panel.querySelector('.csel-opt:not([disabled]):not([hidden])');
+          if (first) first.focus({ preventScroll: false });
+        }
+      });
+      // 直接开打就能筛，不用先点一下
+      setTimeout(() => {
+        try {
+          filter.focus({ preventScroll: true });
+        } catch (e) {
+          /* ignore */
+        }
+      }, 0);
+    } else {
+      const selected =
+        panel.querySelector('.csel-opt.is-sel:not([disabled])') || panel.querySelector('.csel-opt:not([disabled])');
+      // preventScroll：聚焦选中项会把这行滚进视野，进而触发 scroll → 面板被关掉
+      if (selected) selected.focus({ preventScroll: true });
+    }
   }
 
   btn.addEventListener('click', (e) => {

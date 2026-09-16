@@ -11,7 +11,7 @@ const path = require('path');
 const { app, safeStorage } = require('electron');
 
 const DEFAULT_CONFIG = {
-  version: 5,
+  version: 6,
   onboarded: false,
   platform: 'github', // github | gitee
   owner: '',
@@ -51,8 +51,9 @@ const DEFAULT_CONFIG = {
   compress: {
     enabled: true,
     quality: 80,
-    maxWidth: 1920,
-    maxHeight: 1920,
+    // 0 = 不限制：默认不动用户图片的尺寸，需要缩的时候自己填
+    maxWidth: 0,
+    maxHeight: 0,
     format: 'avif', // auto | keep | avif | webp | jpeg | png
     targetSizeKB: 0,
     skipIfSmaller: true,
@@ -140,6 +141,16 @@ function migrate(cfg) {
     // 这里把残留值删掉，免得老配置里留个看不见、却还会影响上传路径的字段。
     delete cfg.pathTemplate;
     cfg.version = 5;
+  }
+  if (v < 6) {
+    // 之前预置了 1920 的最大宽高，等于偷偷替用户做了「缩图」的决定。
+    // 改成默认不限制，只把「还停在旧默认值 1920」的配置还原成 0，
+    // 用户自己填过的尺寸一律不动。
+    if (cfg.compress) {
+      if (Number(cfg.compress.maxWidth) === 1920) cfg.compress.maxWidth = 0;
+      if (Number(cfg.compress.maxHeight) === 1920) cfg.compress.maxHeight = 0;
+    }
+    cfg.version = 6;
   }
   if (!Array.isArray(cfg.profiles)) cfg.profiles = [];
   // 保证永远至少有一个 profile：切换平台 / 新建配置都要有落点

@@ -308,13 +308,15 @@ body.is-maximized .wc-btn .ic-restore { display: block; }
 .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--border-soft); border-radius: 8px; padding: 3px; gap: 2px; }
 .seg button {
   position: relative;
+  display: inline-flex; align-items: center; gap: 7px;
   border: 0; background: transparent; color: var(--muted);
   padding: 6px 13px; border-radius: 6px; cursor: pointer; font-size: 12px;
   transition: background 0.15s, color 0.15s;
 }
+.seg button .brand-ico { display: block; }
 .seg button:hover { color: var(--text-dim); }
 .seg button.active { background: var(--accent-soft); color: var(--accent-hi); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent-line); }
-.seg-lg button { padding: 8px 24px; font-size: 13px; }
+.seg-lg button { padding: 8px 22px; font-size: 13px; }
 
 input[type="text"], input[type="password"], input[type="number"], select, textarea {
   width: 100%; padding: 7px 10px; border-radius: 8px;
@@ -328,7 +330,6 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 input::placeholder { color: var(--placeholder); }
-input[type="color"] { width: 44px; height: 32px; padding: 2px; cursor: pointer; }
 /*
  * 滑块：原生 range 的默认外观在不同机器上差别很大，这里整个自绘。
  * 已填充进度靠 JS 写入的 --fill（纯 CSS 跟着 value 走做不到）。
@@ -409,6 +410,27 @@ select.csel-native {
 .csel-opt-check { flex: 0 0 auto; display: grid; place-items: center; opacity: 0; color: var(--accent); }
 .csel-opt.is-sel .csel-opt-check { opacity: 1; }
 .csel-opt[disabled] { opacity: 0.4; cursor: default; }
+/* 分组标题（如字体清单里的「中文 / 西文 / 等宽」）：不可点，只当分节线使 */
+.csel-opt.is-group {
+  opacity: 1; cursor: default; padding: 9px 9px 4px;
+  font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase;
+  color: var(--muted); border-top: 1px solid var(--hair);
+}
+.csel-opt.is-group:hover { background: transparent; color: var(--muted); }
+.csel-opt.is-group:first-of-type { border-top: 0; }
+
+/* 长清单的筛选框：吸顶，列表滚下去它还在 */
+.csel-filter {
+  position: sticky; top: 0; z-index: 2;
+  display: block; width: 100%; box-sizing: border-box;
+  margin-bottom: 5px; padding: 7px 9px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); color: var(--text);
+  font: inherit; font-size: 12.5px; outline: none;
+  transition: border-color 0.14s;
+}
+.csel-filter:focus { border-color: var(--accent-line); }
+.csel-filter::placeholder { color: var(--placeholder); }
 
 .sub-sep { height: 1px; background: var(--border-soft); margin: 14px 0; }
 
@@ -420,6 +442,16 @@ select.csel-native {
 .input-row { display: flex; gap: 8px; align-items: center; }
 .input-row > input { flex: 1; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+.grid-2 > .span-2 { grid-column: 1 / -1; }
+
+/* 字段下方的帮助说明：比 .hint 更完整，允许换行、能做重点标注 */
+.field-help {
+  margin: -4px 0 15px; padding-left: 10px;
+  border-left: 2px solid var(--border);
+  font-size: 11.5px; line-height: 1.85; color: var(--muted);
+}
+.field-help b { color: var(--text-dim); font-weight: 600; }
+.field-help code { font-family: var(--mono); color: var(--accent-hi); }
 
 /* ------------------------------------------------ 归档的仓库配置 */
 .prof-count {
@@ -509,21 +541,78 @@ select.csel-native {
 
 .wm-swatch {
   position: relative; flex: 0 0 auto;
-  width: 42px; height: 32px; padding: 3px; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2);
-  transition: border-color 0.15s, transform 0.1s var(--ease);
+  width: 44px; height: 34px; padding: 3px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s var(--ease);
 }
-.wm-swatch::after {
-  content: ""; display: block; width: 100%; height: 100%;
-  border-radius: 5px; background: var(--sw, #1296db);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+.wm-swatch-fill {
+  display: block; width: 100%; height: 100%;
+  border-radius: 6px; background: var(--sw, #1296db);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 .wm-swatch:hover { border-color: var(--accent-line); }
 .wm-swatch:active { transform: scale(0.96); }
-.wm-swatch input[type="color"] {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  padding: 0; border: 0; opacity: 0; cursor: pointer;
+.wm-swatch.is-open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ------------------------------------------------ 自绘颜色选择器 */
+.cp-pop {
+  position: fixed; z-index: 9996; width: 232px;
+  padding: 11px; border-radius: 12px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  box-shadow: 0 20px 44px -18px rgba(0, 0, 0, 0.72);
+  animation: cpIn 0.16s var(--ease) both;
 }
+@keyframes cpIn { from { opacity: 0; transform: translateY(-5px) scale(0.985); } to { opacity: 1; transform: none; } }
+
+/* 饱和度(横) × 明度(纵)：两层渐变叠出来，色相由 --h 决定 */
+.cp-sv {
+  position: relative; height: 132px; border-radius: 9px; cursor: crosshair;
+  background:
+    linear-gradient(to top, #000, rgba(0, 0, 0, 0)),
+    linear-gradient(to right, #fff, hsl(var(--h, 210) 100% 50%));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  touch-action: none;
+}
+.cp-knob {
+  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border-radius: 50%; background: var(--knob-color, #fff);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.cp-hue {
+  position: relative; height: 13px; margin-top: 11px; border-radius: 7px;
+  cursor: pointer; touch-action: none;
+  background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+.cp-hue .cp-knob {
+  top: 50%; margin-top: -7px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px rgba(0, 0, 0, 0.45);
+}
+.cp-hue .cp-knob::after {
+  content: ""; position: absolute; inset: 3px; border-radius: 50%;
+  background: hsl(var(--h, 210) 100% 50%);
+}
+
+.cp-meta { display: flex; align-items: center; gap: 9px; margin-top: 11px; }
+.cp-chip {
+  width: 30px; height: 30px; flex: 0 0 auto; border-radius: 8px;
+  background: var(--sw, #1296db);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 0 1px var(--border);
+}
+.cp-read { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cp-read .cp-hex { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.4px; color: var(--text); font-weight: 600; }
+.cp-read .cp-rgb { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+
+.cp-presets { display: flex; align-items: center; gap: 7px; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--hair); }
+.cp-pre {
+  width: 22px; height: 22px; padding: 0; cursor: pointer;
+  border-radius: 7px; border: 1px solid var(--border);
+  background: var(--sw, #1296db);
+  transition: transform 0.1s var(--ease), box-shadow 0.13s, border-color 0.13s;
+}
+.cp-pre:hover { transform: translateY(-1px); border-color: var(--text-dim); }
+.cp-pre.on { box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 3px var(--accent); }
 
 .wm-color .wm-hex {
   width: 104px; flex: 0 0 auto;
@@ -1171,8 +1260,17 @@ body.is-onboarding .toast-wrap { filter: none; }
 .plat-card .pn { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
 .plat-card .pd { font-size: 12px; color: var(--muted); line-height: 1.7; }
 .plat-card .pt { font-size: 11px; font-family: var(--mono); color: var(--accent-hi); }
-/* 新手指引里的平台小方块徽标（限定在 .plat-card 内，别和设置页的平台胶囊撞名） */
-.plat-card .plat-badge { width: 22px; height: 22px; border-radius: 6px; background: var(--accent-deep); display: grid; place-items: center; color: #fff; font-size: 11px; font-family: var(--mono); font-weight: 700; }
+/* 平台品牌标志：内联的官方 SVG 放在自己的品牌色块上（比写个字母方块像样得多） */
+.plat-mark {
+  width: 26px; height: 26px; border-radius: 8px; flex: 0 0 auto;
+  display: grid; place-items: center; color: #fff; background: #333;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 2px 7px -3px rgba(0, 0, 0, 0.6);
+}
+.plat-mark .brand-ico { display: block; }
+.plat-mark-github { background: #24292f; }
+.plat-mark-gitee { background: #c71d23; }
+/* 选中态给品牌块加一圈光，和卡片描边呼应 */
+.plat-card.active .plat-mark { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), 0 0 0 2px var(--accent-soft); }
 
 .ob-note {
   background: var(--bg-soft); border: 1px dashed var(--border); border-radius: 8px;
@@ -1269,9 +1367,11 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 /* 仓库信息 / 本地目录 / 文件链接合成一块；左侧竖条用平台主题色，
    一眼看出「现在编辑的是 GitHub 还是 Gitee」 */
 .repo-module { position: relative; }
-.repo-module .card-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-.repo-module .card-head .head-main { flex: 1; min-width: 220px; }
-.repo-module .card-head .head-tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+/* 标题区左文右工具：给足横向间距，说明文字不要贴着右边的归档下拉 */
+.repo-module .card-head { display: flex; align-items: flex-start; gap: 12px 30px; flex-wrap: wrap; }
+.repo-module .card-head .head-main { flex: 1 1 300px; min-width: 220px; max-width: 560px; }
+.repo-module .card-head .head-main p { padding-right: 10px; }
+.repo-module .card-head .head-tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
 
 /* 归档配置下拉：紧贴「仓库」标题右侧 */
 .archive-pick { display: flex; align-items: center; gap: 7px; }
@@ -1302,7 +1402,8 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
   border: 1px solid color-mix(in srgb, var(--plat) 34%, transparent);
   background: color-mix(in srgb, var(--plat) 10%, transparent);
 }
-.plat-badge .pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--plat); }
+.plat-badge .pb-ico { display: grid; place-items: center; width: 14px; height: 14px; flex: 0 0 auto; }
+.plat-badge .pb-ico .brand-ico { display: block; }
 
 /* 两个图层左右滑动：切换平台时旧图层滑出、新图层滑入 */
 .plat-layer { will-change: transform, opacity; }
