@@ -232,4 +232,4 @@ electron . --shots        # 生成界面截图
 
 ---
 
-作者：[小杰](https://www.yangjie.site)
+作者：[@youngdajie](https://github.com/youngdajie) · [yangjie.site](https://www.yangjie.site)

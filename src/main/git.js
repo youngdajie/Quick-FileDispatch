@@ -102,9 +102,21 @@ async function clone({ platform, owner, repo, branch, token, dir }) {
   return { ok: true, message: '克隆完成' };
 }
 
+/**
+ * 提交身份 —— 应用往 GitHub / Gitee 推文件时用的署名。
+ *
+ * 早先这里写死成「JIE Dispatch」，结果每次由应用发起的提交都会在仓库里
+ * 留下一个署名 JIE 的作者，贡献者列表里也多出一个「JIE Dispatch」。
+ * 改成账号本人（youngdajie）+ GitHub 已验证邮箱，提交才会正确归到本人名下。
+ */
+const COMMIT_IDENTITY = {
+  name: 'youngdajie',
+  email: 'ok@yangjie.site'
+};
+
 async function configureIdentity(dir) {
-  await run(['config', 'user.name', 'JIE Dispatch'], dir);
-  await run(['config', 'user.email', 'dispatch@yangjie.site'], dir);
+  await run(['config', 'user.name', COMMIT_IDENTITY.name], dir);
+  await run(['config', 'user.email', COMMIT_IDENTITY.email], dir);
 }
 
 /** 拉取最新：让本地与云端保持一致 */
@@ -171,4 +183,4 @@ async function repoSummary(dir) {
   };
 }
 
-module.exports = { run, version, isRepo, pull, clone, commitAndPush, status, repoSummary, remoteDir, authUrl };
+module.exports = { run, version, isRepo, pull, clone, commitAndPush, status, repoSummary, remoteDir, authUrl, COMMIT_IDENTITY };

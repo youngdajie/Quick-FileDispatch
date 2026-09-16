@@ -1275,6 +1275,31 @@ function runSelfTest() {
             }
           }
 
+          // —— 14. 署名：关于页归小杰（品牌作者），上传提交归 youngdajie（GitHub 账号）
+          //      应用提交文件时用的 user.name 绝不能是「JIE」，否则仓库贡献者列表会多出一个 JIE
+          {
+            const info = window.__state.info || {};
+            log.push({
+              step: 'attribution',
+              aboutAuthor: info.author,
+              gitAuthor: info.gitAuthor,
+              gitAuthorEmail: info.gitAuthorEmail
+            });
+            if (info.author !== '小杰') failed.push('关于页作者应该是「小杰」，实际是：' + info.author);
+            if (info.gitAuthor !== 'youngdajie') failed.push('应用提交身份不是 youngdajie：' + info.gitAuthor);
+            if (/jie/i.test(String(info.gitAuthor)) && info.gitAuthor !== 'youngdajie') {
+              failed.push('应用提交身份里还带着 JIE：' + info.gitAuthor);
+            }
+            document.querySelector('.nav-item[data-page="about"]').click();
+            await sleep(700);
+            const wrap = document.getElementById('aboutWrap');
+            const heroTxt = wrap && wrap.querySelector('.author') ? wrap.querySelector('.author').innerText : '';
+            log.push({ step: 'attribution-about', hero: heroTxt });
+            if (heroTxt.indexOf('小杰') < 0) failed.push('关于页没有「小杰」署名：' + heroTxt);
+            document.querySelector('.nav-item[data-page="settings"]').click();
+            await sleep(500);
+          }
+
           // —— 收尾：删掉测试造出来的配置，只留指向假 API 的那份，保证下次跑还准
           await window.__state.activateProfile(baseProf.id);
           await sleep(1200);
@@ -1922,6 +1947,10 @@ function registerIpc() {
     name: '快捷文件分发服务@JIE',
     version: app.getVersion(),
     author: '小杰',
+    // 应用往 GitHub / Gitee 提交文件时用的署名（见 main/git.js），
+    // 必须是账号本人 youngdajie，别让上传的提交挂在「JIE」名下
+    gitAuthor: git.COMMIT_IDENTITY.name,
+    gitAuthorEmail: git.COMMIT_IDENTITY.email,
     site: 'https://www.yangjie.site',
     electron: process.versions.electron,
     chrome: process.versions.chrome,
