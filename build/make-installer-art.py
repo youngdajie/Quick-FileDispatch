@@ -7,6 +7,10 @@
 依赖 Pillow（本地生成用，不进产品依赖）：
   pip install Pillow
 只被 build 时手动执行，产物直接进 build/ 目录，随包提交。
+
+**改完 package.json 的 version 之后必须重跑本脚本再打包**，否则安装向导里
+印的还是上一版的版本号（位图里写死了版本，electron-builder 不会重画）。
+  python build/make-installer-art.py   # 或 npm run art
 """
 
 import json
@@ -172,6 +176,8 @@ def main():
     for n in ("installerHeader.bmp", "installerSidebar.bmp"):
         p = os.path.join(OUT_DIR, n)
         print("%-26s %8d bytes" % (n, os.path.getsize(p)))
+    # 把版本号打出来：位图里印的就是它，版本对不上会很难察觉
+    print("版本号 v%s（取自 package.json，位图里印的就是这个）" % VERSION)
 
 
 if __name__ == "__main__":

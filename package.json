@@ -10,6 +10,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "art": "python build/make-installer-art.py",
     "dist": "electron-builder --win --x64",
     "dist:dir": "electron-builder --win --x64 --dir"
   },

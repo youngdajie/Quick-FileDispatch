@@ -147,7 +147,13 @@ npm start
 ```bash
 npm run dist          # 生成 NSIS 安装包到 dist/
 npm run dist:dir      # 只生成免安装目录 dist/win-unpacked/
+npm run art           # 重新生成安装向导的位图（需要 Pillow）
 ```
+
+> 安装向导的标题横幅与欢迎页竖图是 `build/make-installer-art.py` 程序化画的
+> （`build/installerHeader.bmp` 150×57 / `build/installerSidebar.bmp` 164×314，24 位 BMP），
+> **版本号是画进位图里的**——改了 `package.json` 的 `version` 之后要先 `npm run art`
+> 再打包，否则向导里印的还是上一版。
 
 ## 使用说明
 
