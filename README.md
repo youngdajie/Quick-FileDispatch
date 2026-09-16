@@ -114,9 +114,15 @@ PicX 的思路很好（用 GitHub 仓库当图床），但已经停止维护，�
 
 ### 直接使用（免编译）
 
-从 [Releases](../../releases) 下载最新的 `快捷文件分发服务@JIE.Setup.x.x.x.exe` 安装包，双击安装即可。
+从 [Releases](../../releases) 下载最新的 `KuaijieFileDispatch-Setup.x.x.x.exe` 安装包，双击安装即可。
 
-> 安装向导是深色主题的：左边那幅竖图与应用内配色一致，标题栏与快捷方式名称都是 **快捷文件分发服务@JIE**。
+> 安装向导是深色主题的：左边那幅竖图与应用内配色一致，向导文案为简体中文。
+> 装好之后的快捷方式、开始菜单项、程序本体与卸载器都叫 **快捷文件分发服务@JIE**。
+>
+> 本地 `npm run dist` 产出的安装包名是 `快捷文件分发服务@JIE.Setup.x.x.x.exe`；
+> 放到 GitHub Releases 上的那份改用了 `KuaijieFileDispatch-Setup.x.x.x.exe` ——
+> **GitHub 会把资源名里的非 ASCII 字符折叠成一个 `.`**（实测 `快捷文件分发服务@JIE...`
+> 会被存成 `@JIE...`），所以托管平台上只能用 ASCII 别名。
 
 > 首次启动会进入**新手指引**：选平台 → 填仓库名与 Token（现场验证）→ 映射本地目录，走完即可使用。
 
