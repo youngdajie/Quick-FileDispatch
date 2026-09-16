@@ -95,7 +95,7 @@ PicX 的思路很好（用 GitHub 仓库当图床），但已经停止维护，�
 
 ### 直接使用（免编译）
 
-从 [Releases](../../releases) 下载最新的 `JIE-Dispatch Setup x.x.x.exe` 安装包，双击安装即可。
+从 [Releases](../../releases) 下载最新的 `JIE-Dispatch.Setup.x.x.x.exe` 安装包，双击安装即可。
 
 > 首次启动会进入**新手指引**：选平台 → 填仓库名与 Token（现场验证）→ 映射本地目录，走完即可使用。
 
