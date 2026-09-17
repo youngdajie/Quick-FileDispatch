@@ -1,0 +1,69 @@
+# 打 tag 就把安装包挂到对应的版本（Release）上。
+#
+# 为什么这件事放在流水线里，而不是本地用 cnb 命令行做：
+#   cnb CLI 走 OAuth2 设备授权流，客户端固定是 cnb_cli，它签出来的令牌
+#   没有、也申请不到 repo-release:rw（直接拿设备流申请会被服务端回
+#   invalid_scope），所以本地建不了版本、也改不了仓库信息。
+#   而 tag_push 属于「可信事件」，流水线里的 CNB_TOKEN 天生带这个权限。
+#
+# 前提：installers/ 下放着这一版的安装包。它走 Git LFS 存，所以仓库本体
+# 不会被撑大（LFS 对象占对象存储额度，免费 100 GiB）。
+# 一个版本只放一个包，发新版时把上一个删掉，这样下面的 glob 永远只匹配到一个文件
+# —— 否则给 v2.5.0 发版时会把 v2.4.0 的包也一起挂上去。
+
+$:
+  tag_push:
+    - stages:
+        - name: 取安装包
+          script: |
+            set -e
+            git lfs install --local || true
+            git lfs pull || true
+            ls -lh installers/
+            # 只拿到 LFS 指针的话后面必然失败，早点报出来，别等到上传阶段
+            if head -c 20 installers/*.exe | grep -q "version https://git-lfs"; then
+              echo "安装包还是 LFS 指针，没拉到实体文件"; exit 1
+            fi
+
+        - name: 建版本
+          script: |
+            set -e
+            # 版本说明优先用 docs/releases/<tag>.md，没有就退回 tag 的附注信息
+            NOTES="docs/releases/${CNB_BRANCH}.md"
+            if [ -f "$NOTES" ]; then
+              BODY=$(cat "$NOTES")
+            else
+              BODY="${CNB_TAG_MESSAGE:-$CNB_BRANCH}"
+            fi
+
+            # 字段名以 OpenAPI 的 openapi.PostReleaseForm 为准：
+            # 是 draft / prerelease，不是 is_draft / is_prerelease
+            #（官方 issue 里那份示例写成 is_xxx，会被服务端静默忽略）
+            PAYLOAD=$(jq -n \
+              --arg name "$CNB_BRANCH" \
+              --arg body "$BODY" \
+              --arg tag  "$CNB_BRANCH" \
+              --arg sha  "$CNB_BRANCH_SHA" \
+              '{name:$name, body:$body, draft:false, prerelease:false,
+                make_latest:"true", tag_name:$tag, target_commitish:$sha}')
+
+            URL="${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/releases"
+            CODE=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST "$URL" \
+              -H "Authorization: Bearer ${CNB_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/vnd.cnb.api+json" \
+              -d "$PAYLOAD")
+            echo "POST $URL -> HTTP $CODE"
+            cat /tmp/resp.json; echo
+            # 同一个 tag 重跑会撞「版本已存在」，那不算错，别把流水线搞红
+            case "$CODE" in
+              2*) echo "版本已就绪";;
+              *)  echo "创建版本没成功（HTTP $CODE）；若提示已存在可忽略";;
+            esac
+
+        # attachments 插件只能把附件挂到「已经存在」的版本上，所以顺序不能颠倒
+        - name: 挂安装包
+          image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - "./installers/*.exe"
