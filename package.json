@@ -28,6 +28,7 @@
       "src/**/*",
       "package.json"
     ],
+    "publish": null,
     "win": {
       "target": [
         {
