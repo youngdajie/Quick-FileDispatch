@@ -87,7 +87,18 @@ export function enhanceSelect(sel) {
       if (o.hidden) return;
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'csel-opt' + (i === sel.selectedIndex ? ' is-sel' : '') + (o.disabled ? ' is-group' : '');
+      /**
+       * 选项可以在原生 select 上挂 data-kind，决定它在面板里长什么样：
+       *   group  —— 分节标题（字体清单的「中文 / 西文 / 等宽」）
+       *   note   —— 只读说明（如「新配置 · 尚未归档」）
+       *   action —— 底部动作（如「＋ 新建一份空白配置…」），自动和上面分出一条线
+       * 没挂就按老规矩：disabled 的当分节标题。
+       *
+       * 早先「和上面的选项分开」是靠往列表里塞一个内容为 ────── 的假选项，
+       * 那行虚线在一堆配置名里非常突兀；现在交给样式画线（见 app.css 的 is-action）。
+       */
+      const kind = o.dataset.kind || (o.disabled ? 'group' : '');
+      item.className = 'csel-opt' + (i === sel.selectedIndex ? ' is-sel' : '') + (kind ? ' is-' + kind : '');
       item.setAttribute('role', 'option');
       item.setAttribute('aria-selected', i === sel.selectedIndex ? 'true' : 'false');
       item.dataset.index = String(i);

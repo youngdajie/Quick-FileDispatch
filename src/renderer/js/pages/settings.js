@@ -135,18 +135,27 @@ function fillProfilePick() {
   if (!sel) return;
   const list = state.archivedProfiles.slice().sort(sortProfiles);
   const cur = (state.cfg && state.cfg.activeProfileId) || '';
-  const opt = (v, t, dis) =>
-    '<option value="' + escapeHtml(v) + '"' + (dis ? ' disabled' : '') + '>' + escapeHtml(t) + '</option>';
+  /**
+   * kind 决定这条在自绘面板里的身份（见 cselect.js）：
+   *   note   = 只读说明；action = 底部动作（会自动画一条分隔线）；不传 = 普通选项。
+   * 分隔线由样式画，不再往列表里塞「──────」那种假选项。
+   */
+  const opt = (v, t, kind) =>
+    '<option value="' +
+    escapeHtml(v) +
+    '"' +
+    (kind ? ' data-kind="' + kind + '"' : '') +
+    (kind && kind !== 'action' ? ' disabled' : '') +
+    '>' +
+    escapeHtml(t) +
+    '</option>';
 
   let html = '';
-  // 正在编辑一份还没归档的草稿：单独占一个只读项，免得下拉显示成
+  // 正在编辑一份还没归档的草稿：单独占一条只读说明，免得下拉显示成
   // 「已经选中了别的配置」、和下面表单里填的内容对不上。
-  if (state.isDraft) {
-    html += opt('__draft__', '（新配置 · 尚未归档）', true);
-    if (list.length) html += opt('__sep__', '──────────────', true);
-  }
+  if (state.isDraft) html += opt('__draft__', '新配置 · 尚未归档', 'note');
   if (!list.length) {
-    if (!state.isDraft) html += opt('', '还没有归档配置', true);
+    if (!state.isDraft) html += opt('', '还没有归档配置', 'note');
   } else {
     html += list
       .map((p) =>
@@ -158,9 +167,8 @@ function fillProfilePick() {
         )
       )
       .join('');
-    html += opt('__sep__', '──────────────', true);
   }
-  html += opt('__new__', '＋ 新建一份空白配置…');
+  html += opt('__new__', '＋ 新建一份空白配置…', 'action');
   sel.innerHTML = html;
   sel.value = state.isDraft ? '__draft__' : list.some((p) => p.id === cur) ? cur : list.length ? list[0].id : '__new__';
 }
@@ -706,7 +714,9 @@ function ensureFontOptions(cur) {
     let html =
       '<option value="">系统默认（' + escapeHtml(PRIMARY_FONT_NAME) + ' → 微软雅黑 / Segoe UI）</option>';
     installedFontGroups().forEach((g) => {
-      html += '<option value="" disabled>— ' + escapeHtml(g.group) + ' —</option>';
+      // 分节标题（中文 / 西文 / 等宽 …）：不再是「— 中文 —」那种括号包起来的样子，
+      // 交给样式的 is-group 画上一条细线 + 小号字，看着更像一个分区
+      html += '<option value="" disabled data-kind="group">' + escapeHtml(g.group) + '</option>';
       html += g.fonts
         .map((f) => '<option value="' + escapeHtml(f) + '">' + escapeHtml(f) + '</option>')
         .join('');

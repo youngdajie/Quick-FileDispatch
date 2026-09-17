@@ -392,34 +392,52 @@ select.csel-native {
 .csel.is-disabled { opacity: 0.5; }
 .csel-panel {
   position: fixed; z-index: 9995;
-  padding: 5px; border-radius: 10px;
+  padding: 6px; border-radius: 12px;
   background: var(--panel-2); border: 1px solid var(--border);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
-  max-height: 300px; overflow-y: auto;
+  /* 两层阴影：近处一层压出轮廓，远处一层把它从页面上「抬」起来 */
+  box-shadow: inset 0 1px 0 var(--inner), 0 2px 6px rgba(0, 0, 0, 0.28), 0 18px 40px -14px rgba(0, 0, 0, 0.62);
+  max-height: 300px; overflow-y: auto; overscroll-behavior: contain;
   animation: cselIn 0.16s var(--ease) both;
 }
 @keyframes cselIn { from { opacity: 0; transform: translateY(-5px) scale(0.985); } to { opacity: 1; transform: none; } }
 .csel-opt {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 7px 9px; border: 0; border-radius: 7px;
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 8px;
   background: transparent; color: var(--text-dim); font: inherit; font-size: 12.5px;
   text-align: left; cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 .csel-opt:hover, .csel-opt:focus-visible { background: var(--accent-soft); color: var(--text); outline: none; }
-.csel-opt.is-sel { color: var(--accent-hi); font-weight: 600; }
+.csel-opt.is-sel { color: var(--accent-hi); font-weight: 600; background: var(--accent-soft); }
 .csel-opt-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .csel-opt-check { flex: 0 0 auto; display: grid; place-items: center; opacity: 0; color: var(--accent); }
 .csel-opt.is-sel .csel-opt-check { opacity: 1; }
 .csel-opt[disabled] { opacity: 0.4; cursor: default; }
-/* 分组标题（如字体清单里的「中文 / 西文 / 等宽」）：不可点，只当分节线使 */
+/* 分节标题（如字体清单里的「中文 / 西文 / 等宽」）：不可点，一条细线把它和上一节分开 */
 .csel-opt.is-group {
-  opacity: 1; cursor: default; padding: 9px 9px 4px;
-  font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase;
+  opacity: 1; cursor: default; padding: 10px 10px 4px;
+  font-size: 10.5px; letter-spacing: 0.8px; text-transform: uppercase;
   color: var(--muted); border-top: 1px solid var(--hair);
 }
 .csel-opt.is-group:hover { background: transparent; color: var(--muted); }
 .csel-opt.is-group:first-of-type { border-top: 0; }
+/* 只读说明（如「新配置 · 尚未归档」）：是条状态，不是一个能选的项 */
+.csel-opt.is-note {
+  opacity: 1; cursor: default; color: var(--muted); font-size: 12px;
+}
+.csel-opt.is-note:hover, .csel-opt.is-note:focus-visible { background: transparent; color: var(--muted); }
+.csel-opt.is-note .csel-opt-check { display: none; }
+/**
+ * 底部动作行（如「＋ 新建一份空白配置…」）。
+ * 分隔线由这里画，而不是往列表里插一行 ────── 的假选项 ——
+ * 那种假选项在一串配置名里非常突兀，还占一次键盘上下键。
+ */
+.csel-opt.is-action {
+  margin-top: 5px; padding-top: 9px; border-top: 1px solid var(--hair);
+  border-radius: 0 0 8px 8px; color: var(--accent-hi); font-weight: 600;
+}
+.csel-opt.is-action:hover, .csel-opt.is-action:focus-visible { background: var(--accent-soft); color: var(--accent-hi); }
+.csel-opt.is-action .csel-opt-check { display: none; }
 
 /* 长清单的筛选框：吸顶，列表滚下去它还在 */
 .csel-filter {

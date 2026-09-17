@@ -1164,6 +1164,34 @@ function runSelfTest() {
             if (pickOpts.some((o) => draftIds.indexOf(o.value) >= 0)) {
               failed.push('归档配置下拉里混进了草稿（没填仓库的空落点）');
             }
+            // 分隔线由样式画（.csel-opt.is-action），不再往列表里塞 ────── 假选项：
+            // 那种假选项既丑、又多占一次键盘上下键
+            const texts = Array.from(pick.options).map((o) => o.textContent);
+            if (texts.some((t) => /─{3,}|—{3,}/.test(t))) {
+              failed.push('归档配置下拉里还有「──────」式的假分隔项');
+            }
+            const newOpt = Array.from(pick.options).find((o) => o.value === '__new__');
+            if (!newOpt) failed.push('归档配置下拉里没有「新建」入口');
+            else if (newOpt.dataset.kind !== 'action') {
+              failed.push('「新建」入口没有标成 action（样式画不出那条分隔线）：' + newOpt.dataset.kind);
+            }
+            // 面板里也得真的落成 is-action（分组/说明/动作三种身份各归各位）
+            {
+              const btn = pick.closest('.csel') && pick.closest('.csel').querySelector('.csel-btn');
+              if (btn) {
+                btn.click();
+                await sleep(220);
+                const panel = document.querySelector('.csel-panel');
+                const act = panel && panel.querySelector('.csel-opt.is-action');
+                const note = panel && panel.querySelector('.csel-opt.is-note');
+                log.push({ step: 'pick-panel', action: !!act, note: !!note, opts: panel ? panel.querySelectorAll('.csel-opt').length : 0 });
+                if (!act) failed.push('下拉面板里没把「新建」渲染成底部动作行');
+                if (act && (act.textContent || '').indexOf('新建') < 0) failed.push('底部动作行不是「新建」那条：' + act.textContent);
+                document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                await sleep(150);
+                if (document.querySelector('.csel-panel')) failed.push('点面板外面没有收起归档配置下拉');
+              }
+            }
           }
 
           // —— 10. 平台图层：切平台时块上要挂滑动动画类，且左边色条跟着换
@@ -1681,6 +1709,24 @@ function runSelfTest() {
         const imgProf = await wc.capturePage();
         fs.writeFileSync(path.join(dir, 'settings-profiles.png'), imgProf.toPNG());
         console.log('SHOT settings-profiles -> ' + madeTmp);
+
+        // 归档配置下拉展开的样子：看「新建」那条是不是被一条细线分出来的，
+        // 而不是靠往列表里塞一行 ──────（那种假分隔线在配置名里很突兀）
+        // 先把触发按钮滚进视野 —— 面板是 fixed 定位、按按钮位置摆放，
+        // 按钮在视口外时面板会跟着画到屏幕外，截出来什么都没有
+        await wc.executeJavaScript(
+          `document.getElementById('profilePick').scrollIntoView({ block: 'center' });`
+        );
+        await new Promise((r) => setTimeout(r, 600));
+        await wc.executeJavaScript(
+          `document.querySelector('#profilePick').closest('.csel').querySelector('.csel-btn').click();`
+        );
+        await new Promise((r) => setTimeout(r, 800));
+        const imgPick = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-profile-pick.png'), imgPick.toPNG());
+        console.log('SHOT settings-profile-pick');
+        await wc.executeJavaScript(`document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));`);
+        await new Promise((r) => setTimeout(r, 400));
 
         // 数字步进器：聚焦数字框，让自绘的上下按钮淡入。
         // 宽/高默认都是 0（= 不限制），上/下按钮会双双贴到 min 变成禁用态，
