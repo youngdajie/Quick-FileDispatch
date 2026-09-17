@@ -38,7 +38,7 @@ C_MUTED = (107, 124, 147)
 C_LINE = (27, 41, 64)
 
 PRODUCT = "快捷文件分发服务@JIE"
-TAGLINE = "GitHub / Gitee 仓库当文件仓库用"
+TAGLINE = "GitHub / CNB 仓库当文件仓库用"
 SUB = "本地多核压缩 · 云端文件管理"
 
 
@@ -144,7 +144,7 @@ def build_sidebar():
 
     # 分隔线 + 三行要点
     d.line([(17 * SS, 152 * SS), (147 * SS, 152 * SS)], fill=C_LINE, width=max(1, SS // 2))
-    items = ["本地多核压缩", "云端 · 本地双向同步", "GitHub / Gitee 双平台"]
+    items = ["本地多核压缩", "云端 · 本地双向同步", "GitHub / CNB 双平台"]
     yy = 165 * SS
     for it in items:
         d.ellipse([17 * SS, yy + 4 * SS, 21 * SS, yy + 8 * SS], fill=C_ACCENT)
