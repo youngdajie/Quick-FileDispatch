@@ -1,51 +1,25 @@
 # 快捷文件分发服务 `@JIE`
 
 <!--
-  品牌里的 @JIE 一律用反引号包住，别裸写。
-  GitHub 会把裸写的 @JIE 当成对某位同名用户的「提及」：
-  仓库页/发布页会多出一个指向他的链接，发布说明里还会把他列进「贡献者」。
-  本项目的品牌 @ 后面就是 JIE 三个字母，不是 GitHub 用户名。
+  品牌里的 @JIE 一律用反引号包住，别裸写：
+  平台会把裸写的 @JIE 当成对某位同名用户的「提及」，仓库页和发布页会多出一个指向他的链接。
+  本项目的 @ 后面就是 JIE 三个字母，不是用户名。
 -->
 
 > 把免费的代码托管仓库当**文件仓库**用：图片在本地用多核 CPU 压缩好再推上去，其他文件原样上传，仓库装得下的东西都能从这里分发。
 
-一个基于 **Electron** 的 Windows 桌面应用，支持 **GitHub** 与 **CNB**（cnb.cool）两个平台。灵感来自 [PicX](https://github.com/XPoet/picx)（作者 XPoet），但换了个思路——把同一件事搬到本地，用原生性能重做一遍，并顺手补上「不只是图片」这件事。
+基于 **Electron** 的 Windows 桌面应用，同时支持 **GitHub** 与 **CNB**（cnb.cool）。灵感来自 [PicX](https://github.com/XPoet/picx)，但把这件事搬到本地用原生性能重做了一遍，并且不限于图片。
 
----
+## 亮点
 
-## 为什么会有它
+- **本机多核压缩** —— Web Worker 线程池 + OffscreenCanvas，线程数 = CPU 核心数；支持 PNG / JPEG / WebP / AVIF（默认），可调质量、尺寸、目标体积逼近、文本水印
+- **不只是图片** —— 仓库装得下什么就管什么：上传、复制链接、重命名、移动、替换、删除
+- **云端与本地是同一份** —— 仓库拉到本地，管理页直接读磁盘；改完点「提交并推送」，自动比对两边提交差异并提示该拉还是该推
+- **双平台** —— GitHub（REST v3 + Git Data API）与 CNB（Open API + Git 提交）；Token 用 Windows DPAPI 系统级加密落盘
+- **多份归档配置** —— 「仓库 + 本地目录 + 链接规则」存成一份配置，随时切换、导出、导入（连 Token 和链接设置一起带走）
+- **界面** —— 深色 / 浅色主题一键换肤；下拉、取色盘、数字步进器全部自绘，不出现系统原生控件；字体枚举本机真实安装的全部字体，带关键字筛选；无边框窗口，自绘标题栏
 
-PicX 的思路很好（用 GitHub 仓库当图床），但已经停止维护，而且只能传图片。这个项目想要的是：
-
-- **本机算力压缩**——几十张图并行处理，点一下就好，不再是网页版一张张排队等；
-- **不限于图片**——仓库装得下什么，它就能管理什么；
-- **云端和本地是同一份东西**——仓库拉到本地，管理界面直接读磁盘，翻起来是瞬时的，两边都能改、都能同步。
-
-## 核心功能
-
-| 能力 | 说明 |
-| --- | --- |
-| 📦 多平台分发 | GitHub（REST v3 + Git Data API）与 CNB（Open API + Git 提交）双平台，Token 用 Windows DPAPI 系统级加密保存 |
-| 🖼️ 本地多核压缩 | Web Worker 线程池 + OffscreenCanvas，线程数 = CPU 核心数，支持质量 / 尺寸 / 格式转换 / 目标体积逼近 |
-| 🎨 图片格式 | PNG / JPEG / **WebP** / **AVIF**（内置 WASM 编码器，AVIF 为默认格式） |
-| 💧 水印 | 文本水印，可调位置、透明度、字号、颜色（自绘取色盘：色相条 + 明暗方块 + 常用色） |
-| 🔗 链接规则 | 直链 / Markdown / HTML / BBCode 多种格式，支持自定义域名与 CDN 代理加速预览 |
-| 🗂️ 文件管理 | 目录浏览 + 列表视图，多级目录，本地 / 云端双源切换 |
-| ✏️ 文件操作 | 上传、复制链接、重命名、移动、替换内容、删除，本地改完一键「提交并推送」 |
-| 🧭 多配置归档 | 可保存多份「仓库 + 本地目录」绑定配置，随时切换、导出、导入；切平台 / 新建开出来的**空白落点**只是草稿，不会冒充成一份配置出现在列表里 |
-| 💾 配置导出 / 导入 | 归档配置导出为 JSON，**连 Token 与全部链接设置一起带走**（不写本地目录，那台机器上多半不存在）；导入后自动体检，并引导为本机重新绑定本地目录 |
-| 🛰️ 云端检测器 | 文件管理页自动比对本地与云端的提交：云端新→一键拉取，云端旧→提示并推送本地，两边分叉会提示先对齐 |
-| 🧩 平台图层 | GitHub / CNB 是两张左右滑动的图层，框左边竖条用该平台主题色，一眼看出正在编辑谁 |
-| 🌗 明暗主题 | 深色 / 浅色两套配色，整站变量级换肤，一键切换 |
-| 🔤 界面字体 | **枚举本机真实安装的全部字体**（一百多款，含你自己装的霞鹜文楷等第三方字体），下拉可输关键字筛选、右侧实时预览；霞鹜文楷是程序主字体，没装则自动落到微软雅黑 UI |
-| 📂 目标目录选择器 | 上传页可「浏览云端…」逐层浏览仓库现有目录并选中，不必手打路径 |
-| 🖼️ 压缩不预置尺寸 | 最大宽 / 高默认 **0 = 不限制**，不动用户图片的原始尺寸，需要缩图时自己填 |
-| 🎛️ 自绘控件 | 下拉菜单 / 取色盘 / 数字步进器 / 颜色色块全部自绘，深色与浅色主题下都不出现系统原生控件 |
-| 🪟 无边框窗口 | 去掉系统标题栏，自绘窗口按钮，整窗 UI 统一 |
-
-## 界面截图
-
-四个页面：上传 / 文件管理 / 设置 / 关于。
+## 截图
 
 <p>
   <img src="docs/screenshots/upload.png" alt="上传" width="49.5%" />
@@ -53,214 +27,66 @@ PicX 的思路很好（用 GitHub 仓库当图床），但已经停止维护，�
 </p>
 <p>
   <img src="docs/screenshots/settings.png" alt="设置" width="49.5%" />
-  <img src="docs/screenshots/about.png" alt="关于" width="49.5%" />
+  <img src="docs/screenshots/onboard.png" alt="新手指引" width="49.5%" />
 </p>
 
-- **上传**：拖拽或 <kbd>Ctrl</kbd>+<kbd>V</kbd> 进队列，本地多核压缩后推送
-- **文件管理**：本地 / 云端双源浏览，列表视图 + 按类型着色的文件图标
-- **设置**：仓库大模块（仓库信息 + 本地目录 + 文件链接）、归档配置切换 / 导出 / 导入、提交信息、外观（主题 + 字体）、压缩与水印
-- **关于**：技术栈、免费额度边界、快捷键
+浅色主题、平台图层、自绘取色盘与字体筛选等更多截图见 [`docs/screenshots/`](docs/screenshots/)。
 
-### 白天主题与外观设置
+## 下载安装
 
-<p>
-  <img src="docs/screenshots/settings-light.png" alt="浅色主题的设置页" width="49.5%" />
-  <img src="docs/screenshots/settings-appearance.png" alt="外观：主题与字体" width="49.5%" />
-</p>
+到 [Releases](https://cnb.cool/youngdajie/Quick-FileDispatch/-/releases) 下载最新的 `QuickFileDispatch-Setup-x.x.x.exe`，双击安装即可。
 
-深色适合夜里用，白天则会显得发闷，所以整套颜色都提到了 CSS 变量上，浅色主题只覆盖变量。
+- 系统要求：Windows 10 / 11（x64）
+- 建议装好 [Git](https://git-scm.com/)（用于本地仓库同步；没装也能浏览云端，只是慢一些）
+- 首次启动进入新手指引：选平台 → 填仓库与令牌（现场验证）→ 映射本地目录。右上角的 **❌** 可随时退出，之后能在设置页重新打开
 
-### 平台图层与上传目标目录
+> 安装包文件名固定为 ASCII 的 `QuickFileDispatch-Setup-x.x.x.exe`，装好后的快捷方式、开始菜单项、程序本体与卸载器都叫 **快捷文件分发服务`@JIE`**。
 
-<p>
-  <img src="docs/screenshots/settings-repo-module.png" alt="仓库大模块" width="49.5%" />
-  <img src="docs/screenshots/upload-dir-picker.png" alt="云端目录选择器" width="49.5%" />
-</p>
-
-左边：GitHub / CNB 是两张左右滑动的图层，框左边那条竖条就是该平台的主题色，右上角的「归档配置」下拉可以随时切换、导出、导入。右边：上传前点「浏览云端…」逐层选目录，不用记路径。
-
-### 自绘控件（取色盘 / 下拉筛选）
-
-<p>
-  <img src="docs/screenshots/settings-colorpicker.png" alt="自绘取色盘" width="49.5%" />
-  <img src="docs/screenshots/settings-font-filter.png" alt="字体下拉筛选" width="49.5%" />
-</p>
-
-原生 `input[type=color]`、`select`、`input[type=number]` 的弹出层由操作系统绘制，在深色界面里很刺眼，也完全不受样式控制。这些控件都换成了自绘版本 —— 取色盘是「色相条 + 明暗饱和度方块 + 常用色」，本机字体一百多款则给了筛选框，输关键字直接跳。
-
-### 新手指引
-
-<p>
-  <img src="docs/screenshots/onboard.png" alt="新手指引第一步：选择平台" width="72%" />
-</p>
-
-首次启动走四步：选平台 → 填仓库与令牌（现场验证）→ 映射本地目录 → 完成。GitHub / CNB 用的是各自的官方品牌标志。右上角的 **❌** 可随时退出，不强制一趟走完（之后在「设置」页点「重看新手指引」还能再打开）。
-
-
-## 技术栈
-
-| 技术 | 用途 |
-| --- | --- |
-| Electron | 桌面外壳，打包 Chromium + Node.js |
-| Node.js | 主进程：文件系统、Git 调用、平台 API 通信 |
-| Web Worker | 压缩线程池，按 CPU 核心数并行 |
-| OffscreenCanvas | 用 Chromium 原生编解码器缩放与重编码，零原生依赖 |
-| Canvas 2D | 水印、缩放、颜色填充 |
-| Web Crypto | SHA-256 哈希化文件名 |
-| GitHub REST v3 / Git Data API | 仓库读取、批量上传（一次提交搞定整批） |
-| CNB Open API | 仓库读取走 `api.cnb.cool`；写入最后落到 Git 提交（公开接口没有建树/建提交的端点） |
-| Git CLI | 把仓库拉到本地，本地目录与云端始终对齐；CNB 的写入、以及双平台的提交比对都靠它 |
-| safeStorage | Token 用 Windows DPAPI 系统级加密落盘 |
-| 本地 127.0.0.1 服务 | 渲染层模块化 + 本地文件直出 + 私有仓库缩略图代取 |
-
-## 环境要求
-
-- **Windows 10 / 11（x64）**
-- 已安装 [Git](https://git-scm.com/)（用于本地仓库同步，缺失时仍可浏览云端，只是速度较慢）
-
-## 安装与运行
-
-### 直接使用（免编译）
-
-从 [Releases](../../releases) 下载最新的 `QuickFileDispatch-Setup-x.x.x.exe` 安装包，双击安装即可。
-
-> 安装向导用的就是 NSIS 的原始界面，没有换过头图 / 侧边图 —— 之前那两张位图只在安装
-> 那几分钟里出现，却要跟着每次改文案重新生成，不划算，索性去掉了。
->
-> 安装包文件名固定为 ASCII 的 `QuickFileDispatch-Setup-x.x.x.exe`。**必须用 ASCII**：
-> GitHub 会把资源名里的非 ASCII 字符折叠成一个 `.`（实测 `快捷文件分发服务@JIE...`
-> 会被存成 `@JIE...`），而本地 `npm run dist` 与 Release 上那份是同一个产物，就不再区分了。
->
-> 装好之后的快捷方式、开始菜单项、程序本体与卸载器都叫 **快捷文件分发服务`@JIE`**。
-
-> 首次启动会进入**新手指引**：选平台 → 填仓库名与 Token（现场验证）→ 映射本地目录，走完即可使用。
-
-### 从源码运行
+## 从源码运行
 
 ```bash
-# 1. 安装依赖
 npm install
-
-# 2. 开发模式启动（自动打开开发者工具）
-npm run dev
-
-# 3. 或直接启动
-npm start
+npm run dev       # 开发模式
+npm run dist      # 打包 NSIS 安装包到 dist/
 ```
 
-> 国内网络若遇 Electron 二进制下载缓慢，可设置镜像：
+> 国内网络若遇 Electron 二进制下载缓慢：
 > `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install`
-
-### 打包为安装包
-
-```bash
-npm run dist          # 生成 NSIS 安装包到 dist/
-npm run dist:dir      # 只生成免安装目录 dist/win-unpacked/
-```
-
-> 安装向导用的是 NSIS 原始界面：没有自定义头图 / 侧边图，所以
-> **不存在「改了版本号还要重新生成位图」这一步**，`npm run dist` 就是全部。
-
-## 使用说明
-
-1. **首次配置**：跟随新手指引，选择 GitHub 或 CNB，填写仓库名、分支（默认 `main`）与访问令牌。
-   - GitHub 需要 Personal Access Token，勾选 `repo` 权限；
-   - CNB 需要访问令牌；仓库不属于个人而属于**组织**，所以仓库标识填「组织名/仓库名」（例如 `youngdajie/cnb-files`），第一次用先去 cnb.cool 建一个组织。
-2. **上传**：拖文件进窗口，或 `Ctrl+V` 粘贴剪贴板截图；图片会先本地压缩，其他文件原样上传。
-   - 目标目录不用手打：点「浏览云端…」逐层浏览仓库里现有的目录，选中即可。
-3. **管理**：左侧「文件管理」页浏览文件，支持改名、移动、替换、删除；本地改完点「提交并推送」同步云端。
-4. **链接**：选中文件复制对应格式的链接；预览走直链，可配置 CDN 代理加速。
-5. **多仓库 / 多平台**：设置页的「仓库设置」是一份完整配置（仓库信息 + 本地目录 + 文件链接）。填上仓库名它就存下来了，列表里标着「待验证」；点「验证并归档」会真的连一次、确认可用后标成「可用」。切平台或点「新建」开出来的**空白**配置只是内部落点，不会出现在列表里。右上角的下拉随时切换；「导出 / 导入」可以把这些配置带到别的机器，导入时会逐份体检并告诉你哪一块需要修。
-6. **外观**：设置页最下方的「外观」里切换深色 / 浅色主题，也可以换界面字体 —— 列的是**本机真实装了的**全部字体（一百多款，自己装的也在内），带关键字筛选；默认主字体是霞鹜文楷，没装则自动用微软雅黑。只改界面显示，不影响压缩与上传结果。
 
 ## 免费额度边界
 
-程序本身不设限，但仓库是第三方服务，越界会推不上去：
+程序本身不设限，越界的是仓库：
 
-| 项目 | GitHub 免费账号 | CNB 社区版（cnb.cool） |
+| | GitHub 免费账号 | CNB 社区版 |
 | --- | --- | --- |
 | 仓库数量 | 不限（公开 / 私有随意） | 公开不限，私有 5 个 |
-| 单仓库容量 | 建议 ≤ 1 GB（超出会收到提醒） | 仓库存储（Git 对象）免费额度 100 GiB |
+| 单仓库容量 | 建议 ≤ 1 GB | Git 对象 100 GiB |
 | 单文件上限 | 100 MB | 200 MB |
-| 账号总容量 | 无硬性总容量，按仓库分别计算 | 仓库存储 100 GiB + 对象存储 100 GiB |
-| 单文件建议 | ≤ 25 MB 最稳 | ≤ 50 MB 体验最稳 |
-| 国内直连 | raw 时好时坏，可配 jsDelivr 等 CDN | 国内直连快，可再套 JSDMirror 加速 |
+| 国内直连 | raw 时好时坏，可套 jsDelivr | 快，可再套 JSDMirror |
 
-> CNB 的仓库不是挂在个人名下，而是挂在**组织**下，所以仓库标识要写成「组织名/仓库名」
-> （例如 `youngdajie/cnb-files`）。第一次用先去 cnb.cool 建一个组织。
+> CNB 的仓库挂在**组织**下而不是个人名下，所以仓库标识要写成「组织名/仓库名」（例如 `youngdajie/cnb-files`），第一次用先去 cnb.cool 建一个组织。
 
-## 项目结构
+## 测试
 
-```
-src/
-├── main/                  # 主进程
-│   ├── main.js            # 窗口、IPC、自检设施
-│   ├── platform.js        # GitHub / CNB 统一读客户端
-│   ├── cnb.js             # CNB 写入通道（公开接口没有建提交端点，走 Git 提交）
-│   ├── git.js             # 本地仓库同步、提交比对（git CLI）
-│   ├── store.js           # 配置存储（含多配置归档 + Token 加密）
-│   ├── fonts.js           # 枚举本机已装字体（扫字体目录 + 解析 name 表取家族名）
-│   ├── server.js          # 本地 127.0.0.1 静态服务
-│   ├── local.js           # 本地文件操作
-│   └── preload.js         # contextBridge 暴露的 IPC 接口
-├── renderer/              # 渲染层
-│   ├── index.html         # 单页骨架（上传 / 管理 / 设置 / 关于）
-│   ├── css/app.css        # 全站样式（深色 / 浅色两套主题，变量级换肤）
-│   ├── js/app.js          # 路由 + 顶栏 + 窗口控制
-│   ├── js/pages/          # 四个页面逻辑
-│   ├── js/lib/            # 压缩引擎、链接规则、状态管理、外观（主题 / 字体）、UI 组件等
-│   ├── assets/            # Logo
-│   └── vendor/avif/       # AVIF WASM 编码器（Apache-2.0）
-└── build/                 # 图标与生成脚本
-```
-
-## 自检与测试
-
-项目内置一套无头自检设施，无需人工点按即可回归主要链路：
+内置无头自检，不用手点也能回归主要链路：
 
 ```bash
-# 完整自检（探针 + 界面交互 + 文件系统 + 截图）
-electron . --selftest --uitest --fstest --shots
-
-# 单独跑某一部分
-electron . --selftest     # 渲染层探针
-electron . --uitest       # 设置页交互断言
-electron . --fstest       # 文件系统增删改查
-electron . --shots        # 生成界面截图
+electron . --selftest --uitest --fstest --shots   # 探针 + 界面交互 + 文件系统 + 截图
+electron . --selftest                             # 也可只跑其中一项
 ```
 
-自检会用到 `.demo/` 目录下的 mock API 与假仓库，可用 `--profile=<dir>` 指定独立配置目录避免污染真实配置。
-
-此外还有一组**离线单测**（纯 Node，不联网、不碰真实账号），覆盖协议层与写入通道：
-
-```bash
-node .demo/test-store.js        # 配置导出/导入、v6→v7 迁移、草稿配置归档规则
-node .demo/test-links.js        # 双平台直链生成、额度表
-node .demo/test-fonts.js        # 本机字体枚举（家族名解析、TTC 集合、去重与缓存）
-node .demo/test-cnb.js          # CNB 读客户端（对接假 API）
-node .demo/test-cnb-write.js    # CNB 写入通道（裸仓库冒充云端，6 个场景）
-node .demo/test-detect.js       # 云端检测器的 Git 原语（same / behind / diverged / push）
-```
-
-> 界面字体的下拉以前只认一份写死的候选表，用户装了霞鹜文楷也不出现 —— 因为程序从没
-> 问过系统。现在改成扫 `C:\Windows\Fonts` 与 `%LOCALAPPDATA%\Microsoft\Windows\Fonts`，
-> 再解析每个字体文件 `name` 表里的家族名（nameID 1/16），装着什么就列什么。
-> 之所以不查注册表：那里存的是全名（`LXGW WenKai Regular`），拿去写 CSS `font-family`
-> 是不对的，而且中英文名是混着的。
-
-> CNB 的公开接口没有「创建提交」的端点，写入一律走 Git；这两个 CNB 单测就是用来
-> 在离线环境里把「本地目录复用 / 临时克隆兜底 / 不误推别人的仓库」这些分支跑一遍的。
+`.demo/` 下另有一组离线单测（纯 Node，不联网、不碰真实账号），覆盖配置存储、链接规则、字体枚举、CNB 读写通道与云端检测器的 Git 原语。
 
 ## 致敬
 
-如果没有 **PicX**，大概不会有这个程序。PicX（[github.com/XPoet/picx](https://github.com/XPoet/picx)，作者 XPoet）最早把「用 GitHub 仓库当图床」这件事做得足够简单、完整，它对配置项的拆解、对链接规则的整理、对多级目录和批量操作的设计，都是本项目直接借鉴的对象。PicX 的 AGPL-3.0 授权与其作者，都值得被明确地写在这里。
+如果没有 **PicX**（[github.com/XPoet/picx](https://github.com/XPoet/picx)，作者 XPoet），大概不会有这个程序。它对配置项的拆解、链接规则的整理、多级目录与批量操作的设计，都是本项目直接借鉴的对象。PicX 的 AGPL-3.0 授权与其作者，都值得被明确地写在这里。
 
 ## License
 
 本项目采用 [MIT License](LICENSE)。
 
-其中 `src/renderer/vendor/avif/` 下的 AVIF 编码器来自 [jsquash/avif](https://github.com/jamsinclair/jSquash)，遵循 [Apache-2.0](src/renderer/vendor/avif/LICENSE)。
+其中 `src/renderer/vendor/avif/` 下的 AVIF 编码器来自 [jSquash](https://github.com/jamsinclair/jSquash)，遵循 [Apache-2.0](src/renderer/vendor/avif/LICENSE)。
 
 ---
 
-作者：[@youngdajie](https://github.com/youngdajie) · [yangjie.site](https://www.yangjie.site)
+作者：[youngdajie](https://cnb.cool/youngdajie) · [yangjie.site](https://www.yangjie.site)
