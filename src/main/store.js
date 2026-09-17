@@ -104,6 +104,21 @@ const DEFAULT_CONFIG = {
 /** profile 上「属于某个仓库」的字段：切 profile 时整组一起换 */
 const PROFILE_FIELDS = ['platform', 'owner', 'repo', 'branch', 'apiBase', 'localDir'];
 
+/**
+ * 「草稿」= 还没有任何仓库信息、也从没验证过的空落点。
+ *
+ * 切平台、点「新建」都会开一个出来当落点，用户还没真正填过 ——
+ * 这种半成品不该冒充成一份「归档配置」显示出来。早先它会原样出现在列表里，
+ * 显示成「（未填写仓库）未绑定本地目录 · 待验证 · 无 Token」，看着像凭空多了一份。
+ *
+ * 它是**算出来的**、不落盘（见 get()）：只要填上仓库（owner + repo）或者验证通过，
+ * 它立刻就是一份正经配置，不需要谁去记得把某个标记清掉 ——
+ * 存标记的话，导入 / 迁移 / 手改配置都可能留下对不上的旧值。
+ */
+function isDraftProfile(p) {
+  return !p.verified && !(p.owner && p.repo);
+}
+
 function newProfileId() {
   return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
@@ -275,6 +290,8 @@ class Store {
       o.tokenMask = t ? maskToken(t) : '';
       o.isActive = p.id === this.data.activeProfileId;
       o.label = p.name || [p.owner, p.repo].filter(Boolean).join('/') || '未命名配置';
+      // 草稿是算出来的，不落盘 —— 渲染层只认这个字段决定要不要列出来
+      o.draft = isDraftProfile(p);
       delete o._tokenEnc;
       delete o._tokenPlain;
       return o;
@@ -382,6 +399,9 @@ class Store {
    * 新建一个空白配置并切换过去。
    * 注意：patch() 是「改当前生效的那个」，新建必须走这里——
    * 否则用户点「新建配置」会变成把现有配置覆盖掉。
+   *
+   * 它是空的、没验证过，所以在渲染层看来就是「草稿」，不会出现在归档列表里
+   * （见 isDraftProfile）；用户填上仓库、或点过「验证并归档」之后自然就露头了。
    */
   newProfile(patch) {
     const p = {
@@ -443,7 +463,7 @@ class Store {
     return this.get();
   }
 
-  /** 标记为已验证可用（= 归档完成） */
+  /** 标记为已验证可用（= 归档完成）。同时它就不再是草稿了（见 isDraftProfile） */
   verifyProfile(id, info) {
     const p = (this.data.profiles || []).find((x) => x.id === id);
     if (!p) throw new Error('配置不存在');
@@ -464,7 +484,8 @@ class Store {
     const wasActive = list[idx].id === this.data.activeProfileId;
     list.splice(idx, 1);
     if (!list.length) {
-      // 删光了就补一个空的，别让「切换平台 / 新建」没有落点
+      // 删光了就补一个空的，别让「切换平台 / 新建」没有落点。
+      // 它是空的、没验证过，所以在列表里也不会显示成一份配置（见 isDraftProfile）。
       list.push(profileFromTop(DEFAULT_CONFIG));
       this._mirrorFrom(list[0]);
     } else if (wasActive) {

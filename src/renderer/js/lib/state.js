@@ -91,6 +91,27 @@ class State {
     return (this.cfg && this.cfg.profiles) || [];
   }
 
+  /**
+   * 真正「归档过」的配置 —— 列表 / 下拉只认这一份。
+   *
+   * 草稿（draft）是切平台或点「新建」时开出来的空落点：没有仓库信息、
+   * 也从没验证过。用户还没真正填过它，不该冒充成一份配置显示出来。
+   * 它依然存在于 profiles 里，好让「切到某平台」有地方可落、来回切换也不会越攒越多。
+   *
+   * 规则由主进程算（store.js 的 isDraftProfile）：填上仓库、或验证通过，
+   * 就不再是草稿 —— 所以这里只读 p.draft，不自己判断，免得两边规则漂移。
+   */
+  get archivedProfiles() {
+    return this.profiles.filter((p) => !p.draft);
+  }
+
+  /** 当前生效的那份是不是「还没保存的草稿」 */
+  get isDraft() {
+    const id = (this.cfg && this.cfg.activeProfileId) || '';
+    const p = this.profiles.find((x) => x.id === id);
+    return !!(p && p.draft);
+  }
+
   on(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);

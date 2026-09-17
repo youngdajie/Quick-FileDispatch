@@ -2,7 +2,14 @@
 
 import { $, $$, ok, err, warn, confirmDialog, modal, escapeHtml, debounce } from '../lib/dom.js';
 import state from '../lib/state.js';
-import { applyTheme, applyFont, stackFor, installedFontGroups, installFontCount } from '../lib/appearance.js';
+import {
+  applyTheme,
+  applyFont,
+  stackFor,
+  installedFontGroups,
+  installFontCount,
+  PRIMARY_FONT_NAME
+} from '../lib/appearance.js';
 import { brandIcon } from '../lib/brandicons.js';
 import { openColorPicker, closeColorPicker, normalizeHex } from '../lib/colorpicker.js';
 
@@ -96,7 +103,8 @@ function sortProfiles(a, b) {
  * 不参与每次按键的刷新，免得正在填表时列表跳动。
  */
 function renderProfiles() {
-  const list = state.profiles.slice().sort(sortProfiles);
+  // 只列「归档过」的：draft（切平台/新建开出来的空落点）不进列表
+  const list = state.archivedProfiles.slice().sort(sortProfiles);
   const box = $('#profileList');
   const empty = $('#profileEmpty');
   const count = $('#profCount');
@@ -121,18 +129,24 @@ function renderProfiles() {
   fillProfilePick();
 }
 
-/** 仓库标题右边的「归档配置」下拉：列出全部配置 + 新建入口 */
+/** 仓库标题右边的「归档配置」下拉：列出已归档的配置 + 新建入口 */
 function fillProfilePick() {
   const sel = $('#profilePick');
   if (!sel) return;
-  const list = state.profiles.slice().sort(sortProfiles);
+  const list = state.archivedProfiles.slice().sort(sortProfiles);
   const cur = (state.cfg && state.cfg.activeProfileId) || '';
   const opt = (v, t, dis) =>
     '<option value="' + escapeHtml(v) + '"' + (dis ? ' disabled' : '') + '>' + escapeHtml(t) + '</option>';
 
   let html = '';
+  // 正在编辑一份还没归档的草稿：单独占一个只读项，免得下拉显示成
+  // 「已经选中了别的配置」、和下面表单里填的内容对不上。
+  if (state.isDraft) {
+    html += opt('__draft__', '（新配置 · 尚未归档）', true);
+    if (list.length) html += opt('__sep__', '──────────────', true);
+  }
   if (!list.length) {
-    html += opt('', '还没有归档配置', true);
+    if (!state.isDraft) html += opt('', '还没有归档配置', true);
   } else {
     html += list
       .map((p) =>
@@ -148,14 +162,14 @@ function fillProfilePick() {
   }
   html += opt('__new__', '＋ 新建一份空白配置…');
   sel.innerHTML = html;
-  sel.value = list.some((p) => p.id === cur) ? cur : list.length ? list[0].id : '__new__';
+  sel.value = state.isDraft ? '__draft__' : list.some((p) => p.id === cur) ? cur : list.length ? list[0].id : '__new__';
 }
 
 /** 新建一份空白配置（远端仓库 + 本地目录都清空，避免覆盖现有配置） */
 async function newProfile() {
   const platform = (state.cfg && state.cfg.platform) || 'github';
   await state.newProfile({ platform: platform });
-  ok('已新建一份空白配置，填好后点「验证并归档」');
+  ok('已新建一份空白配置 —— 填上仓库它就会出现在下面的列表里');
 }
 
 async function renameProfile(id) {
@@ -254,10 +268,20 @@ async function switchToProfile(id) {
     slideLock = false;
   }
   if (changed) playIn(back);
-  ok('已切换到「' + profileLabel(target) + '」');
+  ok(
+    target.draft
+      ? '已切到 ' + (PLATFORM_NAME[nextPlat] || '') + ' 的新配置 —— 填上仓库就会出现在下面的列表里'
+      : '已切换到「' + profileLabel(target) + '」'
+  );
 }
 
-/** 切到某个平台：已有配置就整份切过去，没有就开一份空白的当落点 */
+/**
+ * 切到某个平台：已有配置就整份切过去，没有就开一份空白的当落点。
+ *
+ * 这份空白是「草稿」（draft），不会出现在归档列表里 —— 以前它会直接列出来，
+ * 显示成「（未填写仓库）· 待验证 · 无 Token」，切几次就多出几条，像是凭空冒出来的。
+ * 用户把仓库名填上（= 明确保存了配置），它自然就从草稿变成一份正经配置。
+ */
 async function switchToPlatform(platform) {
   const curPlat = (state.cfg && state.cfg.platform) || 'github';
   if (platform === curPlat) {
@@ -283,7 +307,10 @@ async function switchToPlatform(platform) {
     slideLock = false;
   }
   playIn(back);
-  warn('还没有 ' + PLATFORM_NAME[platform] + ' 的配置，已开一份空白的，填好后点「验证并归档」');
+  warn(
+    '还没有 ' + PLATFORM_NAME[platform] + ' 的配置，已开一份空白的 —— 填上仓库它就会出现在列表里，' +
+      '再点「验证并归档」标成可用'
+  );
 }
 
 /* ---------------------------------------------------------------- 导出 / 导入 */
@@ -664,13 +691,20 @@ function applyFontPreview(font) {
   box.style.fontFamily = stackFor(font);
 }
 
-/** 字体清单只探测一次（要量几十款字体的宽度，别在每次自动保存时重跑） */
+/**
+ * 字体清单只构建一次。
+ *
+ * 清单本身由主进程扫本机字体目录得来（app.js 在画界面之前已经拉好并塞进
+ * appearance.js），所以这里列出来的就是「真装了的」——包括用户自己装的
+ * 霞鹜文楷之类，不再局限于程序内置的那张候选表。
+ */
 let fontsBuilt = false;
 function ensureFontOptions(cur) {
   const sel = $('#cfgFont');
   if (!sel) return;
   if (!fontsBuilt) {
-    let html = '<option value="">系统默认（微软雅黑 / Segoe UI）</option>';
+    let html =
+      '<option value="">系统默认（' + escapeHtml(PRIMARY_FONT_NAME) + ' → 微软雅黑 / Segoe UI）</option>';
     installedFontGroups().forEach((g) => {
       html += '<option value="" disabled>— ' + escapeHtml(g.group) + ' —</option>';
       html += g.fonts
@@ -680,7 +714,7 @@ function ensureFontOptions(cur) {
     sel.innerHTML = html;
     fontsBuilt = true;
     const cnt = $('#fontCount');
-    if (cnt) cnt.textContent = '本机检测到 ' + installFontCount() + ' 款';
+    if (cnt) cnt.textContent = '本机检测到 ' + installFontCount() + ' 款已安装字体，选一款即可整界面生效';
   }
   const f = String(cur || '').trim();
   const has = Array.from(sel.options).some((o) => o.value === f && !o.disabled);
@@ -706,7 +740,7 @@ async function setFont(font) {
   applyFont(f);
   applyFontPreview(f);
   await state.patch({ ui: { font: f } });
-  ok(f ? '界面字体已换成 ' + f : '界面字体已恢复系统默认');
+  ok(f ? '界面字体已换成 ' + f : '界面字体已恢复系统默认（' + PRIMARY_FONT_NAME + ' → 微软雅黑）');
 }
 
 /* ---------------------------------------------------------------- 填充 */
@@ -1013,7 +1047,7 @@ export default {
         fillProfilePick();
         return;
       }
-      if (!v) return;
+      if (!v || v === '__draft__') return;
       if (v === (state.cfg && state.cfg.activeProfileId)) return;
       await switchToProfile(v);
     });

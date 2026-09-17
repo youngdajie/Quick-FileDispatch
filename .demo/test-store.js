@@ -120,6 +120,68 @@ eq(s2.getRaw().profiles[0].apiBase, '', 'gitee 的 apiBase 被清掉（否则验
 eq(s2.getRaw().profiles[0].verified, false, '平台被换过的配置退回未验证');
 eq(s2.getRaw().profiles[0].userName, undefined, '清掉旧的 gitee 用户名缓存');
 
+console.log('—— 5. 草稿配置不该冒充「归档配置」 ——');
+// 切平台 / 点新建都会开一个空白落点。以前它会直接出现在归档列表里，
+// 显示成「（未填写仓库）未绑定本地目录 · 待验证 · 无 Token」，看着像凭空多了一份。
+// 规则：既没仓库信息、又没验证过 = 草稿（draft），渲染层不列它。
+const draftOf = (store, id) => {
+  const p = (store.get().profiles || []).find((x) => x.id === id);
+  return p ? p.draft : undefined;
+};
+
+s2.reset();
+eq(s2.get().profiles.length, 1, 'reset 后有兜底 profile');
+eq(s2.get().profiles[0].draft, true, '兜底 profile 是草稿（不会显示在归档列表里）');
+eq(Object.prototype.hasOwnProperty.call(s2.getRaw().profiles[0], 'draft'), false, '草稿是算出来的，不落盘');
+
+const listBefore = s2.get().profiles.length;
+s2.newProfile({ platform: 'cnb' });
+const npId = s2.get().activeProfileId;
+eq(s2.get().profiles.length, listBefore + 1, '新建配置确实多了一条（存档在后端）');
+eq(draftOf(s2, npId), true, '新建的空白配置是草稿');
+eq(s2.profileById(npId).draft, undefined, '裸数据里没有 draft 字段');
+
+// 一旦填上仓库 —— 也就是「明确保存了配置」—— 就该出现在列表里（标着待验证）
+s2.patch({ owner: 'cnb-user', repo: 'cnb-repo' });
+eq(draftOf(s2, npId), false, '填上仓库后不再是草稿（会出现在列表里，标「待验证」）');
+eq(s2.profileById(npId).verified, false, '但它还没验证');
+
+// 验证通过后是「已归档」，同样不是草稿
+s2.verifyProfile(npId, { userName: 'youngdajie', repo: { fullName: 'cnb-user/cnb-repo' } });
+eq(draftOf(s2, npId), false, '验证归档后依然不是草稿');
+eq(s2.profileById(npId).verified, true, '验证归档后 verified=true');
+
+// 只填用户名、没填仓库：还是缺仓库信息 → 仍旧算草稿
+s2.newProfile({ platform: 'github' });
+const halfId = s2.get().activeProfileId;
+s2.patch({ owner: 'only-owner', repo: '' });
+eq(draftOf(s2, halfId), true, '只填用户名没填仓库，仍算草稿（这种配置根本连不上）');
+
+// 删光之后补回来的兜底配置同样是草稿
+for (const x of s2.get().profiles.slice()) s2.deleteProfile(x.id);
+eq(s2.get().profiles.length, 1, '删光后补回一个兜底配置');
+eq(s2.get().profiles[0].draft, true, '兜底配置是草稿，列表里不会再冒出一份假配置');
+
+console.log('—— 6. 老配置里的空占位也算草稿 ——');
+fs.writeFileSync(
+  legacy,
+  JSON.stringify({
+    version: 7,
+    platform: 'github',
+    profiles: [
+      { id: 'pempty', platform: 'github', owner: '', repo: '', verified: false },
+      { id: 'pfilled', platform: 'github', owner: 'cloud', repo: 'bucket', verified: false },
+      { id: 'pfull', platform: 'github', owner: 'cloud', repo: 'bucket2', verified: true, verifiedAt: 1 }
+    ]
+  }),
+  'utf8'
+);
+const s3 = new Store();
+const rowOf = (id) => (s3.get().profiles || []).find((x) => x.id === id);
+eq(rowOf('pempty').draft, true, '历史遗留的空配置算草稿（老配置升级后同样不再露头）');
+eq(rowOf('pfilled').draft, false, '填了仓库但没验证的，照常列出来（标待验证）');
+eq(rowOf('pfull').draft, false, '已归档的配置不会被误判成草稿');
+
 console.log(failed ? '\n结果：' + failed + ' 项失败' : '\n结果：全部通过');
 try {
   fs.rmSync(tmpUserData, { recursive: true, force: true });
