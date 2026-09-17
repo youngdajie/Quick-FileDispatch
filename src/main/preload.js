@@ -37,7 +37,13 @@ contextBridge.exposeInMainWorld('cloudpic', {
     upload: (payload) => invoke('cloud:upload', payload),
     remove: (payload) => invoke('cloud:delete', payload),
     move: (payload) => invoke('cloud:move', payload),
-    replace: (payload) => invoke('cloud:replace', payload)
+    replace: (payload) => invoke('cloud:replace', payload),
+    /** 云端检测器：比对本地 HEAD 与云端 HEAD，判断谁新谁旧 */
+    detect: () => invoke('cloud:detect'),
+    /** 检测结论为「云端旧、本地新」时，把本地提交推上去 */
+    pushLocal: () => invoke('cloud:pushLocal'),
+    /** 检测结论为「云端新、本地旧」时，把云端拉下来 */
+    pullCloud: () => invoke('git:pull')
   },
   git: {
     version: () => invoke('git:version'),

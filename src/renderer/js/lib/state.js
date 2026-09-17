@@ -59,8 +59,9 @@ class State {
 
   /**
    * 导出 / 导入归档配置。
-   * 导出走主进程的系统保存框，导入读文件后由主进程合并，再把结果交回来。
-   * 导入不会带 Token（DPAPI 密文换台机器解不开），所以导入后的配置需要重新填 Token。
+   * 导出走主进程的系统保存框；导入读文件后由主进程合并，再把结果交回来。
+   * 导出的 JSON 里带上了 Token 和「文件链接」的全局配置，但不含本地路径 ——
+   * 换台电脑原路径多半不存在，由导入流程引导用户为本机重新绑定目录。
    */
   async exportProfiles() {
     return window.cloudpic.profile.exportFile();
@@ -118,7 +119,7 @@ class State {
   }
 
   get platformName() {
-    return (this.cfg && this.cfg.platform) === 'gitee' ? 'Gitee' : 'GitHub';
+    return (this.cfg && this.cfg.platform) === 'cnb' ? 'CNB' : 'GitHub';
   }
 }
 

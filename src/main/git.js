@@ -64,6 +64,12 @@ async function headSha(dir) {
   return r.ok ? r.stdout : '';
 }
 
+/** 完整 40 位 SHA —— 云端同步检测器用它和云端 HEAD 做严格比对 */
+async function headShaFull(dir) {
+  const r = await run(['rev-parse', 'HEAD'], dir);
+  return r.ok ? r.stdout : '';
+}
+
 async function status(dir) {
   const r = await run(['status', '--porcelain=v1', '-uall'], dir);
   if (!r.ok) return { dirty: false, changes: 0 };
@@ -71,16 +77,23 @@ async function status(dir) {
   return { dirty: lines.length > 0, changes: lines.length };
 }
 
+/**
+ * Git 远端主机。Gitee 已下线，现在只有 GitHub 与 CNB 两个平台。
+ * CNB 的 Git 地址是 cnb.cool/{组织}/{仓库}，认证用户名为固定值 cnb。
+ */
+function hostOf(platform) {
+  return platform === 'cnb' ? 'cnb.cool' : 'github.com';
+}
+
 function remoteDir(platform, owner, repo) {
-  const host = platform === 'gitee' ? 'gitee.com' : 'github.com';
-  return `https://${host}/${owner}/${repo}.git`;
+  return `https://${hostOf(platform)}/${owner}/${repo}.git`;
 }
 
 function authUrl(platform, owner, repo, token) {
-  const host = platform === 'gitee' ? 'gitee.com' : 'github.com';
-  const repoPath = `${host}/${owner}/${repo}.git`;
+  const repoPath = `${hostOf(platform)}/${owner}/${repo}.git`;
   if (!token) return `https://${repoPath}`;
-  if (platform === 'gitee') return `https://oauth2:${encodeURIComponent(token)}@${repoPath}`;
+  // CNB 官方要求：用户名固定填 cnb，密码填访问令牌
+  if (platform === 'cnb') return `https://cnb:${encodeURIComponent(token)}@${repoPath}`;
   return `https://x-access-token:${encodeURIComponent(token)}@${repoPath}`;
 }
 
@@ -103,7 +116,7 @@ async function clone({ platform, owner, repo, branch, token, dir }) {
 }
 
 /**
- * 提交身份 —— 应用往 GitHub / Gitee 推文件时用的署名。
+ * 提交身份 —— 应用往 GitHub / CNB 推文件时用的署名。
  *
  * 早先这里写死成「JIE Dispatch」，结果每次由应用发起的提交都会在仓库里
  * 留下一个署名 JIE 的作者，贡献者列表里也多出一个「JIE Dispatch」。
@@ -162,6 +175,55 @@ async function commitAndPush({ platform, owner, repo, branch, token, dir, messag
   return { ok: true, message: '已推送到云端' };
 }
 
+/**
+ * 把云端分支抓成本地的 FETCH_HEAD（不动工作区、不改 origin）。
+ * 云端同步检测器靠它拿到「云端最新提交」，再和本地 HEAD 比 ahead / behind。
+ */
+async function fetchRef({ platform, owner, repo, branch, token, dir }) {
+  if (!dir || !fs.existsSync(dir)) return { ok: false, message: '本地目录不存在' };
+  if (!(await isRepo(dir))) return { ok: false, message: '本地目录不是一个 Git 仓库' };
+  const url = authUrl(platform, owner, repo, token);
+  const f = await run(
+    ['-c', 'safe.directory=*', '-c', 'credential.helper=', 'fetch', '--depth', '50', url, branch],
+    dir,
+    300000
+  );
+  if (!f.ok) return { ok: false, message: cleanGitError(f) };
+  return { ok: true, message: '已获取云端最新提交' };
+}
+
+/**
+ * 比较本地 HEAD 与刚 fetch 下来的 FETCH_HEAD。
+ * 返回 { ahead, behind }：ahead = 本地领先几条提交，behind = 本地落后几条提交。
+ */
+async function compareRefs(dir) {
+  const r = await run(['rev-list', '--left-right', '--count', 'HEAD...FETCH_HEAD'], dir);
+  if (!r.ok) return null;
+  const parts = r.stdout.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  return { ahead: Number(parts[0]) || 0, behind: Number(parts[1]) || 0 };
+}
+
+/** FETCH_HEAD 指向的提交（= 云端那条），用于显示云端短 SHA */
+async function fetchHeadSha(dir) {
+  const r = await run(['rev-parse', '--short', 'FETCH_HEAD'], dir);
+  return r.ok ? r.stdout : '';
+}
+
+/** 把本地 HEAD 推到云端分支。不改写历史 —— 有人抢先提交时 push 会失败，由调用方提示 */
+async function pushHead({ platform, owner, repo, branch, token, dir }) {
+  if (!dir || !fs.existsSync(dir)) return { ok: false, message: '本地目录不存在' };
+  if (!(await isRepo(dir))) return { ok: false, message: '本地目录不是一个 Git 仓库' };
+  const url = authUrl(platform, owner, repo, token);
+  const p = await run(
+    ['-c', 'safe.directory=*', '-c', 'credential.helper=', 'push', url, `HEAD:${branch}`],
+    dir,
+    300000
+  );
+  if (!p.ok) return { ok: false, message: cleanGitError(p) };
+  return { ok: true, message: '已把本地提交推送到云端' };
+}
+
 function cleanGitError(r) {
   let msg = (r.stderr || r.stdout || r.error || '未知错误').toString();
   msg = msg.replace(/https:\/\/[^@\s]+@/g, 'https://***@');
@@ -183,4 +245,24 @@ async function repoSummary(dir) {
   };
 }
 
-module.exports = { run, version, isRepo, pull, clone, commitAndPush, status, repoSummary, remoteDir, authUrl, COMMIT_IDENTITY };
+module.exports = {
+  run,
+  version,
+  isRepo,
+  pull,
+  clone,
+  commitAndPush,
+  status,
+  repoSummary,
+  remoteDir,
+  authUrl,
+  hostOf,
+  headSha,
+  headShaFull,
+  fetchRef,
+  compareRefs,
+  fetchHeadSha,
+  pushHead,
+  configureIdentity,
+  COMMIT_IDENTITY
+};

@@ -258,6 +258,14 @@
             <div class="side-sep"></div>
             <div class="side-head">状态</div>
             <div class="side-git" id="mgGitState">—</div>
+            <div class="side-sep"></div>
+            <div class="side-head side-head-row">
+              <span>云端检测器</span>
+              <button type="button" class="side-mini" id="btnMgDetect" title="重新检测本地与云端的提交差异">检测</button>
+            </div>
+            <div class="side-git" id="mgCloudState">
+              <span class="txt">正在检测本地与云端…</span>
+            </div>
           </aside>
           <div class="mg-main">
             <div class="mg-listhead" id="mgListHead" hidden>
@@ -304,7 +312,7 @@
                   <span class="archive-pick-label">归档配置</span>
                   <select id="profilePick" class="mini-select" title="选择一份归档配置"></select>
                   <button class="btn btn-ghost btn-sm" id="btnProfNew" title="新建一份空白配置">＋ 新建</button>
-                  <button class="btn btn-ghost btn-sm" id="btnProfExport" title="把归档配置导出成 JSON 文件（不含 Token）">导出</button>
+                  <button class="btn btn-ghost btn-sm" id="btnProfExport" title="把归档配置导出成 JSON 文件（含 Token，不含本地路径）">导出</button>
                   <button class="btn btn-ghost btn-sm" id="btnProfImport" title="从 JSON 文件导入归档配置">导入</button>
                 </div>
               </div>
@@ -313,7 +321,7 @@
 
               <div class="seg seg-lg" id="cfgPlatform">
                 <button data-platform="github" class="active">GitHub</button>
-                <button data-platform="gitee">Gitee</button>
+                <button data-platform="cnb">CNB</button>
               </div>
 
               <!-- 平台图层：切平台时整块左右滑动，左边竖条是该平台的主题色 -->
@@ -611,7 +619,7 @@
         <div class="page-head">
           <div>
             <h1>关于</h1>
-            <p class="page-desc">一个跑在 Windows 本地的 GitHub / Gitee 图床与云端文件管理器</p>
+            <p class="page-desc">一个跑在 Windows 本地的 GitHub / CNB 图床与云端文件管理器</p>
           </div>
         </div>
         <div class="settings-wrap" id="aboutWrap"></div>

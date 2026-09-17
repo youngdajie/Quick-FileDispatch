@@ -2,12 +2,25 @@
 
 /**
  * 云端平台统一客户端
- * 支持 GitHub（REST v3 + Git Data API）与 Gitee（REST v5）
- * 对外暴露统一的 listDir / uploadBatch / deleteBatch / whoami / repoInfo
+ *
+ * - GitHub：REST v3 + Git Data API（多文件一次提交、改名天然原子）
+ * - CNB（cnb.cool）：官方 Open API，Bearer Token 鉴权
+ *
+ * ⚠️ CNB 的公开 Open API **没有** 创建 Tree / 创建 Commit / 更新 Ref 的接口
+ *    （`POST /{repo}/-/git/blobs` 的说明里写着「通常与创建 Tree/Commit 接口配合使用」，
+ *     但那两个接口并未开放）。孤立的 blob 没有 commit 落点，等于白造。
+ *    所以 CNB 的「写」（上传 / 删除 / 改名 / 替换）统一交给 git CLI 完成，
+ *    见 main/cnb.js；这里只负责「读」，以及 GitHub 的「读写」。
+ *
+ * 对外暴露统一的 listDir / uploadBatch / deleteBatch / whoami / repoInfo / headSha
  */
 
 const GITHUB_API = 'https://api.github.com';
-const GITEE_API = 'https://gitee.com/api/v5';
+const CNB_API = 'https://api.cnb.cool';
+/** CNB 的网页 / Git 地址（拿不到接口时拼接直链用） */
+const CNB_WEB = 'https://cnb.cool';
+/** CNB 仓库的 Git 远端（HTTPS，用户名为固定值 cnb，密码为访问令牌） */
+const CNB_GIT_HOST = 'cnb.cool';
 
 class ApiError extends Error {
   constructor(message, status, detail) {
@@ -22,6 +35,10 @@ function b64encode(buf) {
   return Buffer.isBuffer(buf) ? buf.toString('base64') : Buffer.from(buf).toString('base64');
 }
 
+function b64decode(s) {
+  return Buffer.from(String(s || '').replace(/\s/g, ''), 'base64');
+}
+
 function encodePath(p) {
   return String(p)
     .split('/')
@@ -30,24 +47,40 @@ function encodePath(p) {
     .join('/');
 }
 
-/** GitHub 单文件硬上限 100MB；Gitee 免费版单文件 50MB */
+function trimSlashes(s) {
+  return String(s == null ? '' : s)
+    .trim()
+    .replace(/^\/+|\/+$/g, '');
+}
+
+/** GitHub 单文件硬上限 100MB；CNB 单文件 200MB */
 function fileLimitBytes(platform) {
-  return platform === 'gitee' ? 50 * 1024 * 1024 : 100 * 1024 * 1024;
+  return platform === 'cnb' ? 200 * 1024 * 1024 : 100 * 1024 * 1024;
 }
 
 class CloudClient {
   constructor({ platform, owner, repo, branch, token, apiBase }) {
-    this.platform = platform === 'gitee' ? 'gitee' : 'github';
-    this.owner = owner;
-    this.repo = repo;
+    this.platform = platform === 'cnb' ? 'cnb' : 'github';
+    this.owner = trimSlashes(owner);
+    this.repo = trimSlashes(repo);
     this.branch = branch || 'main';
     this.token = token || '';
-    // 允许覆盖接口地址：便于自建 GitHub Enterprise / 私有 Gitee 以及离线测试
-    this.apiBase = apiBase || (this.isGitee ? GITEE_API : GITHUB_API);
+    // 允许覆盖接口地址：便于自建 GitHub Enterprise 以及离线自测
+    this.apiBase = trimSlashes(apiBase) ? String(apiBase).replace(/\/+$/, '') : this.isCnb ? CNB_API : GITHUB_API;
   }
 
-  get isGitee() {
-    return this.platform === 'gitee';
+  get isCnb() {
+    return this.platform === 'cnb';
+  }
+
+  /** CNB 把「组织/仓库」当成一个整体标识：owner/repo */
+  get slug() {
+    return this.owner + '/' + this.repo;
+  }
+
+  /** CNB 仓库的 Git 远端地址（不带凭据） */
+  get gitRemote() {
+    return `https://${CNB_GIT_HOST}/${this.slug}.git`;
   }
 
   _url(pathname, query) {
@@ -57,25 +90,27 @@ class CloudClient {
         if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
       }
     }
-    if (this.isGitee && this.token) url.searchParams.set('access_token', this.token);
     return url.toString();
   }
 
-  async _req(method, pathname, { query, body, raw } = {}) {
-    const headers = {
-      'User-Agent': 'JIE-Dispatch/1.2 (+https://www.yangjie.site)'
-    };
-    if (this.isGitee) {
-      headers['Content-Type'] = 'application/json;charset=UTF-8';
-    } else {
-      headers['Accept'] = raw ? 'application/vnd.github.raw' : 'application/vnd.github+json';
-      headers['X-GitHub-Api-Version'] = '2022-11-28';
-      if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+  _headers(raw, accept) {
+    const h = { 'User-Agent': 'JIE-Dispatch/1.2 (+https://www.yangjie.site)' };
+    if (this.isCnb) {
+      h.Accept = accept || 'application/vnd.cnb.api+json';
+      if (this.token) h.Authorization = `Bearer ${this.token}`;
+      return h;
     }
+    h.Accept = accept || (raw ? 'application/vnd.github.raw' : 'application/vnd.github+json');
+    h['X-GitHub-Api-Version'] = '2022-11-28';
+    if (this.token) h.Authorization = `Bearer ${this.token}`;
+    return h;
+  }
 
+  async _req(method, pathname, { query, body, raw, accept } = {}) {
     const url = this._url(pathname, query);
-    const init = { method, headers };
+    const init = { method, headers: this._headers(raw, accept) };
     if (body !== undefined && method !== 'GET' && method !== 'HEAD') {
+      init.headers['Content-Type'] = 'application/json;charset=UTF-8';
       init.body = JSON.stringify(body);
     }
 
@@ -96,7 +131,7 @@ class CloudClient {
 
     if (!res.ok) {
       const msg =
-        (json && (json.message || json.error || (Array.isArray(json.errors) && json.errors[0] && json.errors[0].message))) ||
+        (json && (json.message || json.error || json.msg || (Array.isArray(json.errors) && json.errors[0] && json.errors[0].message))) ||
         text ||
         res.statusText;
       throw new ApiError(normalizeError(this.platform, res.status, msg), res.status, { url, msg, json });
@@ -107,8 +142,16 @@ class CloudClient {
   // ---------------------------------------------------------------- 账号
 
   async whoami() {
-    const u = await this._req('GET', this.isGitee ? '/user' : '/user');
+    const u = await this._req('GET', '/user');
     if (!u) throw new ApiError('无法读取账号信息', 0, null);
+    if (this.isCnb) {
+      return {
+        login: u.username || '',
+        name: u.nickname || u.username || '',
+        avatar: u.avatar || '',
+        htmlUrl: u.username ? `https://cnb.cool/${u.username}` : ''
+      };
+    }
     return {
       login: u.login || u.name || '',
       name: u.name || u.login || '',
@@ -118,6 +161,19 @@ class CloudClient {
   }
 
   async repoInfo() {
+    if (this.isCnb) {
+      const r = await this._req('GET', `/${this.slug}`);
+      const vis = String(r.visibility_level || '');
+      return {
+        fullName: r.path || this.slug,
+        private: !!vis && vis !== 'Public',
+        sizeKB: 0,
+        defaultBranch: 'main',
+        htmlUrl: r.web_url || `${CNB_WEB}/${this.slug}`,
+        description: r.description || '',
+        permissions: r.access ? { access: r.access } : null
+      };
+    }
     const r = await this._req('GET', `/repos/${this.owner}/${this.repo}`);
     return {
       fullName: r.full_name,
@@ -134,10 +190,12 @@ class CloudClient {
 
   /**
    * 列目录。path 为空表示仓库根目录。
-   * 返回统一的条目结构
+   * 返回统一的条目结构 { name, path, type: 'dir'|'file', size, sha, downloadUrl }
    */
   async listDir(path = '') {
-    const clean = String(path).replace(/^\/+|\/+$/g, '');
+    const clean = trimSlashes(path);
+    if (this.isCnb) return this._listDirCnb(clean);
+
     const pathname = `/repos/${this.owner}/${this.repo}/contents/${encodePath(clean)}`;
     let data;
     try {
@@ -159,6 +217,50 @@ class CloudClient {
         gitUrl: it.url || ''
       }))
       .filter((it) => it.name);
+  }
+
+  async _listDirCnb(clean) {
+    const base = `/${this.slug}/-/git/contents`;
+    const pathname = clean ? `${base}/${encodePath(clean)}` : base;
+    let data;
+    try {
+      data = await this._req('GET', pathname, { query: { ref: this.branch } });
+    } catch (e) {
+      if (e.status === 404) return [];
+      throw e;
+    }
+    if (!data) return [];
+    if (data.type === 'empty') return [];
+
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    if (entries.length || data.type === 'tree') {
+      return entries
+        .map((it) => ({
+          name: it.name,
+          path: it.path,
+          type: it.type === 'tree' || it.type === 'submodule' ? 'dir' : 'file',
+          size: 0,
+          sha: it.sha || '',
+          downloadUrl: this.rawUrl(it.path),
+          gitUrl: ''
+        }))
+        .filter((it) => it.name);
+    }
+    // 单文件：contents 指向的就是一个 blob
+    if (data.type === 'blob' || data.type === 'lfs') {
+      return [
+        {
+          name: data.name,
+          path: data.path,
+          type: 'file',
+          size: data.size || 0,
+          sha: data.sha || '',
+          downloadUrl: this.rawUrl(data.path),
+          gitUrl: ''
+        }
+      ];
+    }
+    return [];
   }
 
   /**
@@ -194,26 +296,21 @@ class CloudClient {
     return state;
   }
 
-  /** 读取单个文件内容（<= 1MB 时可用），返回 base64 或 null */
+  /** 读取单个文件内容（<= 1MB 时可用），返回 Buffer 或 null */
   async readFile(path) {
     try {
-      const data = await this._req('GET', `/repos/${this.owner}/${this.repo}/contents/${encodePath(path)}`, {
-        query: { ref: this.branch }
-      });
-      if (data && data.content) {
-        return Buffer.from(String(data.content).replace(/\n/g, ''), 'base64');
-      }
+      const data = await this._contentEntry(path);
+      if (data && data.content) return b64decode(data.content);
       return null;
     } catch (e) {
       return null;
     }
   }
 
-  /** 读取单个文件 SHA（删除时必需，Gitee 尤其严格） */
-  async fileSha(path) {    try {
-      const data = await this._req('GET', `/repos/${this.owner}/${this.repo}/contents/${encodePath(path)}`, {
-        query: { ref: this.branch }
-      });
+  /** 读取单个文件 SHA（GitHub 删除时必需；CNB 走 git 通道，这里用于比对） */
+  async fileSha(path) {
+    try {
+      const data = await this._contentEntry(path);
       if (Array.isArray(data)) return null;
       return data && data.sha ? data.sha : null;
     } catch (e) {
@@ -221,47 +318,63 @@ class CloudClient {
     }
   }
 
+  /** contents 接口的原始返回（GitHub / CNB 各自的形状归一到这里） */
+  async _contentEntry(path) {
+    const clean = trimSlashes(path);
+    if (this.isCnb) {
+      const pathname = `/${this.slug}/-/git/contents/${encodePath(clean)}`;
+      return this._req('GET', pathname, { query: { ref: this.branch } });
+    }
+    const pathname = `/repos/${this.owner}/${this.repo}/contents/${encodePath(clean)}`;
+    return this._req('GET', pathname, { query: { ref: this.branch } });
+  }
+
   /** 读取原始二进制内容（私有仓库也可用），用于界面缩略图代理 */
   async readRaw(path) {
-    const clean = String(path).replace(/^\/+/, '');
-    const pathname = `/repos/${this.owner}/${this.repo}/contents/${encodePath(clean)}`;
-
-    if (!this.isGitee) {
-      const res = await fetch(this._url(pathname, { ref: this.branch }), {
-        headers: {
-          'User-Agent': 'JIE-Dispatch/1.2',
-          Accept: 'application/vnd.github.raw',
-          'X-GitHub-Api-Version': '2022-11-28',
-          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
-        }
-      });
+    const clean = trimSlashes(path);
+    if (this.isCnb) {
+      const url = this._url(`/${this.slug}/-/git/raw/${encodeURIComponent(this.branch)}/${encodePath(clean)}`);
+      const res = await fetch(url, { headers: this._headers(true) });
       if (!res.ok) throw new ApiError(`读取文件失败（HTTP ${res.status}）`, res.status, null);
       return Buffer.from(await res.arrayBuffer());
     }
 
-    // Gitee：优先走 contents API 的 base64 字段，失败再尝试 download_url
-    const data = await this._req('GET', pathname, { query: { ref: this.branch } });
-    if (data && data.content) {
-      return Buffer.from(String(data.content).replace(/\s/g, ''), 'base64');
+    const pathname = `/repos/${this.owner}/${this.repo}/contents/${encodePath(clean)}`;
+    const res = await fetch(this._url(pathname, { ref: this.branch }), { headers: this._headers(true) });
+    if (!res.ok) throw new ApiError(`读取文件失败（HTTP ${res.status}）`, res.status, null);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  /**
+   * 取分支 HEAD 的完整 commit SHA —— 云端同步检测器就靠它和本地 HEAD 比对。
+   * 读不到（分支不存在 / 空仓库）返回空串，让调用方去提示用户，而不是抛错。
+   */
+  async headSha(branch) {
+    const b = branch || this.branch;
+    try {
+      if (this.isCnb) {
+        const d = await this._req('GET', `/${this.slug}/-/git/branches/${encodeURIComponent(b)}`);
+        return (d && d.commit && d.commit.sha) || '';
+      }
+      const r = await this._req('GET', `/repos/${this.owner}/${this.repo}/git/ref/heads/${encodeURIComponent(b)}`);
+      if (r && r.object && r.object.sha) return r.object.sha;
+      return '';
+    } catch (e) {
+      if (e.status === 404 || e.status === 409) return '';
+      throw e;
     }
-    const url = data && (data.download_url || data.html_url);
-    if (url) {
-      const res = await fetch(url);
-      if (res.ok) return Buffer.from(await res.arrayBuffer());
-    }
-    throw new ApiError('Gitee 无法读取该文件内容（可能超出接口体积上限）', 0, null);
   }
 
   // ---------------------------------------------------------------- 写入
 
   /**
-   * 批量上传。files: [{ path, buff, }]
-   * GitHub 使用 Git Data API 一次提交；Gitee 使用 Contents API 逐个提交
-   * 返回 [{ path, ok, error }]
+   * 批量上传。files: [{ path, buff }]
+   * GitHub 使用 Git Data API 一次提交；
+   * CNB 的公开 API 造不了 commit，必须走 git CLI —— 调用方应先分流到 main/cnb.js。
    */
   async uploadBatch(files, message) {
     if (!files.length) return [];
-    if (this.isGitee) return this._uploadBatchContents(files, message);
+    if (this.isCnb) throw new ApiError(CNB_WRITE_HINT, 0, null);
     return this._uploadBatchGitData(files, message);
   }
 
@@ -292,31 +405,10 @@ class CloudClient {
     return files.map((f) => ({ path: f.path, ok: true, error: null }));
   }
 
-  async _uploadBatchContents(files, message) {
-    const results = [];
-    for (const f of files) {
-      try {
-        const sha = await this.fileSha(f.path);
-        const payload = {
-          message: message || 'upload images',
-          content: b64encode(f.buff),
-          branch: this.branch
-        };
-        if (sha) payload.sha = sha;
-        await this._req(sha ? 'PUT' : 'POST', `/repos/${this.owner}/${this.repo}/contents/${encodePath(f.path)}`, {
-          body: payload
-        });
-        results.push({ path: f.path, ok: true, error: null });
-      } catch (e) {
-        results.push({ path: f.path, ok: false, error: e.message });
-      }
-    }
-    return results;
-  }
-
   /** 批量删除 */
   async deleteBatch(paths, message) {
     if (!paths.length) return [];
+    if (this.isCnb) throw new ApiError(CNB_WRITE_HINT, 0, null);
     const results = [];
     for (const p of paths) {
       try {
@@ -342,12 +434,11 @@ class CloudClient {
 
   /**
    * 批量移动 / 重命名。items: [{ from, to }]
-   * GitHub 走 Git Data API —— 内容重建 + 旧路径删除，整批只产生一次提交，天然原子；
-   * Gitee 没有改名接口，退化为「先建新文件、再删旧文件」两次提交。
+   * GitHub 走 Git Data API —— 内容重建 + 旧路径删除，整批只产生一次提交，天然原子。
    */
   async moveBatch(items, message) {
     if (!items.length) return [];
-    if (this.isGitee) return this._moveBatchContents(items, message);
+    if (this.isCnb) throw new ApiError(CNB_WRITE_HINT, 0, null);
     return this._moveBatchGitData(items, message);
   }
 
@@ -380,56 +471,30 @@ class CloudClient {
     return items.map((it) => ({ path: it.to, from: it.from, ok: true, error: null }));
   }
 
-  async _moveBatchContents(items, message) {
-    const results = [];
-    for (const it of items) {
-      try {
-        const buf = await this.readRaw(it.from);
-        const existSha = await this.fileSha(it.to);
-        const createPayload = {
-          message: message || `chore: move ${it.from} → ${it.to}`,
-          content: b64encode(buf),
-          branch: this.branch
-        };
-        if (existSha) createPayload.sha = existSha;
-        await this._req(existSha ? 'PUT' : 'POST', `/repos/${this.owner}/${this.repo}/contents/${encodePath(it.to)}`, {
-          body: createPayload
-        });
-
-        const oldSha = await this.fileSha(it.from);
-        if (oldSha) {
-          await this._req('DELETE', `/repos/${this.owner}/${this.repo}/contents/${encodePath(it.from)}`, {
-            body: { message: `chore: remove ${it.from}`, sha: oldSha, branch: this.branch }
-          });
-        }
-        results.push({ path: it.to, from: it.from, ok: true, error: null });
-      } catch (e) {
-        results.push({ path: it.to, from: it.from, ok: false, error: e.message });
-      }
-    }
-    return results;
-  }
-
-  /** 生成文件在仓库中的直链（按规则） */
+  /** 生成文件在仓库中的直链（按平台默认规则） */
   rawUrl(path) {
-    const p = String(path).replace(/^\/+/, '');
-    if (this.isGitee) {
-      return `https://gitee.com/${this.owner}/${this.repo}/raw/${this.branch}/${p}`;
+    const p = trimSlashes(path);
+    if (this.isCnb) {
+      return `${CNB_WEB}/${this.slug}/-/git/raw/${this.branch}/${p}`;
     }
     return `https://raw.githubusercontent.com/${this.owner}/${this.repo}/${this.branch}/${p}`;
   }
 }
 
+const CNB_WRITE_HINT =
+  'CNB 的公开接口不支持直接创建提交（没有 Tree/Commit 接口），写入需要通过 Git 完成';
+
 function normalizeError(platform, status, msg) {
   const m = String(msg || '').toLowerCase();
-  if (status === 401) {
-    return platform === 'gitee' ? 'Token 无效或已过期（Gitee 需勾选 projects 权限）' : 'Token 无效或已过期';
-  }
+  if (status === 401) return platform === 'cnb' ? 'Token 无效或已过期（CNB 需选「经典令牌」并勾选 repo-code 读写）' : 'Token 无效或已过期';
   if (status === 403) {
     if (m.includes('rate limit')) return '触发接口频率限制，请稍后重试或更换 Token';
     return '没有权限：请确认 Token 勾选了仓库读写权限';
   }
   if (status === 404) {
+    if (platform === 'cnb' && /mcp|token/.test(m)) {
+      return 'CNB 返回 404：多半是 Token 类型不对 —— MCP 令牌不能调 REST 接口，请改用「经典令牌」';
+    }
     return '仓库或分支不存在：请检查用户名 / 仓库名 / 分支名，以及 Token 是否可访问该私有仓库';
   }
   if (status === 422) return `请求被拒绝（可能文件过大或路径非法）：${msg}`;
@@ -437,4 +502,13 @@ function normalizeError(platform, status, msg) {
   return msg || `请求失败（HTTP ${status}）`;
 }
 
-module.exports = { CloudClient, ApiError, fileLimitBytes, GITHUB_API, GITEE_API };
+module.exports = {
+  CloudClient,
+  ApiError,
+  fileLimitBytes,
+  GITHUB_API,
+  CNB_API,
+  CNB_WEB,
+  CNB_GIT_HOST,
+  CNB_WRITE_HINT
+};

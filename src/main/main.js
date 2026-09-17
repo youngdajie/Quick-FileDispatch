@@ -14,6 +14,7 @@ const { Store } = require('./store');
 const { startServer, allowRoot } = require('./server');
 const { CloudClient, fileLimitBytes } = require('./platform');
 const git = require('./git');
+const cnb = require('./cnb');
 const local = require('./local');
 const CPLinks = require('../renderer/js/lib/links.js');
 
@@ -88,6 +89,35 @@ function friendlyError(e) {
   if (!e) return '未知错误';
   if (e.name === 'ApiError' || e.message) return e.message;
   return String(e);
+}
+
+/** 当前配置是不是 CNB（CNB 的写操作全部走 git 通道，见 main/cnb.js） */
+function cnbMode(cfg) {
+  return ((cfg && cfg.platform) || 'github') === 'cnb';
+}
+
+/**
+ * CNB 的写入通道要的信息。
+ * CNB 公开接口造不了提交，写操作统一走 git（见 main/cnb.js），
+ * 所以这里比 CloudClient 多带一个 localDir —— 有绑定就就地改，没有就临时克隆。
+ */
+function cnbConn() {
+  const cfg = cfgRaw();
+  return {
+    platform: 'cnb',
+    owner: cfg.owner,
+    repo: cfg.repo,
+    branch: cfg.branch || 'main',
+    token: store.getToken(),
+    localDir: cfg.localDir || ''
+  };
+}
+
+/** 文件上限提示文案，跟着平台走 */
+function fileTooBigMsg(platform, size) {
+  return platform === 'cnb'
+    ? `文件 ${CPLinks.formatBytes(size)} 超过 CNB 单文件 200MB 限制`
+    : `文件 ${CPLinks.formatBytes(size)} 超过 GitHub 单文件 100MB 限制`;
 }
 
 const MIME_BY_EXT = {
@@ -393,6 +423,8 @@ function runSelfTest() {
           };
           const log = [];
           const failed = [];
+          // 假 API 地址（mock-server.js）；CNB / GitHub 探测都指向它
+          const MOCK_API = 'http://127.0.0.1:8799';
 
           // —— 夹具自愈：先扫掉上一轮可能残留的测试文件。
           // 不清的话 renamed/after-rename.txt 会留在原地，UI 改名被"目标已存在"守卫正确拦下，
@@ -537,6 +569,57 @@ function runSelfTest() {
             log.push({ step: 'remote-skipped', reason: String(e && e.message ? e.message : e) });
           }
 
+          // —— 云端检测器：结构必须齐（本地/云端两条 SHA + 结论字段）
+          try {
+            const det = await window.cloudpic.cloud.detect();
+            const box = document.getElementById('mgCloudState');
+            log.push({
+              step: 'cloud-detect',
+              ok: det.ok,
+              relation: det.relation,
+              localShort: det.local && det.local.short,
+              cloudShort: det.cloud && det.cloud.short,
+              boxText: box ? box.innerText.replace(/\s+/g, ' ').trim().slice(0, 120) : null
+            });
+            if (!det || typeof det.relation !== 'string') failed.push('云端检测器没有返回 relation');
+            if (!box) failed.push('文件管理页左侧没有云端检测器（#mgCloudState）');
+          } catch (e) {
+            failed.push('云端检测器调用失败：' + (e.message || e));
+          }
+
+          // —— CNB 平台：走假 API 验证 CNB 客户端（whoami / repoInfo / listDir）
+          try {
+            const keepId = window.__state.cfg.activeProfileId;
+            await window.__state.newProfile({ platform: 'cnb' });
+            await window.__state.patch({
+              platform: 'cnb',
+              owner: 'youngdajie',
+              repo: 'cnb-files',
+              branch: 'main',
+              apiBase: MOCK_API,
+              token: 'cnb_fake_token_0001'
+            });
+            const tmpId = window.__state.cfg.activeProfileId;
+            const chk = await window.cloudpic.profile.check({ id: tmpId });
+            const list = await window.cloudpic.cloud.list({ dir: 'docs', source: 'remote' });
+            log.push({
+              step: 'cnb-check',
+              cloudOk: chk.cloud && chk.cloud.ok,
+              fullName: chk.cloud && chk.cloud.repoInfo && chk.cloud.repoInfo.fullName,
+              userName: chk.cloud && chk.cloud.userName,
+              message: chk.cloud && chk.cloud.message,
+              docs: (list.items || []).map((i) => i.path)
+            });
+            if (!(chk.cloud && chk.cloud.ok)) failed.push('CNB 平台读接口没跑通：' + ((chk.cloud && chk.cloud.message) || '?'));
+            if (!(list.items || []).some((i) => i.path === 'docs/readme.md')) {
+              failed.push('CNB 平台列目录没拿到 docs/readme.md');
+            }
+            await window.__state.activateProfile(keepId);
+            await window.__state.removeProfile(tmpId);
+          } catch (e) {
+            failed.push('CNB 平台探测失败：' + (e.message || e));
+          }
+
           return { log, diag, failed };
         })()`);
         console.log('FSTEST ' + JSON.stringify(out, null, 2));
@@ -617,24 +700,24 @@ function runSelfTest() {
           const before = form();
           log.push({ step: 'form-before', form: before });
 
-          // Gitee 下没有任何配置，切过去应当开一份空白配置、表单清空
-          document.querySelector('#cfgPlatform button[data-platform="gitee"]').click();
+          // CNB 下没有任何配置，切过去应当开一份空白配置、表单清空
+          document.querySelector('#cfgPlatform button[data-platform="cnb"]').click();
           await sleep(1500);
-          const onGitee = form();
-          log.push({ step: 'switch-gitee', form: onGitee, profiles: (window.__state.cfg.profiles || []).length });
-          eq(onGitee.platform, 'gitee', '切到 Gitee 后平台按钮没跟上');
-          eq(onGitee.owner, '', '切到 Gitee 后 owner 没有刷新（还是 GitHub 的）');
-          eq(onGitee.localDir, '', '切到 Gitee 后本地目录没有刷新（还是 GitHub 的）');
+          const onCnb = form();
+          log.push({ step: 'switch-cnb', form: onCnb, profiles: (window.__state.cfg.profiles || []).length });
+          eq(onCnb.platform, 'cnb', '切到 CNB 后平台按钮没跟上');
+          eq(onCnb.owner, '', '切到 CNB 后 owner 没有刷新（还是 GitHub 的）');
+          eq(onCnb.localDir, '', '切到 CNB 后本地目录没有刷新（还是 GitHub 的）');
           if ((window.__state.cfg.profiles || []).length < 2) {
             failed.push('切到没有配置的平台时没有开空白配置当落点');
           }
 
-          // 给 Gitee 填一套完整信息
-          document.getElementById('cfgOwner').value = 'gitee-user';
-          document.getElementById('cfgRepo').value = 'gitee-repo';
-          document.getElementById('cfgLocalDir').value = 'D:/gitee-repo';
+          // 给 CNB 填一套完整信息
+          document.getElementById('cfgOwner').value = 'cnb-user';
+          document.getElementById('cfgRepo').value = 'cnb-repo';
+          document.getElementById('cfgLocalDir').value = 'D:/cnb-repo';
           await sleep(1600);
-          log.push({ step: 'gitee-filled', form: form() });
+          log.push({ step: 'cnb-filled', form: form() });
 
           // 切回 GitHub：应当整份还原
           document.querySelector('#cfgPlatform button[data-platform="github"]').click();
@@ -646,18 +729,18 @@ function runSelfTest() {
           eq(back.localDir, before.localDir, '切回 GitHub 后本地目录没还原');
 
           // —— 2. 归档列表：点某一行能整份切过去
-          const giteeProf = (window.__state.cfg.profiles || []).find((p) => p.platform === 'gitee');
-          if (!giteeProf) {
-            failed.push('找不到刚建的 Gitee 配置');
+          const cnbProf = (window.__state.cfg.profiles || []).find((p) => p.platform === 'cnb');
+          if (!cnbProf) {
+            failed.push('找不到刚建的 CNB 配置');
           } else {
-            const row = document.querySelector('#profileList .pf-row[data-id="' + giteeProf.id + '"]');
-            if (!row) failed.push('归档列表里没有渲染出 Gitee 配置行');
+            const row = document.querySelector('#profileList .pf-row[data-id="' + cnbProf.id + '"]');
+            if (!row) failed.push('归档列表里没有渲染出 CNB 配置行');
             else {
               const useBtn = row.querySelector('button[data-act="use"]');
               (useBtn || row).click();
               await sleep(1500);
-              log.push({ step: 'use-gitee-profile', form: form() });
-              eq(form().owner, 'gitee-user', '点归档项没有切到该配置');
+              log.push({ step: 'use-cnb-profile', form: form() });
+              eq(form().owner, 'cnb-user', '点归档项没有切到该配置');
             }
           }
 
@@ -1052,13 +1135,13 @@ function runSelfTest() {
             if (!pane) failed.push('仓库模块里没有平台图层 #repoPane');
             else {
               eq(pane.dataset.platform, 'github', '平台图层初始色条不是 GitHub');
-              document.querySelector('#cfgPlatform button[data-platform="gitee"]').click();
+              document.querySelector('#cfgPlatform button[data-platform="cnb"]').click();
               await sleep(120);
               const midCls = pane.className;
               await sleep(2000);
-              log.push({ step: 'slide-gitee', midCls: midCls, endPlatform: pane.dataset.platform, badge: (document.getElementById('platBadgeText') || {}).textContent });
-              if (!/slide-out-left|slide-in-right/.test(midCls)) failed.push('切到 Gitee 时平台图层没有滑动动画');
-              eq(pane.dataset.platform, 'gitee', '平台图层的色条没有跟着切到 Gitee');
+              log.push({ step: 'slide-cnb', midCls: midCls, endPlatform: pane.dataset.platform, badge: (document.getElementById('platBadgeText') || {}).textContent });
+              if (!/slide-out-left|slide-in-right/.test(midCls)) failed.push('切到 CNB 时平台图层没有滑动动画');
+              eq(pane.dataset.platform, 'cnb', '平台图层的色条没有跟着切到 CNB');
               // 平台胶囊必须是一颗完整的胶囊：被别的同名样式压成 22px 方块的话，内容会被裁掉
               const badgeEl = document.getElementById('platBadge');
               const badgeBox = badgeEl.getBoundingClientRect();
@@ -1066,10 +1149,10 @@ function runSelfTest() {
               if (badgeEl.scrollWidth > badgeEl.clientWidth + 1) {
                 failed.push('平台胶囊内容被裁掉了（' + badgeEl.scrollWidth + ' > ' + badgeEl.clientWidth + '），样式可能撞名');
               }
-              // 左边那条主题色竖条也要跟着换成 Gitee 色
+              // 左边那条主题色竖条也要跟着换成 CNB 色
               const bar = getComputedStyle(pane, '::before').backgroundColor;
-              const giteeColor = getComputedStyle(pane).getPropertyValue('--plat-gitee').trim();
-              log.push({ step: 'plat-bar', bar: bar, giteeColor: giteeColor });
+              const cnbColor = getComputedStyle(pane).getPropertyValue('--plat-cnb').trim();
+              log.push({ step: 'plat-bar', bar: bar, cnbColor: cnbColor });
               if (!bar || bar === 'rgba(0, 0, 0, 0)') failed.push('平台图层左侧色条没渲染出来');
 
               // —— 10b. 平台图标必须是品牌 SVG，不是字母方块
@@ -1091,9 +1174,9 @@ function runSelfTest() {
               if (/^[A-Z]{2}$/.test(badgeTxt.trim())) failed.push('平台图标还是字母方块：' + badgeTxt);
               if (typeof brandApi === 'function') {
                 const gh = brandApi('github', 15);
-                const ge = brandApi('gitee', 15);
+                const ge = brandApi('cnb', 15);
                 if (!/viewBox="0 0 24 24"/.test(gh) || !/<path d="M/.test(gh)) failed.push('品牌图标生成器没有吐出合法 SVG');
-                if (gh === ge) failed.push('GitHub 与 Gitee 的品牌图标一模一样');
+                if (gh === ge) failed.push('GitHub 与 CNB 的品牌图标一模一样');
               } else {
                 failed.push('没有暴露 window.CPBrand.brandIcon');
               }
@@ -1509,14 +1592,14 @@ function runSelfTest() {
         await wc.executeJavaScript(`document.querySelector('.nav-item[data-page="settings"]').click();`);
         await new Promise((r) => setTimeout(r, 1400));
 
-        // 临时造一份 Gitee 配置，让归档列表同时有「已归档」和「待验证」两种状态可看
+        // 临时造一份 CNB 配置，让归档列表同时有「已归档」和「待验证」两种状态可看
         const madeTmp = await wc.executeJavaScript(
           `(async function(){
              var before = (window.__state.cfg.profiles||[]).map(function(p){ return p.id; });
-             await window.__state.newProfile({ platform: 'gitee' });
+             await window.__state.newProfile({ platform: 'cnb' });
              await window.__state.patch({
-               platform: 'gitee', owner: 'yangjie-site', repo: 'cdn-files',
-               localDir: 'D:/web/cdn-files', token: 'gitee_fake_token_0001'
+               platform: 'cnb', owner: 'yangjie-site', repo: 'cdn-files',
+               localDir: 'D:/web/cdn-files', token: 'cnb_fake_token_0001'
              });
              var after = (window.__state.cfg.profiles||[]);
              var add = after.filter(function(p){ return before.indexOf(p.id) < 0; })[0];
@@ -1931,8 +2014,8 @@ function buildMenu() {  const template = [
           click: () => shell.openExternal('https://github.com/settings/tokens/new?scopes=repo&description=JIE-Dispatch')
         },
         {
-          label: 'Gitee 私人令牌',
-          click: () => shell.openExternal('https://gitee.com/profile/personal_access_tokens')
+          label: 'CNB 访问令牌',
+          click: () => shell.openExternal('https://cnb.cool/profile/token')
         }
       ]
     }
@@ -1947,7 +2030,7 @@ function registerIpc() {
     name: '快捷文件分发服务@JIE',
     version: app.getVersion(),
     author: '小杰',
-    // 应用往 GitHub / Gitee 提交文件时用的署名（见 main/git.js），
+    // 应用往 GitHub / CNB 提交文件时用的署名（见 main/git.js），
     // 必须是账号本人 youngdajie，别让上传的提交挂在「JIE」名下
     gitAuthor: git.COMMIT_IDENTITY.name,
     gitAuthorEmail: git.COMMIT_IDENTITY.email,
@@ -1991,7 +2074,7 @@ function registerIpc() {
     const p = payload || {};
     return store.verifyProfile(String(p.id || ''), p.info || {});
   });
-  // 导出归档配置（不含 Token，DPAPI 密文换机器解不开）
+  // 导出归档配置（含 Token —— 明文写进 JSON，渲染层会先弹确认框；不含本地路径）
   ipcMain.handle('profile:export', async () => {
     const data = store.exportProfiles();
     const stamp = new Date().toISOString().slice(0, 10);
@@ -2002,7 +2085,12 @@ function registerIpc() {
     });
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
     fs.writeFileSync(r.filePath, JSON.stringify(data, null, 2), 'utf8');
-    return { ok: true, filePath: r.filePath, count: data.profiles.length };
+    return {
+      ok: true,
+      filePath: r.filePath,
+      count: data.profiles.length,
+      withToken: data.profiles.filter((p) => p.token).length
+    };
   });
   // 导入归档配置：读文件 → 合并 → 交给渲染层做可用性体检
   ipcMain.handle('profile:import', async () => {
@@ -2093,8 +2181,8 @@ function registerIpc() {
           repo: p.repo,
           message: p.owner + '/' + p.repo + '：本机没有可用 Token',
           fix:
-            '导出的配置不含 Token（DPAPI 密文换台机器解不开）。把「归档配置」切到这一份，' +
-            '在「仓库信息 → 访问令牌」补上 Token，再点「验证并归档」'
+            '把「归档配置」切到这一份，在「仓库信息 → 访问令牌」补上 Token 后点「验证并归档」。' +
+            '（若这份是从配置文件导入的，说明导出时那份配置本身就没带 Token）'
         };
       } else {
         try {
@@ -2126,7 +2214,7 @@ function registerIpc() {
             repo: p.repo,
             message: friendlyError(err2),
             fix:
-              '检查「仓库信息」里的 owner / 仓库名 / 分支是否写对，平台（GitHub / Gitee）是否选错；' +
+              '检查「仓库信息」里的 owner / 仓库名 / 分支是否写对，平台（GitHub / CNB）是否选错；' +
               '私有仓库还要确认 Token 有仓库读写权限'
           };
         }
@@ -2234,7 +2322,6 @@ function registerIpc() {
     if (!files.length) return { ok: false, message: '没有待上传的文件' };
 
     const cfg = cfgRaw();
-    const client = buildClient();
     const limit = fileLimitBytes(cfg.platform);
     const subDir = CPLinks.normalizePath(p.dir || '');
     const results = [];
@@ -2248,42 +2335,23 @@ function registerIpc() {
       const rel = CPLinks.joinPath(subDir, safeName);
 
       if (buf.length > limit) {
-        results.push({
-          name: safeName,
-          path: rel,
-          ok: false,
-          error: `文件 ${CPLinks.formatBytes(buf.length)} 超过 ${cfg.platform === 'gitee' ? 'Gitee 免费版单文件 50MB' : 'GitHub 单文件 100MB'} 限制`
-        });
-        continue;
-      }
-      if (buf.length > 45 * 1024 * 1024 && cfg.platform === 'gitee') {
-        results.push({ name: safeName, path: rel, ok: false, error: '超过 Gitee 社区版单文件上限（50MB）' });
+        results.push({ name: safeName, path: rel, ok: false, error: fileTooBigMsg(cfg.platform, buf.length) });
         continue;
       }
       accepted.push({ path: rel, buff: buf, name: safeName, size: buf.length });
     }
 
-    let batchResults = [];
     if (accepted.length) {
       const message = (cfg.commitMessage || 'chore: 通过 JIE 分发服务上传') + ` (${accepted.length} file${accepted.length > 1 ? 's' : ''})`;
       try {
-        // GitHub 走 Git Data API 一次提交；Gitee 走 Contents API 逐个提交
-        if (client.isGitee) {
-          for (let i = 0; i < accepted.length; i += 5) {
-            const chunk = accepted.slice(i, i + 5);
-            const chunkRes = await client.uploadBatch(chunk, message);
-            chunkRes.forEach((r, idx) => {
-              const src = chunk[idx];
-              results.push(Object.assign({ name: src.name, size: src.size }, r));
-            });
-          }
-        } else {
-          batchResults = await client.uploadBatch(accepted, message);
-          batchResults.forEach((r, idx) => {
-            const src = accepted[idx];
-            results.push(Object.assign({ name: src.name, size: src.size }, r));
-          });
-        }
+        // GitHub 走 Git Data API 一次提交；CNB 没有提交接口，走本地 Git 工作区
+        const batchResults = cnbMode(cfg)
+          ? await cnb.uploadBatch(cnbConn(), accepted, message)
+          : await buildClient().uploadBatch(accepted, message);
+        batchResults.forEach((r, idx) => {
+          const src = accepted[idx] || {};
+          results.push(Object.assign({ name: src.name, size: src.size }, r));
+        });
       } catch (err) {
         accepted.forEach((src) => {
           if (!results.find((r) => r.path === src.path)) {
@@ -2304,14 +2372,17 @@ function registerIpc() {
     const p = payload || {};
     const paths = (Array.isArray(p.paths) ? p.paths : []).map(CPLinks.normalizePath).filter(Boolean);
     if (!paths.length) return { ok: false, message: '没有选中任何文件' };
-    const client = buildClient();
-    const results = await client.deleteBatch(paths, p.message || 'chore: delete files via JIE Dispatch');
+    const cfg = cfgRaw();
+    const message = p.message || 'chore: delete files via JIE Dispatch';
+    const results = cnbMode(cfg)
+      ? await cnb.deleteBatch(cnbConn(), paths, message)
+      : await buildClient().deleteBatch(paths, message);
     const ok = results.some((r) => r.ok);
     const sync = ok ? await syncLocal('delete') : null;
     return { ok, results, sync };
   });
 
-  // ---- 云端改名 / 移动（GitHub 单次原子提交；Gitee 逐文件两次提交）
+  // ---- 云端改名 / 移动（GitHub 单次原子提交；CNB 走本地 Git 工作区一次提交）
   ipcMain.handle('cloud:move', async (e, payload) => {
     const p = payload || {};
     const items = (Array.isArray(p.items) ? p.items : [])
@@ -2321,8 +2392,11 @@ function registerIpc() {
       }))
       .filter((it) => it.from && it.to && it.from !== it.to);
     if (!items.length) return { ok: false, message: '没有需要移动的文件（源路径与目标路径一致）' };
-    const client = buildClient();
-    const results = await client.moveBatch(items, p.message || `chore: 移动 ${items.length} 个文件`);
+    const cfg = cfgRaw();
+    const message = p.message || `chore: 移动 ${items.length} 个文件`;
+    const results = cnbMode(cfg)
+      ? await cnb.moveBatch(cnbConn(), items, message)
+      : await buildClient().moveBatch(items, message);
     const ok = results.some((r) => r.ok);
     const sync = ok ? await syncLocal('move') : null;
     return { ok, results, sync };
@@ -2340,11 +2414,14 @@ function registerIpc() {
     if (buf.length > limit) {
       throw new Error(`文件 ${CPLinks.formatBytes(buf.length)} 超过平台单文件上限（${CPLinks.formatBytes(limit)}）`);
     }
-    const client = buildClient();
     const name = rel.split('/').pop();
-    const results = await client.uploadBatch([{ path: rel, buff: buf, name }], `chore: 替换 ${rel}`);
-    const r = results[0];
-    if (!r || !r.ok) throw new Error((r && r.error) || '替换失败');
+    if (cnbMode(cfg)) {
+      await cnb.replaceFile(cnbConn(), rel, buf, `chore: 替换 ${rel}`);
+    } else {
+      const results = await buildClient().uploadBatch([{ path: rel, buff: buf, name }], `chore: 替换 ${rel}`);
+      const r = results[0];
+      if (!r || !r.ok) throw new Error((r && r.error) || '替换失败');
+    }
     const sync = await syncLocal('replace');
     return { ok: true, path: rel, size: buf.length, sync };
   });
@@ -2452,6 +2529,162 @@ function registerIpc() {
   });
 
   ipcMain.handle('git:pull', async () => syncLocal('manual'));
+
+  /**
+   * 云端检测器 —— 回答「云端更新了、本地怎么没跟上」。
+   *
+   * 拿本地 HEAD 的完整 SHA 和云端分支 HEAD 的完整 SHA 比：
+   *   完全一致            → same
+   *   不一致就 fetch 一次，数 ahead / behind：
+   *     ahead>0 behind=0 → local-ahead（本地新，该推到云端）
+   *     ahead=0 behind>0 → local-behind（云端新，该拉下来）
+   *     两边都>0         → diverged（分叉，得人来定）
+   *
+   * 只读不写：任何「拉/推」都由渲染层拿到结论后再显式触发，
+   * 免得进个页面就悄悄改了仓库。
+   */
+  ipcMain.handle('cloud:detect', async () => {
+    const cfg = cfgRaw();
+    const branch = cfg.branch || 'main';
+    const out = {
+      ok: false,
+      platform: cfg.platform || 'github',
+      branch: branch,
+      repoLabel: cfg.owner && cfg.repo ? cfg.owner + '/' + cfg.repo : '',
+      gitAvailable: !!(await git.version()),
+      local: { isRepo: false, dir: cfg.localDir || '', sha: '', short: '', dirty: false, changes: 0, branch: '' },
+      cloud: { ok: false, sha: '', short: '', message: '' },
+      ahead: 0,
+      behind: 0,
+      relation: 'unknown' // same | local-ahead | local-behind | diverged | no-local | no-cloud | unconfigured | unknown
+    };
+
+    if (!cfg.owner || !cfg.repo) {
+      out.relation = 'unconfigured';
+      return out;
+    }
+
+    /* ---- 本地 HEAD ---- */
+    const dir = String(cfg.localDir || '').trim();
+    if (dir && local.exists(dir) && (await git.isRepo(dir))) {
+      const st = (await git.status(dir)) || {};
+      const sum = (await git.repoSummary(dir)) || {};
+      out.local = {
+        isRepo: true,
+        dir: dir,
+        sha: await git.headShaFull(dir),
+        short: sum.head || '',
+        branch: sum.branch || '',
+        dirty: !!st.dirty,
+        changes: st.changes || 0
+      };
+    } else if (dir) {
+      out.local.dir = dir;
+      out.local.reason = '目录不存在或不是 Git 仓库';
+    }
+
+    /* ---- 云端 HEAD ---- */
+    const token = store.getToken();
+    if (!token) {
+      out.cloud.message = '本机没有可用 Token，无法读取云端提交';
+      out.relation = out.local.isRepo ? 'unknown' : 'no-local';
+      return out;
+    }
+    try {
+      const client = buildClient();
+      const sha = await client.headSha(branch);
+      out.cloud.sha = sha || '';
+      out.cloud.short = sha ? sha.slice(0, 7) : '';
+      out.cloud.ok = !!sha;
+      if (!sha) out.cloud.message = '云端分支「' + branch + '」为空或不存在';
+    } catch (err) {
+      out.cloud.message = friendlyError(err);
+      out.relation = out.local.isRepo ? 'unknown' : 'no-local';
+      return out;
+    }
+
+    if (!out.local.isRepo) {
+      out.relation = 'no-local';
+      out.ok = true;
+      return out;
+    }
+
+    // SHA 完全一致：连 fetch 都省了
+    if (out.local.sha && out.cloud.sha && out.local.sha === out.cloud.sha) {
+      out.relation = 'same';
+      out.ok = true;
+      return out;
+    }
+
+    /* ---- 不一致：fetch 云端，数领先 / 落后几条 ---- */
+    if (!out.cloud.ok) {
+      // 云端 HEAD 都没读到（空分支 / 接口不通），别再去 fetch —— 比不出结论，
+      // 白跑一次网络还可能把真实远端的凭据试探一遍
+      out.relation = 'unknown';
+      out.ok = true;
+      return out;
+    }
+    // 接口地址被改成自定义的（GitHub Enterprise / 自建网关 / 离线自测）时，
+    // 没法从接口地址反推 Git 远端主机，就别硬比提交了 —— 老实说不比得出。
+    const officialApi = cfg.platform === 'cnb' ? 'https://api.cnb.cool' : 'https://api.github.com';
+    const customApi = String(cfg.apiBase || '').replace(/\/+$/, '');
+    if (customApi && customApi !== officialApi) {
+      out.cloud.message = '接口地址是自定义的（' + customApi + '），无法据此推断 Git 远端，跳过提交比对';
+      out.relation = 'unknown';
+      out.ok = true;
+      return out;
+    }
+    if (!out.gitAvailable) {
+      out.cloud.message = '未检测到 Git，无法比较提交历史';
+      out.relation = 'unknown';
+      out.ok = true;
+      return out;
+    }
+    const f = await git.fetchRef({
+      platform: cfg.platform,
+      owner: cfg.owner,
+      repo: cfg.repo,
+      branch: branch,
+      token: token,
+      dir: dir
+    });
+    if (!f.ok) {
+      out.cloud.message = f.message;
+      out.relation = 'unknown';
+      out.ok = true;
+      return out;
+    }
+    out.cloud.short = (await git.fetchHeadSha(dir)) || out.cloud.short;
+    const cmp = await git.compareRefs(dir);
+    if (!cmp) {
+      out.relation = 'unknown';
+      out.ok = true;
+      return out;
+    }
+    out.ahead = cmp.ahead;
+    out.behind = cmp.behind;
+    out.relation = cmp.ahead && cmp.behind ? 'diverged' : cmp.ahead ? 'local-ahead' : cmp.behind ? 'local-behind' : 'same';
+    out.ok = true;
+    return out;
+  });
+
+  /** 检测器给出「云端旧、本地新」结论后，用户点「推送到云端」走这里 */
+  ipcMain.handle('cloud:pushLocal', async () => {
+    const cfg = cfgRaw();
+    const dir = cfg.localDir;
+    if (!dir || !local.exists(dir)) throw new Error('未绑定本地目录，无法推送');
+    if (!(await git.isRepo(dir))) throw new Error('本地目录不是 Git 仓库，无法推送');
+    if (!cfg.owner || !cfg.repo) throw new Error('请先配置仓库信息');
+    return git.commitAndPush({
+      platform: cfg.platform,
+      owner: cfg.owner,
+      repo: cfg.repo,
+      branch: cfg.branch || 'main',
+      token: store.getToken(),
+      dir: dir,
+      message: cfg.commitMessage || 'chore: 通过 JIE 分发服务更新'
+    });
+  });
 
   ipcMain.handle('clipboard:write', (e, text) => {
     clipboard.writeText(String(text == null ? '' : text));

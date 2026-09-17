@@ -12,16 +12,17 @@ let tokenTouched = false;
 /** 水印配色快捷项（#1296db 是默认） */
 const WM_PRESETS = ['#1296db', '#ffffff', '#101722', '#ff4d4f', '#20c997', '#f5a623'];
 
-const PLATFORM_NAME = { github: 'GitHub', gitee: 'Gitee' };
+const PLATFORM_NAME = { github: 'GitHub', cnb: 'CNB' };
 
 const TOKEN_HELP = {
   github:
     'GitHub 需要 <b>Personal Access Token</b>（经典版或细粒度均可），至少勾选 <b>repo</b>（读写仓库内容）。' +
     '申请地址：<a href="#" data-ext="https://github.com/settings/tokens/new?scopes=repo&description=JIE-Dispatch">github.com/settings/tokens</a>。' +
     'Token 只保存在本机，用 Windows 系统级加密（DPAPI）存储，代码不会把它写到任何地方。',
-  gitee:
-    'Gitee 需要 <b>私人令牌</b>，勾选 <b>projects</b>（仓库读写）权限。' +
-    '申请地址：<a href="#" data-ext="https://gitee.com/profile/personal_access_tokens">gitee.com/profile/personal_access_tokens</a>。' +
+  cnb:
+    'CNB 需要 <b>访问令牌</b>，请在「个人设置 → 访问令牌」创建，并勾选 <b>repo-code</b>（仓库代码读写）等权限。' +
+    '注意必须用<b>经典令牌</b>——MCP 令牌调不了 REST 接口（会一路 404）。' +
+    '申请地址：<a href="#" data-ext="https://cnb.cool/profile/token">cnb.cool/profile/token</a>。' +
     'Token 只保存在本机，用 Windows 系统级加密存储。'
 };
 
@@ -222,8 +223,8 @@ function playIn(back) {
 }
 
 /**
- * 切到某一份配置。平台不同就整块左右滑动 —— GitHub / Gitee 是两张图层，
- * 往右滑是去 Gitee，往左滑是回 GitHub，左边的主题色条跟着换。
+ * 切到某一份配置。平台不同就整块左右滑动 —— GitHub / CNB 是两张图层，
+ * 往右滑是去 CNB，往左滑是回 GitHub，左边的主题色条跟着换。
  */
 async function switchToProfile(id) {
   const target = state.profiles.find((x) => x.id === id);
@@ -235,7 +236,7 @@ async function switchToProfile(id) {
   const curPlat = (state.cfg && state.cfg.platform) || 'github';
   const nextPlat = target.platform || 'github';
   const changed = curPlat !== nextPlat;
-  const back = curPlat === 'gitee' && nextPlat === 'github';
+  const back = curPlat === 'cnb' && nextPlat === 'github';
 
   slideLock = true;
   try {
@@ -268,7 +269,7 @@ async function switchToPlatform(platform) {
     await switchToProfile(target.id);
     return;
   }
-  const back = curPlat === 'gitee' && platform === 'github';
+  const back = curPlat === 'cnb' && platform === 'github';
   slideLock = true;
   try {
     await save({ silent: true });
@@ -299,11 +300,39 @@ function skipLine(s) {
   );
 }
 
+/** 导出前的确认：这个 JSON 里带着明文 Token，必须让用户明确知道自己在导什么 */
+function confirmExport(count, withToken) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML =
+      '<p class="hint" style="margin:0 0 10px">导出的 JSON 会带上：各份配置的仓库信息、' +
+      '<b class="accent">访问令牌（明文）</b>，以及「文件链接」的全部设置' +
+      '（链接规则 / 自定义域名 / 链接格式 / 预览代理）。</p>' +
+      '<p class="hint" style="margin:0 0 10px"><b>本地目录不会写入</b> —— 换台电脑原路径多半不存在，' +
+      '导入后程序会引导你为本机重新绑定目录。</p>' +
+      '<p class="rule-desc" style="margin:0">本次共 ' + count + ' 份配置，其中 ' + withToken + ' 份带令牌。' +
+      '这个文件等于一把钥匙，请只放在你自己的机器或加密盘里，别发到群聊和公开仓库。</p>';
+    modal({
+      title: '导出配置',
+      node: wrap,
+      buttons: [
+        { label: '取消', onClick: () => { resolve(false); return true; } },
+        { label: '仍然导出', danger: true, onClick: () => { resolve(true); return true; } }
+      ],
+      onClose: () => resolve(false)
+    });
+  });
+}
+
 async function exportProfiles() {
   if (!state.profiles.length) {
     warn('还没有归档配置，先在下面填一份并「验证并归档」');
     return;
   }
+  const withToken = state.profiles.filter((p) => p.hasToken).length;
+  const sure = await confirmExport(state.profiles.length, withToken);
+  if (!sure) return;
+
   const btn = $('#btnProfExport');
   btn.disabled = true;
   try {
@@ -313,7 +342,7 @@ async function exportProfiles() {
       err(r.error || '导出失败');
       return;
     }
-    ok('已导出 ' + r.count + ' 份配置到 ' + r.filePath);
+    ok('已导出 ' + r.count + ' 份配置（含 ' + (r.withToken || 0) + ' 份令牌）到 ' + r.filePath);
   } catch (e) {
     err(e.message || String(e));
   } finally {
@@ -427,6 +456,7 @@ async function importProfiles() {
   }
 
   const usable = results.filter((x) => x.r && x.r.ok).length;
+  const needLocal = results.filter((x) => x.r && x.r.local && !x.r.local.ok).length;
   const needFix = results.length - usable;
   box.innerHTML =
     '<p class="hint" style="margin:0 0 10px">' +
@@ -434,7 +464,15 @@ async function importProfiles() {
     (needFix ? '，<b style="color:var(--warn)">' + needFix + '</b> 份需要修一下' : '') +
     '。' +
     (skipped.length ? '另有 ' + skipped.length + ' 份被跳过。' : '') +
+    (res.settingsApplied ? '<br>「文件链接」的设置也一并恢复了。' : '') +
     '</p>' +
+    (needLocal
+      ? '<p class="rule-desc" style="margin:0 0 10px">' +
+        '<b class="accent">导入不含本地路径</b>：换台电脑原路径多半不存在，所以配置文件里没有它。' +
+        '下面的 <b>本地目录 ✗</b> 提示就是这么来的 —— 为这份配置在本机绑一个目录（' +
+        '已有仓库用房「选择…」，想重新拉一份用「克隆到此处」），再点「验证并归档」即可。' +
+        '</p>'
+      : '') +
     '<div class="imp-report">' +
     (await renderAvailability(results)) +
     (skipped.length ? skipped.map(skipLine).join('') : '') +
@@ -442,7 +480,8 @@ async function importProfiles() {
     (needFix
       ? '<p class="rule-desc" style="margin:10px 0 0">修的方式：用标题右边的「归档配置」下拉切到那一份，' +
         '按上面的提示改「仓库信息 / 本地目录」，改完点「验证并归档」。' +
-        'Token 不会跟着导出（换机器解不开），所以导入后要重新填一次。</p>'
+        '<span class="hint">Token 已经随配置文件一起导入，不用再手填；若某份确实没令牌，' +
+        '说明导出时那份配置本身就没存。</span></p>'
       : '');
 
   foot.innerHTML = '';
@@ -455,7 +494,7 @@ async function importProfiles() {
   if (needFix) {
     const bFix = document.createElement('button');
     bFix.className = 'btn btn-primary';
-    bFix.textContent = '去修第一份';
+    bFix.textContent = needLocal ? '去绑本地目录' : '去修第一份';
     bFix.onclick = async () => {
       dlg.close();
       const first = results.find((x) => x.r && !x.r.ok);
@@ -674,8 +713,8 @@ async function setFont(font) {
 
 function fillPlatform() {
   const c = state.cfg || {};
-  const plat = (c.platform || 'github') === 'gitee' ? 'gitee' : 'github';
-  const isGitee = plat === 'gitee';
+  const plat = (c.platform || 'github') === 'cnb' ? 'cnb' : 'github';
+  const isCnb = plat === 'cnb';
 
   document.querySelectorAll('#cfgPlatform button').forEach((b) => {
     b.classList.toggle('active', b.dataset.platform === plat);
@@ -690,14 +729,14 @@ function fillPlatform() {
   if (badge) badge.textContent = PLATFORM_NAME[plat];
   const hint = $('#platHint');
   if (hint) {
-    hint.textContent = isGitee
-      ? '正在编辑 Gitee 的配置 · 左侧竖条为 Gitee 主题色'
+    hint.textContent = isCnb
+      ? '正在编辑 CNB 的配置 · 左侧竖条为 CNB 主题色'
       : '正在编辑 GitHub 的配置 · 左侧竖条为 GitHub 主题色';
   }
 
-  $('#tokenHelp').innerHTML = TOKEN_HELP[isGitee ? 'gitee' : 'github'];
+  $('#tokenHelp').innerHTML = TOKEN_HELP[isCnb ? 'cnb' : 'github'];
   const api = $('#cfgApiBase');
-  if (api) api.placeholder = isGitee ? 'https://gitee.com/api/v5' : 'https://api.github.com';
+  if (api) api.placeholder = isCnb ? 'https://api.cnb.cool' : 'https://api.github.com';
 }
 
 function fillLinkRules() {

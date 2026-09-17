@@ -9,14 +9,14 @@ const SITE = 'https://www.yangjie.site';
 
 const TECH = [
   ['Electron', '桌面外壳，把 Chromium 和 Node.js 一起打包进 Windows 应用'],
-  ['Node.js', '主进程负责文件系统、Git 调用，以及和 GitHub / Gitee 的接口通信'],
+  ['Node.js', '主进程负责文件系统、Git 调用，以及和 GitHub / CNB 的接口通信'],
   ['Web Worker', '压缩跑在独立线程池里，线程数 = CPU 核心数，真正吃满多核算力'],
   ['OffscreenCanvas', '用 Chromium 自带的原生编解码器做缩放与重编码，不额外依赖任何二进制'],
   ['Canvas 2D', '水印、缩放、颜色填充'],
   ['Web Crypto', 'SHA-256 哈希化文件名'],
   ['GitHub REST v3', '仓库读取；批量上传与改名走 Git Data API，一次提交搞定整批文件'],
-  ['Gitee REST v5', '国内直连，Contents 接口逐文件提交'],
-  ['Git CLI', '把仓库拉到本地，让本地目录与云端仓库始终对齐'],
+  ['CNB Open API', '腾讯云 CNB 的官方接口；读走 REST，写走 Git（公开接口没有创建提交的端点）'],
+  ['Git CLI', '把仓库拉到本地，让本地目录与云端仓库始终对齐；CNB 的写入也由它完成'],
   ['safeStorage', 'Token 用 Windows DPAPI 系统级加密后落盘，不以明文保存'],
   ['本地 127.0.0.1 服务', '给渲染层提供模块化与本地文件直出，私有仓库的缩略图也由主进程代取']
 ];
@@ -24,14 +24,14 @@ const TECH = [
 function quotaTable() {
   return (
     '<table class="quota-table">' +
-    '<thead><tr><th>项目</th><th>GitHub 免费账号</th><th>Gitee 社区版（个人）</th></tr></thead>' +
+    '<thead><tr><th>项目</th><th>GitHub 免费账号</th><th>CNB 社区版（个人）</th></tr></thead>' +
     '<tbody>' +
-    '<tr><td>仓库数量</td><td>不限（公开 / 私有随意）</td><td>最多 1000 个</td></tr>' +
-    '<tr><td>单仓库容量</td><td>建议 ≤ 1 GB（超出会收到提醒）</td><td>≤ 500 MB</td></tr>' +
-    '<tr><td>单文件上限</td><td>100 MB（Git Data API）</td><td>50 MB</td></tr>' +
-    '<tr><td>账号总容量</td><td>无硬性总容量，按仓库分别计算</td><td>≤ 5 GB（名下全部仓库合计）</td></tr>' +
-    '<tr><td>单文件建议</td><td>≤ 25 MB 体验最稳</td><td>≤ 20 MB 体验最稳</td></tr>' +
-    '<tr><td>国内直连</td><td>raw 域名时好时坏，可用 jsDelivr / raw.githack 等 CDN</td><td>直连快</td></tr>' +
+    '<tr><td>仓库数量</td><td>不限（公开 / 私有随意）</td><td>公开不限，私有 5 个</td></tr>' +
+    '<tr><td>单仓库容量</td><td>建议 ≤ 1 GB（超出会收到提醒）</td><td>仓库存储免费额度 100 GiB</td></tr>' +
+    '<tr><td>单文件上限</td><td>100 MB（Git Data API）</td><td>200 MB</td></tr>' +
+    '<tr><td>账号总容量</td><td>无硬性总容量，按仓库分别计算</td><td>Git 对象 100 GiB + 对象存储 100 GiB</td></tr>' +
+    '<tr><td>单文件建议</td><td>≤ 25 MB 体验最稳</td><td>≤ 50 MB 体验最稳</td></tr>' +
+    '<tr><td>国内直连</td><td>raw 域名时好时坏，可用 jsDelivr / raw.githack 等 CDN</td><td>直连快，也可用 JSDMirror 再加速</td></tr>' +
     '</tbody></table>'
   );
 }
@@ -62,7 +62,7 @@ function render() {
     '<ul style="margin:10px 0 0;padding-left:20px;line-height:2">' +
     '<li><b>不预设仓库和分支</b>——仓库名、分支自己填，分支默认 <span class="mono">main</span>，现在新建的仓库本来也就是它。</li>' +
     '<li><b>压缩用你的 CPU</b>——Worker 池 + OffscreenCanvas，多核并行，几十张图基本是点一下就完事，不再是 Web 版那种一张一张排队等。</li>' +
-    '<li><b>不止是图片</b>——仓库能装什么，它就能管什么。只要不越过 Gitee / GitHub 的配额，就不额外设限。</li>' +
+    '<li><b>不止是图片</b>——仓库能装什么，它就能管什么。只要不越过 CNB / GitHub 的配额，就不额外设限。</li>' +
     '<li><b>云端和本地是同一份东西</b>——仓库会拉到本地，管理界面直接读本地磁盘，所以翻起来是瞬时的；' +
     '两边都能改名、移动、替换内容，本地改完点一下「提交并推送」就能推回云端。</li>' +
     '<li><b>第一次打开有引导</b>——选平台、填仓库与令牌（现场验证）、映射本地目录，走完才让用，省得配置漏项。</li>' +

@@ -480,7 +480,7 @@ function fillTarget() {
   const okRepo = !!(c.owner && c.repo);
   const lim = CPLinks.limitOf(c.platform);
 
-  $('#utPlatform').textContent = c.platform === 'gitee' ? 'GITEE' : 'GITHUB';
+  $('#utPlatform').textContent = c.platform === 'cnb' ? 'CNB' : 'GITHUB';
   $('#utRepo').textContent = okRepo ? c.owner + '/' + c.repo + ' @ ' + (c.branch || 'main') : '未配置仓库';
 
   const box = $('#upTarget');

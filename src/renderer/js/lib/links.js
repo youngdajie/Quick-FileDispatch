@@ -12,8 +12,8 @@
     {
       id: 'auto',
       name: '自动（跟随平台默认）',
-      desc: 'GitHub 用 raw.githubusercontent.com，Gitee 用 gitee.com/raw',
-      platforms: ['github', 'gitee']
+      desc: 'GitHub 用 raw.githubusercontent.com，CNB 用 cnb.cool/-/git/raw',
+      platforms: ['github', 'cnb']
     },
     {
       id: 'github_raw',
@@ -46,16 +46,22 @@
       platforms: ['github']
     },
     {
-      id: 'gitee_raw',
-      name: 'Gitee Raw',
-      desc: 'gitee.com/{owner}/{repo}/raw/{branch} —— 国内直连快',
-      platforms: ['gitee']
+      id: 'cnb_raw',
+      name: 'CNB Raw',
+      desc: 'cnb.cool/{owner}/{repo}/-/git/raw/{branch} —— 官方原始内容地址',
+      platforms: ['cnb']
+    },
+    {
+      id: 'cnb_jsdmirror',
+      name: 'CNB 国内 CDN（JSDMirror）',
+      desc: 'cdn.jsdmirror.com/cnb/{owner}/{repo}@{branch} —— 给 CNB 仓库再套一层国内加速',
+      platforms: ['cnb']
     },
     {
       id: 'custom',
       name: '自定义域名 / 对象存储',
       desc: '填你自己的 CDN、图床域名或 OSS 前缀，路径用 {path} 占位',
-      platforms: ['github', 'gitee']
+      platforms: ['github', 'cnb']
     }
   ];
 
@@ -75,17 +81,17 @@
       maxRepo: 1024 * 1024 * 1024,
       note: '单文件 ≤ 100MB（Git Data API），仓库建议 ≤ 1GB'
     },
-    gitee: {
-      name: 'Gitee',
-      maxFile: 50 * 1024 * 1024,
-      softFile: 20 * 1024 * 1024,
-      maxRepo: 500 * 1024 * 1024,
-      note: '社区版单文件 ≤ 50MB、单仓库 ≤ 500MB、名下仓库合计 ≤ 5GB'
+    cnb: {
+      name: 'CNB',
+      maxFile: 200 * 1024 * 1024,
+      softFile: 50 * 1024 * 1024,
+      maxRepo: 100 * 1024 * 1024 * 1024,
+      note: '单文件 ≤ 200MB，仓库存储免费额度 100GiB（腾讯云社区版）'
     }
   };
 
   function limitOf(platform) {
-    return FILE_LIMITS[platform === 'gitee' ? 'gitee' : 'github'];
+    return FILE_LIMITS[platform === 'cnb' ? 'cnb' : 'github'];
   }
 
   function normalizePath(p) {
@@ -136,14 +142,21 @@
     return base + '/' + p;
   }
 
+  /** 平台默认直链（也是「自定义」没填域名时的兜底） */
+  function defaultRawUrl(platform, owner, repo, branch, p) {
+    return platform === 'cnb'
+      ? 'https://cnb.cool/' + owner + '/' + repo + '/-/git/raw/' + branch + '/' + p
+      : 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/' + branch + '/' + p;
+  }
+
   /** 生成图片直链 */
   function buildUrl(cfg, relPath) {
-    const platform = cfg.platform === 'gitee' ? 'gitee' : 'github';
+    const platform = cfg.platform === 'cnb' ? 'cnb' : 'github';
     const owner = cfg.owner || '';
     const repo = cfg.repo || '';
     const branch = cfg.branch || 'main';
     const p = encodePath(relPath);
-    const rule = cfg.linkRule === 'auto' || !cfg.linkRule ? (platform === 'gitee' ? 'gitee_raw' : 'github_raw') : cfg.linkRule;
+    const rule = cfg.linkRule === 'auto' || !cfg.linkRule ? (platform === 'cnb' ? 'cnb_raw' : 'github_raw') : cfg.linkRule;
 
     switch (rule) {
       case 'jsdelivr':
@@ -154,22 +167,20 @@
         return `https://raw.githack.com/${owner}/${repo}/${branch}/${p}`;
       case 'ghpages':
         return `https://${owner}.github.io/${repo}/${p}`;
-      case 'gitee_raw':
-        return `https://gitee.com/${owner}/${repo}/raw/${branch}/${p}`;
+      case 'cnb_raw':
+        return `https://cnb.cool/${owner}/${repo}/-/git/raw/${branch}/${p}`;
+      case 'cnb_jsdmirror':
+        return `https://cdn.jsdmirror.com/cnb/${owner}/${repo}@${branch}/${p}`;
       case 'github_raw':
         return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${p}`;
       case 'custom': {
         let base = String(cfg.customDomain || '').trim().replace(/\/+$/, '');
-        if (!base) return platform === 'gitee'
-          ? `https://gitee.com/${owner}/${repo}/raw/${branch}/${p}`
-          : `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${p}`;
+        if (!base) return defaultRawUrl(platform, owner, repo, branch, p);
         if (base.indexOf('{path}') >= 0) return base.split('{path}').join(p);
         return base + '/' + p;
       }
       default:
-        return platform === 'gitee'
-          ? `https://gitee.com/${owner}/${repo}/raw/${branch}/${p}`
-          : `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${p}`;
+        return defaultRawUrl(platform, owner, repo, branch, p);
     }
   }
 

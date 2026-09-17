@@ -19,10 +19,10 @@ const PLATFORMS = [
     tip: '单文件 ≤ 100MB · 单仓库建议 ≤ 1GB'
   },
   {
-    id: 'gitee',
-    name: 'Gitee',
-    desc: '国内直连速度最快，无需代理。社区版个人账号有容量与文件数上限。',
-    tip: '单文件 ≤ 50MB · 单仓库 ≤ 500MB'
+    id: 'cnb',
+    name: 'CNB',
+    desc: '腾讯云原生构建的代码托管，国内直连快。写入通过 Git 完成，需要本机装了 Git。',
+    tip: '单文件 ≤ 200MB · 仓库存储免费 100GiB'
   }
 ];
 
@@ -91,16 +91,16 @@ function panePlatform() {
     '<div class="plat-cards">' + cards + '</div>' +
     '<div class="ob-note" style="margin-top:14px">程序不会限制你能传什么，真正的边界在平台那边：' +
     '<b>' + escapeHtml(CPLinks.FILE_LIMITS.github.note) + '</b>（GitHub） / ' +
-    '<b>' + escapeHtml(CPLinks.FILE_LIMITS.gitee.note) + '</b>（Gitee）。</div>' +
+    '<b>' + escapeHtml(CPLinks.FILE_LIMITS.cnb.note) + '</b>（CNB）。</div>' +
     '</div>'
   );
 }
 
 function paneRepo() {
   const help =
-    draft.platform === 'gitee'
-      ? 'Gitee 需要 <b>私人令牌</b>，勾选 <b>projects</b> 权限。' +
-        '申请：<a href="#" data-ext="https://gitee.com/profile/personal_access_tokens">gitee.com/profile/personal_access_tokens</a>'
+    draft.platform === 'cnb'
+      ? 'CNB 需要 <b>访问令牌</b>（必须是<b>经典令牌</b>，MCP 令牌调不了 REST 接口）。' +
+        '申请：<a href="#" data-ext="https://cnb.cool/profile/token">cnb.cool/profile/token</a>'
       : 'GitHub 需要 <b>Personal Access Token</b>，至少勾选 <b>repo</b>。' +
         '申请：<a href="#" data-ext="https://github.com/settings/tokens/new?scopes=repo&description=JIE-Dispatch">github.com/settings/tokens</a>';
 
@@ -131,7 +131,7 @@ function paneRepo() {
     '<label class="field"><span class="field-label">分支 <span class="hint">新建仓库默认 main</span></span>' +
     '<input type="text" id="obBranch" placeholder="main" value="' + escapeHtml(draft.branch) + '" /></label>' +
     '<label class="field"><span class="field-label">接口地址 <span class="hint">留空即官方地址</span></span>' +
-    '<input type="text" id="obApiBase" placeholder="' + (draft.platform === 'gitee' ? 'https://gitee.com/api/v5' : 'https://api.github.com') + '" value="' + escapeHtml(draft.apiBase) + '" /></label>' +
+    '<input type="text" id="obApiBase" placeholder="' + (draft.platform === 'cnb' ? 'https://api.cnb.cool' : 'https://api.github.com') + '" value="' + escapeHtml(draft.apiBase) + '" /></label>' +
     '</div>' +
     '<label class="field"><span class="field-label">访问令牌（Token）<span class="hint">' +
     (state.cfg && state.cfg.hasToken ? '已保存，留空即沿用' : '必填') +
@@ -180,7 +180,7 @@ function paneLocal() {
 function paneDone() {
   const c = state.cfg || {};
   const rows = [
-    ['平台', draft.platform === 'gitee' ? 'Gitee' : 'GitHub'],
+    ['平台', draft.platform === 'cnb' ? 'CNB' : 'GitHub'],
     ['仓库', (draft.owner || '?') + '/' + (draft.repo || '?') + ' @ ' + (draft.branch || 'main')],
     ['令牌', state.cfg && state.cfg.hasToken ? '已加密保存（' + (state.cfg.tokenMask || '') + '）' : '未配置'],
     ['本地目录', localMode === 'skip' || !c.localDir ? '未映射（仅云端浏览）' : c.localDir],
@@ -272,7 +272,7 @@ function bindPane() {
     wrap.querySelectorAll('.plat-card[data-platform]').forEach((b) => {
       b.onclick = async () => {
         draft.platform = b.dataset.platform;
-        if (draft.platform === 'gitee' && (!draft.branch || draft.branch === 'master')) draft.branch = 'main';
+        if (draft.platform === 'cnb' && (!draft.branch || draft.branch === 'master')) draft.branch = 'main';
         await state.patch({ platform: draft.platform });
         render();
       };

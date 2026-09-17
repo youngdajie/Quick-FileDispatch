@@ -57,11 +57,102 @@ function listDir(dir) {
   return dirItems.concat(files);
 }
 
+/* ================================================================
+ * CNB 假接口
+ * CNB 的仓库标识是「组织/仓库」一个整体；读接口在 api.cnb.cool 上，
+ * 路径形如 /{slug}/-/git/contents、/{slug}/-/git/branches/{branch}。
+ * ================================================================ */
+const CNB_SLUG = 'youngdajie/cnb-files';
+const CNB_BRANCH = 'main';
+const CNB_SHA = '3888a2a1000000000000000000000000000000ff';
+/** path -> utf8 content */
+const CNB_REPO = {
+  'docs/readme.md': '# cnb demo repo',
+  'images/2026/09/seed-c.png': 'CNB-SEED-C'
+};
+
+function cnbTree(dir) {
+  const prefix = dir ? dir.replace(/\/+$/, '') + '/' : '';
+  const dirs = new Set();
+  const files = [];
+  Object.keys(CNB_REPO).forEach((path) => {
+    if (!path.startsWith(prefix)) return;
+    const rest = path.slice(prefix.length);
+    if (!rest) return;
+    const seg = rest.split('/');
+    if (seg.length > 1) dirs.add(prefix + seg[0]);
+    else files.push(path);
+  });
+  const entries = Array.from(dirs).map((d) => ({ name: d.split('/').pop(), path: d, sha: 'tree-' + d, type: 'tree' }));
+  files.forEach((path) => {
+    entries.push({ name: path.split('/').pop(), path: path, sha: 'blob-' + path, type: 'blob' });
+  });
+  return entries;
+}
+
+function cnb(req, res, p, u, body) {
+  const base = '/' + CNB_SLUG;
+  if (p === '/user') {
+    return json(res, 200, { username: OWNER, nickname: 'youngdajie', avatar: '', email: 'ok@yangjie.site' });
+  }
+  if (p === base) {
+    return json(res, 200, {
+      id: 'repo-1',
+      name: 'cnb-files',
+      path: CNB_SLUG,
+      description: 'CNB 假仓库',
+      visibility_level: 'Public',
+      web_url: 'https://cnb.cool/' + CNB_SLUG,
+      access: 'Owner'
+    });
+  }
+  const branchM = p.match(new RegExp('^' + base + '/-/git/branches/(.+)$'));
+  if (branchM && req.method === 'GET') {
+    if (decodeURIComponent(branchM[1]) !== CNB_BRANCH) return json(res, 404, { message: 'branch not found' });
+    return json(res, 200, {
+      name: CNB_BRANCH,
+      protected: false,
+      locked: false,
+      commit: { sha: CNB_SHA, commit: { message: 'test commit' } }
+    });
+  }
+  const rawM = p.match(new RegExp('^' + base + '/-/git/raw/([^/]+)/(.+)$'));
+  if (rawM) {
+    const ref = decodeURIComponent(rawM[1]);
+    const filePath = decodeURIComponent(rawM[2]);
+    if (ref !== CNB_BRANCH || !(filePath in CNB_REPO)) return json(res, 404, { message: 'Not Found' });
+    const raw = Buffer.from(CNB_REPO[filePath], 'utf8');
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': raw.length });
+    return res.end(raw);
+  }
+  const contentBase = base + '/-/git/contents';
+  if (p === contentBase || p.startsWith(contentBase + '/')) {
+    const dir = p === contentBase ? '' : decodeURIComponent(p.slice(contentBase.length + 1));
+    if (dir && CNB_REPO[dir] !== undefined) {
+      const content = Buffer.from(CNB_REPO[dir], 'utf8');
+      return json(res, 200, {
+        name: dir.split('/').pop(),
+        path: dir,
+        type: 'blob',
+        sha: 'blob-' + dir,
+        size: content.length,
+        encoding: 'base64',
+        content: content.toString('base64')
+      });
+    }
+    const entries = cnbTree(dir);
+    if (!entries.length) return json(res, 200, { type: 'empty', path: dir, entries: [] });
+    return json(res, 200, { type: 'tree', path: dir, sha: 'tree-' + dir, entries: entries });
+  }
+  return json(res, 404, { message: 'mock(cnb) 未覆盖: ' + req.method + ' ' + p });
+}
+
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://127.0.0.1');
   const p = decodeURIComponent(u.pathname);
   const body = req.method === 'GET' ? null : await readBody(req);
   const wantsRaw = String(req.headers.accept || '').indexOf('vnd.github.raw') >= 0;
+  const wantsCnb = String(req.headers.accept || '').indexOf('vnd.cnb.api+json') >= 0;
 
   if (p === '/__state') {
     return json(res, 200, {
@@ -98,6 +189,14 @@ const server = http.createServer(async (req, res) => {
   if (!/^Bearer .+/.test(req.headers.authorization || '')) {
     return json(res, 401, { message: 'Bad credentials' });
   }
+
+  /* ================================================================
+   * CNB（cnb.cool）形状的接口。
+   * CNB 与 GitHub 的 /user 撞路径，靠 Accept 头区分：
+   * 我们的 CNB 客户端固定发 application/vnd.cnb.api+json。
+   * CNB 的写入走 git CLI（公开接口没有创建提交的端点），所以这里只做读。
+   * ================================================================ */
+  if (wantsCnb) return cnb(req, res, p, u, body);
 
   if (p === '/user') return json(res, 200, { login: OWNER, name: OWNER, avatar_url: '', html_url: '' });
   if (p === `/repos/${OWNER}/${REPO_NAME}`) {

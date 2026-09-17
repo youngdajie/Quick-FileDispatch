@@ -52,7 +52,7 @@
   --accent-grad-b: #3a86d6;
   --accent-grad-line: #2f74bd;
   --danger-text: #ff8f97;
-  --gitee: #e8737b;
+  --cnb: #f76945;
   --tile-border-hover: #2c415f;
   --thumb-bg: #080c13;
   --thumb-fg: #34455c;
@@ -60,7 +60,7 @@
 
   /* 平台标识色：仓库模块左侧竖条 + 归档徽标用它，一眼看出在编辑哪个平台 */
   --plat-github: #4e9bea;
-  --plat-gitee: #e8737b;
+  --plat-cnb: #f76945;
 }
 
 /* ============================================================
@@ -105,14 +105,14 @@ html[data-theme="light"] {
   --accent-grad-b: #2f7fd6;
   --accent-grad-line: #2a72c2;
   --danger-text: #c22f42;
-  --gitee: #c71d23;
+  --cnb: #e0522c;
   --tile-border-hover: #b9c8db;
   --thumb-bg: #dde5ef;
   --thumb-fg: #93a4bb;
   --thumb-badge: rgba(255, 255, 255, 0.82);
 
   --plat-github: #2f7fd6;
-  --plat-gitee: #c71d23;
+  --plat-cnb: #e0522c;
 }
 
 * { box-sizing: border-box; }
@@ -498,7 +498,7 @@ select.csel-native {
   padding: 1px 6px; border-radius: 4px;
   border: 1px solid var(--border); color: var(--text-dim);
 }
-.pf-platform.pf-gitee { color: var(--gitee); border-color: color-mix(in srgb, var(--gitee) 30%, transparent); }
+.pf-platform.pf-cnb { color: var(--cnb); border-color: color-mix(in srgb, var(--cnb) 32%, transparent); }
 
 .pf-name {
   font-size: 12.5px; font-family: var(--mono); color: var(--text);
@@ -911,6 +911,22 @@ select.csel-native {
 .side-git .txt { font-family: var(--mono); word-break: break-all; }
 .side-git .btn { margin-top: 8px; width: 100%; }
 
+/* 状态区的「标题 + 小按钮」一行：云端检测器的重测入口 */
+.side-head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.side-mini {
+  flex: 0 0 auto; padding: 1px 7px; border-radius: 5px; cursor: pointer;
+  font-size: 10px; letter-spacing: 0; text-transform: none;
+  background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-dim);
+  transition: color 0.14s, border-color 0.14s;
+}
+.side-mini:hover { color: var(--accent-hi); border-color: var(--border-hover); }
+/* 检测结论胶囊：本地 / 云端两条短 SHA 并排，一眼看出谁新谁旧 */
+.side-git .sha {
+  font-family: var(--mono); font-size: 10.5px; padding: 0 5px; border-radius: 4px;
+  background: var(--bg-soft); border: 1px solid var(--border-soft); color: var(--text-dim);
+}
+.side-git .arrow { color: var(--muted); margin: 0 3px; }
+
 /* 列宽共用变量，保证列表模式的表头和行严丝合缝对齐 */
 .mg-main { flex: 1; min-width: 0; padding: 13px; --col-icon: 40px; --col-size: 96px; --col-time: 142px; --col-ops: 150px; border-bottom-right-radius: var(--radius); }
 .mg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 11px; }
@@ -1268,7 +1284,7 @@ body.is-onboarding .toast-wrap { filter: none; }
 }
 .plat-mark .brand-ico { display: block; }
 .plat-mark-github { background: #24292f; }
-.plat-mark-gitee { background: #c71d23; }
+.plat-mark-cnb { background: #f76945; }
 /* 选中态给品牌块加一圈光，和卡片描边呼应 */
 .plat-card.active .plat-mark { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), 0 0 0 2px var(--accent-soft); }
 
@@ -1365,7 +1381,7 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 
 /* ============================================================ 仓库大模块 */
 /* 仓库信息 / 本地目录 / 文件链接合成一块；左侧竖条用平台主题色，
-   一眼看出「现在编辑的是 GitHub 还是 Gitee」 */
+   一眼看出「现在编辑的是 GitHub 还是 CNB」 */
 .repo-module { position: relative; }
 /* 标题区左文右工具：给足横向间距，说明文字不要贴着右边的归档下拉 */
 .repo-module .card-head { display: flex; align-items: flex-start; gap: 12px 30px; flex-wrap: wrap; }
@@ -1392,7 +1408,7 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
   transition: background 0.28s var(--ease);
 }
 .plat-frame[data-platform="github"] { --plat: var(--plat-github); }
-.plat-frame[data-platform="gitee"] { --plat: var(--plat-gitee); }
+.plat-frame[data-platform="cnb"] { --plat: var(--plat-cnb); }
 
 /* 平台标识胶囊 */
 .plat-badge {

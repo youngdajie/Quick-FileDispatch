@@ -10,10 +10,18 @@ const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
 
+/** 平台白名单：Gitee 已下线，现在只有 GitHub 和 CNB 两个 */
+const PLATFORMS = ['github', 'cnb'];
+
+function normalizePlatform(p) {
+  const s = String(p || '');
+  return PLATFORMS.indexOf(s) >= 0 ? s : 'github';
+}
+
 const DEFAULT_CONFIG = {
-  version: 6,
+  version: 7,
   onboarded: false,
-  platform: 'github', // github | gitee
+  platform: 'github', // github | cnb
   owner: '',
   repo: '',
   branch: 'main',
@@ -35,7 +43,7 @@ const DEFAULT_CONFIG = {
   profiles: [],
   activeProfileId: '',
 
-  linkRule: 'auto', // auto|github_raw|jsdelivr|statically|githack|gitee_raw|ghpages|custom
+  linkRule: 'auto', // auto|github_raw|jsdelivr|statically|githack|cnb_raw|ghpages|custom
   customDomain: '',
   linkFormat: 'markdown', // url | markdown | html | bbcode
 
@@ -151,6 +159,38 @@ function migrate(cfg) {
       if (Number(cfg.compress.maxHeight) === 1920) cfg.compress.maxHeight = 0;
     }
     cfg.version = 6;
+  }
+  if (v < 7) {
+    // Gitee 平台已下线（改用 CNB）。老配置里残留的 gitee 一律归到 github，
+    // 否则设置页找不到对应的平台按钮、云端连不上还查不出原因。
+    /**
+     * 顺手清掉指向 Gitee 的自定义接口地址：平台已经改成 github，
+     * 再留着 https://gitee.com/api/v5 只会让验证时报一个看不懂的错。
+     * 并把这类「平台被换过」的配置标回未验证 —— 它原来的 Token 是 Gitee 的，
+     * 不能继续冒充已验证。
+     */
+    const scrubApiBase = (obj) => {
+      const api = String(obj.apiBase || '').toLowerCase();
+      if (api.indexOf('gitee') >= 0) obj.apiBase = '';
+    };
+    const demote = (obj) => {
+      if (!obj) return;
+      if (obj.platform === 'gitee') {
+        obj.platform = 'github';
+        scrubApiBase(obj);
+        obj.verified = false;
+        obj.verifiedAt = 0;
+        if (obj.repoInfo) delete obj.repoInfo;
+        if (obj.userName) delete obj.userName;
+      }
+    };
+    if (Array.isArray(cfg.profiles)) cfg.profiles.forEach(demote);
+    if (cfg.platform === 'gitee') {
+      cfg.platform = 'github';
+      scrubApiBase(cfg);
+    }
+    cfg.platform = normalizePlatform(cfg.platform);
+    cfg.version = 7;
   }
   if (!Array.isArray(cfg.profiles)) cfg.profiles = [];
   // 保证永远至少有一个 profile：切换平台 / 新建配置都要有落点
@@ -351,7 +391,7 @@ class Store {
       verified: false,
       verifiedAt: 0,
       createdAt: Date.now(),
-      platform: (patch && patch.platform) || this.data.platform || 'github',
+      platform: normalizePlatform((patch && patch.platform) || this.data.platform),
       owner: '',
       repo: '',
       branch: 'main',
@@ -443,24 +483,38 @@ class Store {
   /**
    * 导出为可移植的 JSON。
    *
-   * 故意不导出 Token：落盘的 Token 是 Windows DPAPI 加密的，密钥绑在这台机器上，
-   * 换台电脑根本解不开；与其导出一串废密文，不如明确告诉用户「导入后要补 Token」。
+   * 只导出「换台电脑也能立刻用上」的东西：
+   *   - 各份归档配置的仓库信息 **+ Token**（明文，导入端会用本机的 DPAPI 重新加密落盘）
+   *   - 一份全局的「文件链接」配置（链接规则 / 自定义域名 / 链接格式 / 预览代理）
+   *
+   * 故意不导出本地路径：换台电脑后 D:\xxx 往往根本不存在，写进去只会让导入端
+   * 指向一个不存在的目录。导入端拿到 localDir='' 之后会引导用户为本机重新绑定目录。
+   *
+   * ⚠️ Token 是明文落在 JSON 里的，导出前必须让用户明确确认（见 profile:export 的确认框）。
    */
   exportProfiles() {
+    const cfg = this.data;
     return {
       kind: 'jie-dispatch-profiles',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
-      profiles: (this.data.profiles || []).map((p) => {
+      settings: {
+        linkRule: cfg.linkRule || 'auto',
+        customDomain: cfg.customDomain || '',
+        linkFormat: cfg.linkFormat || 'markdown',
+        proxyUrl: cfg.proxyUrl || ''
+      },
+      profiles: (cfg.profiles || []).map((p) => {
         const o = {
           name: p.name || '',
           note: p.note || '',
-          platform: p.platform || 'github',
+          platform: normalizePlatform(p.platform),
           owner: p.owner || '',
           repo: p.repo || '',
           branch: p.branch || 'main',
           apiBase: p.apiBase || '',
-          localDir: p.localDir || ''
+          // Token 一起带走：不带上，换台机器等于要用户从头再配一遍
+          token: this._decryptToken(p) || ''
         };
         if (p.userName) o.userName = p.userName;
         return o;
@@ -472,11 +526,13 @@ class Store {
    * 导入归档配置。
    *
    * - 一律分配新 id，避免和本机已有配置撞车；
-   * - 一律标记为「未验证」：换台机器后 Token 没了、本地目录也未必在，
-   *   必须由用户补 Token 后重新跑一次验证，不能直接冒充「已验证」；
-   * - 同名同仓库同目录的视为重复，默认跳过（除非同一文件里出现两次）。
+   * - 一律标记为「未验证」：换台机器后本地目录还没绑，必须由用户补目录后重新验证；
+   * - Token 跟着配置一起进来，用本机 DPAPI 重新加密落盘；
+   * - 本地路径**不导入**：换台电脑路径多半不存在，交给渲染层引导用户重新绑定；
+   * - 同平台 + 同 owner/repo 的视为重复，默认跳过（除非同一文件里出现两次）。
    *
-   * 返回 { added, skipped, profiles }，由渲染层接手「可用性体检 + 引导修改」。
+   * 返回 { added, skipped, settingsApplied, profiles }，
+   * 由渲染层接手「引导填本地路径 + 可用性体检」。
    */
   importProfiles(payload) {
     const incoming = (payload && payload.profiles) || [];
@@ -487,8 +543,7 @@ class Store {
     const added = [];
     const skipped = [];
 
-    const keyOf = (p) =>
-      [p.platform || 'github', (p.owner || '').toLowerCase(), (p.repo || '').toLowerCase(), p.localDir || ''].join('|');
+    const keyOf = (p) => [normalizePlatform(p.platform), (p.owner || '').toLowerCase(), (p.repo || '').toLowerCase()].join('|');
     const seen = new Set(this.data.profiles.map(keyOf));
 
     for (const raw of incoming) {
@@ -496,18 +551,22 @@ class Store {
         id: newProfileId(),
         name: String(raw.name || '').slice(0, 60),
         note: String(raw.note || '').slice(0, 200),
-        platform: raw.platform === 'gitee' ? 'gitee' : 'github',
+        platform: normalizePlatform(raw.platform),
         owner: String(raw.owner || '').trim(),
         repo: String(raw.repo || '').trim(),
         branch: String(raw.branch || 'main').trim() || 'main',
         apiBase: String(raw.apiBase || '').trim(),
-        localDir: String(raw.localDir || '').trim(),
+        // 本地路径绝不从文件里带过来 —— 换台机器它多半不存在，
+        // 由渲染层在导入后引导用户为本机重新绑定（见 settings.js renderAvailability）
+        localDir: '',
         verified: false,
         verifiedAt: 0,
         createdAt: Date.now(),
         imported: true
       };
       if (raw.userName) p.userName = String(raw.userName).slice(0, 80);
+      // Token 直接用本机 DPAPI 重新加密，落盘的永远不是明文
+      if (raw.token) this._encryptInto(p, String(raw.token));
       const k = keyOf(p);
       if (!p.owner || !p.repo) {
         skipped.push({ profile: p, reason: '缺少用户名或仓库名' });
@@ -522,11 +581,28 @@ class Store {
       added.push(p);
     }
 
-    if (added.length) this._write();
+    // 顺带恢复「文件链接」的全局配置。这几项是全 app 共用的，
+    // 跟着配置文件一起搬过去，换机器就不用再手抄一遍链接规则。
+    const st = payload && payload.settings;
+    let settingsApplied = false;
+    if (st && typeof st === 'object') {
+      const patch = {};
+      if (st.linkRule) patch.linkRule = String(st.linkRule);
+      if (typeof st.customDomain === 'string') patch.customDomain = st.customDomain;
+      if (st.linkFormat) patch.linkFormat = String(st.linkFormat);
+      if (typeof st.proxyUrl === 'string') patch.proxyUrl = st.proxyUrl;
+      if (Object.keys(patch).length) {
+        Object.assign(this.data, patch);
+        settingsApplied = true;
+      }
+    }
+
+    if (added.length || settingsApplied) this._write();
     const out = this.get();
     return {
       added: added.length,
       skipped: skipped.length,
+      settingsApplied: settingsApplied,
       skippedDetail: skipped.map((s) => ({ label: s.profile.owner + '/' + s.profile.repo, reason: s.reason })),
       profiles: out.profiles,
       cfg: out
@@ -550,4 +626,4 @@ function maskToken(t) {
   return t.slice(0, 4) + '*'.repeat(Math.min(12, t.length - 8)) + t.slice(-4);
 }
 
-module.exports = { Store, DEFAULT_CONFIG };
+module.exports = { Store, DEFAULT_CONFIG, PLATFORMS, normalizePlatform };

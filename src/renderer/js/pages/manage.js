@@ -40,6 +40,8 @@ const view = {
   loading: false,
   shown: PAGE,
   git: null,
+  /** 云端检测器的最近一次结论（cloud:detect 的返回） */
+  cloud: null,
   hasTime: false,
   sortKey: 'name', // name | size | mtime
   sortDir: 1 // 1 升序，-1 降序
@@ -165,12 +167,14 @@ async function load() {
   refreshStats();
 }
 
-/** 左侧只保留「仓库根目录」+ 当前路径 + 状态，不再铺目录树 */
+/** 左侧只保留「仓库根目录」+ 当前路径 + 状态 + 云端检测器，不再铺目录树 */
 async function loadSide() {
   const root = $('#mgRootNode');
   root.classList.toggle('active', view.dir === '');
   $('#mgCurPath').textContent = view.dir || '仓库根目录';
   await refreshGitState();
+  // 本地状态和云端比对并行不了：都要跑 git / 网络，串行更省事
+  await refreshCloudDetect();
 }
 
 async function refreshGitState() {
@@ -203,6 +207,151 @@ async function refreshGitState() {
   } catch (e) {
     view.git = null;
     box.innerHTML = '<span class="bad">状态读取失败</span>';
+  }
+}
+
+/* ---------------------------------------------------------------- 云端检测器 */
+
+/**
+ * 云端检测器。
+ *
+ * 走云端接口上传 / 删除时，本地是「被顺带同步」的一方。但如果改动是从别处来的
+ * —— 网页端直接提交、另一台电脑推的、同事合的 PR —— 本地这边是不知道的：
+ * 界面看着一切正常，实际已经落后云端好几个提交，甚至两边都改了、分叉了。
+ *
+ * 这个检测器就是把这件事显式摆出来：拿本地 HEAD 和云端 HEAD 比，谁新谁旧、
+ * 差几个提交，一眼可见，并给出一个能直接点的动作（拉取 / 推送）。
+ * 它只读不写 —— 真正的拉与推都要用户点按钮。
+ */
+
+/** 自动检测节流：翻目录会连着触发 load()，5 秒内不重复打云端接口 */
+const DETECT_INTERVAL = 5000;
+let lastDetectAt = 0;
+
+async function refreshCloudDetect(force) {
+  const box = $('#mgCloudState');
+  if (!box) return;
+  const cfg = state.cfg || {};
+
+  if (!cfg.owner || !cfg.repo) {
+    view.cloud = null;
+    box.innerHTML = '<span class="txt">未配置仓库</span>';
+    return;
+  }
+
+  if (!force && view.cloud && Date.now() - lastDetectAt < DETECT_INTERVAL) {
+    box.innerHTML = renderCloudDetect(view.cloud);
+    bindCloudDetectActions();
+    return;
+  }
+
+  box.innerHTML = '<span class="txt">正在检测本地与云端…</span>';
+  let d = null;
+  try {
+    d = await window.cloudpic.cloud.detect();
+  } catch (e) {
+    view.cloud = null;
+    box.innerHTML =
+      '<span class="bad">检测失败</span><br><span class="txt">' + escapeHtml(friendlyError(e.message)) + '</span>';
+    return;
+  }
+  lastDetectAt = Date.now();
+  view.cloud = d;
+  box.innerHTML = renderCloudDetect(d);
+  bindCloudDetectActions();
+}
+
+/** 两个短 SHA 并排摆出来，再配一行结论 + 动作按钮 */
+function renderCloudDetect(d) {
+  if (!d) return '<span class="txt">未检测</span>';
+  if (d.relation === 'unconfigured') return '<span class="txt">未配置仓库</span>';
+  if (!d.ok) {
+    return (
+      '<span class="bad">云端不可达</span><br><span class="txt">' +
+      escapeHtml((d.cloud && d.cloud.message) || '未知原因') +
+      '</span>'
+    );
+  }
+
+  const localCell = d.local.isRepo
+    ? '本地 <span class="sha" title="' + escapeHtml(d.local.sha || '') + '">' + escapeHtml(d.local.short || '?') + '</span>'
+    : '本地 <span class="sha">未克隆</span>';
+  const cloudShort = d.cloud.short || (d.cloud.ok ? '?' : '空');
+  const cloudCell =
+    '云端 <span class="sha" title="' + escapeHtml(d.cloud.sha || '') + '">' + escapeHtml(cloudShort) + '</span>';
+  const shaLine = '<div>' + localCell + '<span class="arrow">⟷</span>' + cloudCell + '</div>';
+
+  const MAP = {
+    same: { cls: 'ok', text: '本地与云端一致', act: '' },
+    'local-behind': { cls: 'bad', text: '云端更新 — 本地落后 ' + d.behind + ' 个提交', act: 'pull' },
+    'local-ahead': { cls: 'bad', text: '本地更新 — 领先云端 ' + d.ahead + ' 个提交', act: 'push' },
+    diverged: { cls: 'bad', text: '两边分叉：本地领先 ' + d.ahead + '、落后 ' + d.behind, act: '' },
+    'no-local': { cls: '', text: '这台电脑还没克隆仓库，只能浏览云端', act: '' },
+    unknown: { cls: 'bad', text: '提交历史比不出来' + (d.cloud && d.cloud.message ? '：' + d.cloud.message : ''), act: '' }
+  };
+  const st = MAP[d.relation] || MAP.unknown;
+
+  let html = shaLine + '<div class="' + (st.cls || '') + '">' + escapeHtml(st.text) + '</div>';
+
+  if (d.relation === 'local-behind') {
+    html += '<button class="btn btn-primary btn-sm" id="btnMgCloudPull">拉取云端</button>';
+  } else if (d.relation === 'local-ahead') {
+    html += '<button class="btn btn-primary btn-sm" id="btnMgCloudPush">推送到云端</button>';
+  } else if (d.relation === 'diverged') {
+    html +=
+      '<button class="btn btn-ghost btn-sm" id="btnMgCloudPull">先拉云端</button>' +
+      '<button class="btn btn-ghost btn-sm" id="btnMgCloudPush">强推本地</button>';
+  } else if (d.relation === 'no-local') {
+    html += '<span class="txt">到「设置」绑定本地目录后可对比提交</span>';
+  }
+  return html;
+}
+
+function bindCloudDetectActions() {
+  const pull = $('#btnMgCloudPull');
+  if (pull) pull.onclick = cloudPull;
+  const push = $('#btnMgCloudPush');
+  if (push) push.onclick = cloudPush;
+}
+
+/** 云端新 → 把云端拉下来（复用设置里的同步策略：pull 或强制对齐） */
+async function cloudPull() {
+  const btn = $('#btnMgCloudPull');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '拉取中…';
+  }
+  try {
+    const r = await window.cloudpic.cloud.pullCloud();
+    if (r.skipped) warn(r.message);
+    else if (r.ok) {
+      ok('已拉取云端：' + r.message);
+      await load();
+    } else err(r.message);
+  } catch (e) {
+    err(e.message || String(e));
+  } finally {
+    await refreshCloudDetect(true);
+  }
+}
+
+/** 云端旧 → 把本地提交推上去（不改写历史，有人抢先提交时会失败并提示） */
+async function cloudPush() {
+  const btn = $('#btnMgCloudPush');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '推送中…';
+  }
+  try {
+    const r = await window.cloudpic.cloud.pushLocal();
+    if (r.ok) {
+      ok(r.message || '已推送到云端');
+      await load();
+    } else err(r.message);
+  } catch (e) {
+    err(e.message || String(e));
+  } finally {
+    await refreshCloudDetect(true);
   }
 }
 
@@ -488,8 +637,9 @@ function openRenameDialog(targets) {
     '<div class="callout" style="margin-bottom:0">' +
     (view.source === 'local'
       ? '本地目录会直接改名；改完后记得在左侧点「提交并推送」把改动同步到云端。'
-      : '云端会重新写一份内容并删除旧路径，' +
-        ((state.cfg || {}).platform === 'gitee' ? 'Gitee 会产生两次提交' : '整批只产生一次提交，是原子的')) +
+      : ((state.cfg || {}).platform === 'cnb'
+          ? 'CNB 的写入通过本地 Git 提交推送完成，整批只产生一次提交。'
+          : '云端会重新写一份内容并删除旧路径，整批只产生一次提交，是原子的')) +
     '</div>';
 
   const handle = modal({
@@ -775,6 +925,8 @@ function bind() {
   };
   $('#btnMgRefresh').onclick = () => load();
   $('#btnMgPull').onclick = pullLatest;
+  const detectBtn = $('#btnMgDetect');
+  if (detectBtn) detectBtn.onclick = () => refreshCloudDetect(true);
 
   const head = $('#mgListHead');
   if (head) {
@@ -941,6 +1093,9 @@ export default {
     } else if (key !== lastIdentity) {
       lastIdentity = key;
       view.source = state.cfg && state.cfg.localDir ? 'local' : 'remote';
+      // 换了仓库，检测器的结论作废，重来一次
+      view.cloud = null;
+      lastDetectAt = 0;
       syncSourceSeg();
       navigate('');
     }
