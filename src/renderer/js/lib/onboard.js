@@ -1,6 +1,7 @@
 /**
- * 新手指引：首次启动必须走完，才允许进入主界面。
+ * 新手指引：首次启动时弹出来带着走一遍，但**不强制**。
  * 四步：选平台 → 填仓库与令牌（现场验证通过才放行）→ 映射本地目录 → 完成
+ * 右上角的 ❌ 随时可以退（见 quit()），之后还能在设置页重新叫回来。
  */
 
 import { $, escapeHtml, ok, err, warn } from './dom.js';
@@ -243,6 +244,9 @@ function render() {
     '<img src="/assets/logo.svg" alt="" />' +
     '<div><h2>欢迎使用 快捷文件分发服务@JIE</h2>' +
     '<p>第一次使用先花一分钟把仓库接上，之后打开就是干活</p></div>' +
+    '<button type="button" class="ob-close" id="obClose" title="跳过引导（之后可在「设置」页重看）" aria-label="跳过引导">' +
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>' +
+    '</button>' +
     '</div>' +
     '<div class="ob-steps">' + stepRail() + '</div>' +
     '<div class="ob-body">' + paneHtml() + '</div>' +
@@ -251,6 +255,26 @@ function render() {
 
   bindPane();
   bindFoot();
+  const x = $('#obClose');
+  if (x) x.onclick = quit;
+}
+
+/**
+ * ❌ 退出引导 —— 不强制走完全程。
+ *
+ * 顺手把 onboarded 记成 true，免得每次开机都弹这个框；但这不影响使用，
+ * 想接着配就去「设置」页，那里有「重看新手指引」能把这套流程再叫回来。
+ */
+async function quit() {
+  try {
+    await state.patch({ onboarded: true });
+    state.refresh();
+  } catch (e) {
+    /* 存不上也照样关 —— 绝不能因为写配置失败就把人锁在引导里 */
+  }
+  close();
+  warn('已跳过新手指引 —— 到「设置」页填好仓库信息就能开始用；想再走一遍点「重看新手指引」');
+  window.dispatchEvent(new CustomEvent('cloudpic:changed'));
 }
 
 /* ---------------------------------------------------------------- 各步交互 */

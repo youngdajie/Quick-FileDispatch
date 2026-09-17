@@ -110,6 +110,12 @@ function bindWindowControls() {
 
 async function boot() {
   await state.init();
+  /**
+   * 本机字体清单要在第一次画界面之前拿到：设置页的字体下拉、以及「系统默认」
+   * 实际会落到哪款字体，都取决于它。晚一步拿就会先列一版旧候选再补一版真的，
+   * 用户正好开着设置页就能看见下拉自己变一次。
+   */
+  await appearance.loadInstalledFonts();
   // 主题和字体必须在其它页面 init 之前落下去，否则会先按默认深色画一帧再跳色
   appearance.applyAppearance(state.cfg);
   updateChrome();

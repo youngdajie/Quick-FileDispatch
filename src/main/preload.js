@@ -7,6 +7,8 @@ const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 contextBridge.exposeInMainWorld('cloudpic', {
   app: {
     info: () => invoke('app:info'),
+    /** 本机已安装字体的家族名清单（设置页的「界面字体」下拉靠它列出真装了的字体） */
+    fonts: () => invoke('app:fonts'),
     setBackground: (color) => invoke('ui:setBackground', color)
   },
   config: {

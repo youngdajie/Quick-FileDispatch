@@ -31,6 +31,7 @@ Thumbs.db
 # 离线单测脚本（不依赖网络，不碰真实账号）
 !.demo/test-store.js
 !.demo/test-links.js
+!.demo/test-fonts.js
 !.demo/test-cnb.js
 !.demo/test-cnb-write.js
 !.demo/test-detect.js

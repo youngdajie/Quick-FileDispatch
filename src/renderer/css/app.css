@@ -37,8 +37,10 @@
   --inner: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 
   --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-  /* 界面字体：留空即用这套系统默认；设置页可换成任意本机已装字体 */
-  --font-ui: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* 界面字体：霞鹜文楷是本程序的主字体（装了就整界面用它），
+     没装则往后落到「微软雅黑 UI / Segoe UI」，和以前一致。
+     这里先写死一份是为了首帧不闪字体 —— JS 起来后会按用户选择再覆盖一次。 */
+  --font-ui: "霞鹜文楷 屏幕阅读版", "LXGW WenKai Screen", "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, -apple-system, sans-serif;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   /* 零散色：深色下就是原来写死的那些值，浅色主题会整套换掉，
@@ -1239,6 +1241,18 @@ body.is-onboarding .toast-wrap { filter: none; }
 .ob-head h2 { margin: 0; font-size: 15.5px; }
 .ob-head p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 .ob-head .ob-skip { margin-left: auto; }
+
+/* 引导右上角的 ❌：允许中途退出，不强制跑完四步 */
+.ob-close {
+  margin-left: auto; flex: 0 0 auto; padding: 0;
+  width: 30px; height: 30px; border-radius: 9px;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  color: var(--muted); line-height: 1;
+  transition: background 0.16s, color 0.16s, border-color 0.16s;
+}
+.ob-close:hover { color: var(--danger-text); border-color: var(--danger-text); background: var(--bg-soft); }
+.ob-close:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 
 .ob-steps { display: flex; gap: 0; padding: 14px 22px 0; }
 .ob-step { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); min-width: 0; }

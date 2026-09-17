@@ -16,6 +16,7 @@ const { CloudClient, fileLimitBytes } = require('./platform');
 const git = require('./git');
 const cnb = require('./cnb');
 const local = require('./local');
+const fonts = require('./fonts');
 const CPLinks = require('../renderer/js/lib/links.js');
 
 const IS_DEV = process.argv.includes('--dev') || !app.isPackaged;
@@ -372,6 +373,24 @@ function runSelfTest() {
                 ? document.querySelector('#wmPresets .wm-pre.on').dataset.color : null
             };
           })(),
+          // 界面字体：清单是不是「本机真装了哪些」枚举出来的，而不是那张写死的候选表
+          fontList: (function(){
+            var ap = window.__appearance;
+            var sel = document.getElementById('cfgFont');
+            var opts = sel
+              ? Array.prototype.filter.call(sel.options, function(o){ return !o.disabled && o.value; })
+              : [];
+            return {
+              real: ap ? ap.hasRealFontList() : false,
+              count: ap ? ap.installFontCount() : 0,
+              options: opts.length,
+              groups: ap ? ap.installedFontGroups().map(function(g){ return g.group + ':' + g.fonts.length; }) : [],
+              first: sel && sel.options[0] ? sel.options[0].textContent : '',
+              // 本机装了霞鹜文楷才为真 —— 自检不假设任何机器装了它
+              primary: opts.some(function(o){ return /霞鹜文楷|LXGW WenKai/i.test(o.value); }),
+              stack: getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim()
+            };
+          })(),
           // 归档配置 UI + 数据
           profiles: (function(){
             var rows = document.querySelectorAll('#profileList .pf-row');
@@ -710,6 +729,17 @@ function runSelfTest() {
           eq(onCnb.localDir, '', '切到 CNB 后本地目录没有刷新（还是 GitHub 的）');
           if ((window.__state.cfg.profiles || []).length < 2) {
             failed.push('切到没有配置的平台时没有开空白配置当落点');
+          }
+          // 但这个空白落点是「草稿」—— 它绝不能出现在归档列表 / 下拉里
+          //（用户报的就是这个：来回切平台，凭空多出一个「（未填写仓库）· 待验证 · 无 Token」）
+          {
+            const rows = document.querySelectorAll('#profileList .pf-row').length;
+            const opts = Array.from((document.getElementById('profilePick') || { options: [] }).options).filter(
+              (o) => o.value && !o.disabled && o.value.indexOf('__') !== 0
+            );
+            log.push({ step: 'draft-not-archived', rows: rows, pickOpts: opts.length, profiles: (window.__state.cfg.profiles || []).length });
+            if (rows !== 1) failed.push('切平台后归档列表里多出了条目（草稿不该显示）：' + rows + ' 行');
+            if (opts.length !== 1) failed.push('切平台后归档下拉里多出了条目（草稿不该显示）：' + opts.length + ' 项');
           }
 
           // 给 CNB 填一套完整信息
@@ -1118,15 +1148,22 @@ function runSelfTest() {
           const pick = document.getElementById('profilePick');
           if (!pick) failed.push('仓库标题右边没有归档配置下拉');
           else {
-            const pickOpts = Array.from(pick.options).filter((o) => o.value && !o.disabled && o.value !== '__new__');
+            const pickOpts = Array.from(pick.options).filter((o) => o.value && !o.disabled && o.value.indexOf('__') !== 0);
+            const allProfiles = window.__state.cfg.profiles || [];
+            const archived = allProfiles.filter((p) => !p.draft);
             log.push({
               step: 'profile-pick',
               value: pick.value,
               active: window.__state.cfg.activeProfileId,
               opts: pickOpts.map((o) => o.textContent)
             });
-            eq(pick.value, window.__state.cfg.activeProfileId, '归档配置下拉没有默认选中当前生效的那份');
-            eq(pickOpts.length, (window.__state.cfg.profiles || []).length, '归档配置下拉的条目数和配置数对不上');
+            const activeProf = allProfiles.find((p) => p.id === window.__state.cfg.activeProfileId) || {};
+            eq(pick.value, activeProf.draft ? '__draft__' : window.__state.cfg.activeProfileId, '归档配置下拉没有默认选中当前生效的那份');
+            eq(pickOpts.length, archived.length, '归档配置下拉的条目数和「已归档」配置数对不上');
+            const draftIds = allProfiles.filter((p) => p.draft).map((p) => p.id);
+            if (pickOpts.some((o) => draftIds.indexOf(o.value) >= 0)) {
+              failed.push('归档配置下拉里混进了草稿（没填仓库的空落点）');
+            }
           }
 
           // —— 10. 平台图层：切平台时块上要挂滑动动画类，且左边色条跟着换
@@ -1381,6 +1418,38 @@ function runSelfTest() {
             if (heroTxt.indexOf('小杰') < 0) failed.push('关于页没有「小杰」署名：' + heroTxt);
             document.querySelector('.nav-item[data-page="settings"]').click();
             await sleep(500);
+          }
+
+          // —— 15. 界面字体：下拉里必须是「本机真装了的字体」，而不是程序内置的候选表
+          //      用户装了霞鹜文楷却在下拉里找不到，就是因为以前只列候选表、从不问系统
+          {
+            const ap = window.__appearance;
+            const sel = document.getElementById('cfgFont');
+            const real = await window.cloudpic.app.fonts();
+            const lower = new Set((real || []).map((x) => String(x).toLowerCase()));
+            const values = sel
+              ? Array.from(sel.options).filter((o) => !o.disabled && o.value).map((o) => o.value)
+              : [];
+            const stray = values.filter((v) => !lower.has(v.toLowerCase()));
+            log.push({
+              step: 'font-list',
+              realCount: (real || []).length,
+              options: values.length,
+              groups: ap ? ap.installedFontGroups().map((g) => g.group + ':' + g.fonts.length) : [],
+              first: sel && sel.options[0] ? sel.options[0].textContent : '',
+              stack: getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim(),
+              sample: values.slice(0, 6),
+              lxgw: values.filter((v) => /霞鹜文楷|LXGW WenKai/i.test(v))
+            });
+            if (!(real || []).length) failed.push('app:fonts 没返回本机字体清单');
+            if (ap && !ap.hasRealFontList()) failed.push('渲染层没拿到本机字体清单，下拉退回候选表了');
+            if (values.length < 20) failed.push('字体下拉只有 ' + values.length + ' 项，不像本机字体清单');
+            if (stray.length) failed.push('字体下拉里有本机并不存在的字体：' + stray.slice(0, 5).join('、'));
+            // 主字体必须排在本机字栈最前（装了就用它，没装自然落到下一个）
+            const top = getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim();
+            if (!/霞鹜文楷|LXGW WenKai/i.test(top.split(',')[0] || '')) {
+              failed.push('本机字栈的第一顺位不是霞鹜文楷：' + top.slice(0, 60));
+            }
           }
 
           // —— 收尾：删掉测试造出来的配置，只留指向假 API 的那份，保证下次跑还准
@@ -2045,6 +2114,14 @@ function registerIpc() {
     isDev: IS_DEV,
     cpuCount: require('os').cpus().length
   }));
+
+  /**
+   * 本机已安装字体的家族名清单（给设置页的「界面字体」下拉用）。
+   *
+   * 渲染层是 contextBridge 沙箱，碰不到 fs，所以由主进程扫字体目录再回传。
+   * fonts.js 内部带缓存，第一次约 200ms，之后是一次数组返回。
+   */
+  ipcMain.handle('app:fonts', () => fonts.listFamilies());
 
   ipcMain.handle('config:get', () => store.get());
   ipcMain.handle('config:set', (e, patch) => {
