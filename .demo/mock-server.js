@@ -305,3 +305,16 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log('mock github api listening on http://127.0.0.1:' + PORT);
 });
+
+/**
+ * 端口被占 = 已经有一个假 API 在跑（比如自测里常驻的那个），直接复用它。
+ * 否则 `node .demo/test-cnb.js` 会在已起的服务上撞 EADDRINUSE 崩掉 ——
+ * 报错还长得像业务代码坏了，很误导。
+ */
+server.on('error', (e) => {
+  if (e && e.code === 'EADDRINUSE') {
+    console.log('mock api already running on http://127.0.0.1:' + PORT + '（复用）');
+    return;
+  }
+  throw e;
+});
