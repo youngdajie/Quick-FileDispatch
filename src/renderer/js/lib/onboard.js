@@ -23,7 +23,7 @@ const PLATFORMS = [
     id: 'cnb',
     name: 'CNB',
     desc: '腾讯云原生构建的代码托管，国内直连快。写入通过 Git 完成，需要本机装了 Git。',
-    tip: '单文件 ≤ 200MB · 仓库存储免费 100GiB'
+    tip: '单文件 ≤ 200MB · 仓库存储免费 100GB'
   }
 ];
 

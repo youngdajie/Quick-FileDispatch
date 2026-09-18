@@ -60,7 +60,7 @@ npm run dist      # 打包 NSIS 安装包到 dist/
 | | GitHub 免费账号 | CNB 社区版 |
 | --- | --- | --- |
 | 仓库数量 | 不限（公开 / 私有随意） | 公开不限，私有 5 个 |
-| 单仓库容量 | 建议 ≤ 1 GB | Git 对象 100 GiB |
+| 单仓库容量 | 建议 ≤ 1 GB | Git 对象 100 GB |
 | 单文件上限 | 100 MB | 200 MB |
 | 国内直连 | raw 时好时坏，可套 jsDelivr | 快，可再套 JSDMirror |
 

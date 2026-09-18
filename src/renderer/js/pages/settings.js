@@ -40,6 +40,142 @@ const SLIDE_IN = 300;
 /** 平台切换时先滑出、换内容、再滑入；滑动期间压掉自动重画，否则图层会闪 */
 let slideLock = false;
 
+/* ---------------------------------------------------------------- 编辑目标 */
+
+/**
+ * 「正在编辑哪一份配置」和「当前使用哪一份配置」是两件事，这里把它们拆开。
+ *
+ * 以前点 GitHub / CNB 两个按钮 = 那份配置立刻生效，于是你只想看看 CNB 的表单
+ * 长什么样，上传页、管理页就跟着换仓库了 —— 一个「配置」动作不该有这种副作用。
+ * 现在的分工：
+ *   - 平台按钮 / ＋新建：只换「正在编辑的对象」，保存写进那一份；
+ *   - 真正「当前使用」的是哪一份，只由右上角「归档配置」下拉决定（选中即生效）。
+ *
+ * editTargetId 有三种值：
+ *   ''                 跟着当前生效的那份（默认）
+ *   <profile id>       某一份归档配置
+ *   '__new__:<platform>' 还没创建，保存时才落成一份新配置
+ */
+let editTargetId = '';
+/** 每个平台上次编辑的是哪一份，来回切平台时别跳到别的配置上 */
+const lastEdited = { github: '', cnb: '' };
+
+function platOf(v) {
+  return v === 'cnb' ? 'cnb' : 'github';
+}
+
+/** 当前真正生效的平台 */
+function activePlatform() {
+  return platOf((state.cfg || {}).platform);
+}
+
+function activeProfileId() {
+  return (state.cfg && state.cfg.activeProfileId) || '';
+}
+
+function profileById(id) {
+  return state.profiles.find((p) => p.id === id) || null;
+}
+
+/**
+ * 解析编辑对象：{ mode: 'active' | 'profile' | 'new', platform, profile }
+ *   active  —— 编辑的就是当前生效的那份，保存直接落盘到顶层
+ *   profile —— 编辑的是另一份归档配置，保存只写进它
+ *   new     —— 这个平台还没有配置，表单是空的，保存时新建一份
+ */
+function editTarget() {
+  if (editTargetId === '') {
+    const p = profileById(activeProfileId());
+    return { mode: 'active', platform: activePlatform(), profile: p };
+  }
+  if (editTargetId.indexOf('__new__:') === 0) {
+    return { mode: 'new', platform: platOf(editTargetId.slice('__new__:'.length)), profile: null };
+  }
+  const p = profileById(editTargetId);
+  if (!p) {
+    // 那份配置被删了 / 导入覆盖了，退回「当前生效」
+    editTargetId = '';
+    return editTarget();
+  }
+  const plat = platOf(p.platform);
+  if (p.id === activeProfileId()) return { mode: 'active', platform: plat, profile: p };
+  return { mode: 'profile', platform: plat, profile: p };
+}
+
+function rememberEditTarget() {
+  const t = editTarget();
+  if (t.profile) lastEdited[t.platform] = t.profile.id;
+  return t;
+}
+
+/** 点平台按钮：只把「编辑对象」换到这个平台，不动全局生效的那份 */
+async function pickPlatform(plat) {
+  const cur = editTarget();
+  if (cur.platform === plat) return; // 已经在这个平台的表单上，别乱跳
+
+  const remembered = profileById(lastEdited[plat]);
+  let id = '';
+  if (remembered && platOf(remembered.platform) === plat) id = remembered.id;
+  else if (activePlatform() === plat) id = '';
+  else {
+    const p = state.profileFor(plat);
+    id = p ? p.id : '__new__:' + plat;
+  }
+
+  const back = cur.platform === 'cnb' && plat === 'github';
+  slideLock = true;
+  try {
+    editTargetId = id;
+    playOut(back);
+    await wait(SLIDE_OUT);
+    fill();
+  } finally {
+    slideLock = false;
+  }
+  playIn(back);
+}
+
+/**
+ * 把「正在编辑的那份」设为全局当前使用。
+ * 平台按钮不再负责切换生效配置，这里给一个就地入口 ——
+ * 免得用户为了切过去还得跑到右上角下拉里再找一遍。
+ */
+async function useEditingTarget() {
+  const t = editTarget();
+  if (t.mode === 'active') return;
+  const back = activePlatform() === 'cnb' && t.platform === 'github';
+  let name = '';
+  let moved = false;
+  slideLock = true;
+  try {
+    await save({ silent: true });
+    const again = editTarget();
+    if (again.profile) {
+      name = platLabel(again.profile);
+      playOut(back);
+      await wait(SLIDE_OUT);
+      // 先归位再激活：activateProfile 会 emit→fill()，这会儿编辑对象就该是「新的生效项」了
+      editTargetId = '';
+      await state.activateProfile(again.profile.id);
+      fill();
+      moved = true;
+    }
+  } catch (e) {
+    err(e.message || String(e));
+  } finally {
+    slideLock = false;
+  }
+  if (moved) {
+    playIn(back);
+    ok('已把「' + name + '」设为当前使用');
+  }
+}
+
+function platLabel(p) {
+  if (!p) return '这份配置';
+  return profileLabel(p) + '（' + (PLATFORM_NAME[platOf(p.platform)] || 'GitHub') + '）';
+}
+
 /* ---------------------------------------------------------------- 归档配置 */
 
 function fmtDate(ms) {
@@ -173,11 +309,19 @@ function fillProfilePick() {
   sel.value = state.isDraft ? '__draft__' : list.some((p) => p.id === cur) ? cur : list.length ? list[0].id : '__new__';
 }
 
-/** 新建一份空白配置（远端仓库 + 本地目录都清空，避免覆盖现有配置） */
+/**
+ * ＋新建：把编辑对象换成一个「还没落盘的新配置」。
+ *
+ * 以前这里是立刻在配置里塞一份空白草稿并切过去 —— 点两下就多两条看不见的
+ * 草稿，取消了也留在那儿。现在只在内存里记一个落点，真去保存了才会建出来，
+ * 半路放弃等于什么都没发生。
+ */
 async function newProfile() {
-  const platform = (state.cfg && state.cfg.platform) || 'github';
-  await state.newProfile({ platform: platform });
-  ok('已新建一份空白配置 —— 填上仓库它就会出现在下面的列表里');
+  const t = editTarget();
+  const plat = t.platform;
+  editTargetId = '__new__:' + plat;
+  fill();
+  ok('已切到一份空白的 ' + (PLATFORM_NAME[plat] || '') + ' 配置 —— 填好仓库再保存就会建出来');
 }
 
 async function renameProfile(id) {
@@ -245,18 +389,20 @@ function playIn(back) {
 }
 
 /**
- * 切到某一份配置。平台不同就整块左右滑动 —— GitHub / CNB 是两张图层，
- * 往右滑是去 CNB，往左滑是回 GitHub，左边的主题色条跟着换。
+ * 切到某一份配置 —— 这才是真正「换生效配置」的动作，入口有两个：
+ * 右上角「归档配置」下拉，以及配置列表里的「切换」按钮。
+ * （平台按钮不干这事，见上面的 editTarget 注释。）
  */
 async function switchToProfile(id) {
   const target = state.profiles.find((x) => x.id === id);
   if (!target) return;
-  if (target.id === (state.cfg && state.cfg.activeProfileId)) {
+  if (target.id === activeProfileId()) {
+    editTargetId = '';
     fillPlatform();
     return;
   }
-  const curPlat = (state.cfg && state.cfg.platform) || 'github';
-  const nextPlat = target.platform || 'github';
+  const curPlat = activePlatform();
+  const nextPlat = platOf(target.platform);
   const changed = curPlat !== nextPlat;
   const back = curPlat === 'cnb' && nextPlat === 'github';
 
@@ -268,6 +414,8 @@ async function switchToProfile(id) {
       playOut(back);
       await wait(SLIDE_OUT);
     }
+    // 先归位再激活：activateProfile 会 emit→fill()，这会儿编辑对象就该是「新的生效项」了
+    editTargetId = '';
     await state.activateProfile(id);
     fill();
   } catch (e) {
@@ -276,49 +424,7 @@ async function switchToProfile(id) {
     slideLock = false;
   }
   if (changed) playIn(back);
-  ok(
-    target.draft
-      ? '已切到 ' + (PLATFORM_NAME[nextPlat] || '') + ' 的新配置 —— 填上仓库就会出现在下面的列表里'
-      : '已切换到「' + profileLabel(target) + '」'
-  );
-}
-
-/**
- * 切到某个平台：已有配置就整份切过去，没有就开一份空白的当落点。
- *
- * 这份空白是「草稿」（draft），不会出现在归档列表里 —— 以前它会直接列出来，
- * 显示成「（未填写仓库）· 待验证 · 无 Token」，切几次就多出几条，像是凭空冒出来的。
- * 用户把仓库名填上（= 明确保存了配置），它自然就从草稿变成一份正经配置。
- */
-async function switchToPlatform(platform) {
-  const curPlat = (state.cfg && state.cfg.platform) || 'github';
-  if (platform === curPlat) {
-    fillPlatform();
-    return;
-  }
-  const target = state.profileFor(platform);
-  if (target) {
-    await switchToProfile(target.id);
-    return;
-  }
-  const back = curPlat === 'cnb' && platform === 'github';
-  slideLock = true;
-  try {
-    await save({ silent: true });
-    playOut(back);
-    await wait(SLIDE_OUT);
-    await state.newProfile({ platform: platform });
-    fill();
-  } catch (e) {
-    err(e.message || String(e));
-  } finally {
-    slideLock = false;
-  }
-  playIn(back);
-  warn(
-    '还没有 ' + PLATFORM_NAME[platform] + ' 的配置，已开一份空白的 —— 填上仓库它就会出现在列表里，' +
-      '再点「验证并归档」标成可用'
-  );
+  ok('已切换到「' + platLabel(target) + '」');
 }
 
 /* ---------------------------------------------------------------- 导出 / 导入 */
@@ -553,12 +659,16 @@ async function archiveProfile() {
   const custom = $('#cfgCustomDomain').value.trim();
   const typedToken = $('#cfgToken').value.trim();
 
+  // 校验的是「正在编辑的那一份」，不是当前生效的那份
+  const before = editTarget();
+  const hasToken = before.mode === 'active' ? !!(state.cfg && state.cfg.hasToken) : !!(before.profile && before.profile.hasToken);
+
   if (!owner || !repo) {
     warn('「仓库信息」还没填完：请填写用户名和仓库名');
     $('#cfgOwner').focus();
     return;
   }
-  if (!typedToken && !(state.cfg && state.cfg.hasToken)) {
+  if (!typedToken && !hasToken) {
     warn('「仓库信息」缺少访问令牌：在下面粘贴 Token，再点「验证并归档」');
     $('#cfgToken').focus();
     return;
@@ -575,12 +685,6 @@ async function archiveProfile() {
   if (ruleId === 'custom' && !custom) {
     warn('「文件链接」选了自定义域名，但没填域名 / 前缀');
     $('#cfgCustomDomain').focus();
-    return;
-  }
-
-  const id = (state.cfg && state.cfg.activeProfileId) || '';
-  if (!id) {
-    err('没有可归档的配置，请先点「＋ 新建」');
     return;
   }
 
@@ -603,7 +707,14 @@ async function archiveProfile() {
   };
 
   try {
+    // 先落盘（编辑别的配置时 save 会把它建出来 / 更新到它身上），再拿它的 id 去体检
     await save({ silent: true });
+    const t = editTarget();
+    const id = t.profile ? t.profile.id : '';
+    if (!id) {
+      err('没有可归档的配置，请先点「＋ 新建」');
+      return;
+    }
     const chk = await window.cloudpic.profile.check({ id: id });
 
     if (!chk.ok) {
@@ -756,8 +867,9 @@ async function setFont(font) {
 /* ---------------------------------------------------------------- 填充 */
 
 function fillPlatform() {
-  const c = state.cfg || {};
-  const plat = (c.platform || 'github') === 'cnb' ? 'cnb' : 'github';
+  const t = rememberEditTarget();
+  const plat = t.platform;
+  const actPlat = activePlatform();
   const isCnb = plat === 'cnb';
 
   document.querySelectorAll('#cfgPlatform button').forEach((b) => {
@@ -771,11 +883,31 @@ function fillPlatform() {
   if (badgeIcon) badgeIcon.innerHTML = brandIcon(plat, 14);
   const badge = $('#platBadgeText');
   if (badge) badge.textContent = PLATFORM_NAME[plat];
+
+  // 「正在编辑」和「正在使用」是两件事，这里把状态摆明，别让用户以为已经切过去了
+  const flag = $('#platState');
+  if (flag) {
+    flag.className =
+      'plat-state' + (t.mode === 'active' ? ' on' : t.mode === 'new' ? ' new' : '');
+    flag.textContent = t.mode === 'active' ? '当前使用中' : t.mode === 'new' ? '新建' : '仅编辑';
+  }
+  const setActive = $('#btnSetActive');
+  // 只有「编辑的是另一份已存在的配置」时才有得可切；
+  // 编辑当前生效那份、或还只是个「新建」落点时都不该出现
+  if (setActive) setActive.hidden = t.mode !== 'profile';
+
   const hint = $('#platHint');
   if (hint) {
-    hint.textContent = isCnb
-      ? '正在编辑 CNB 的配置 · 左侧竖条为 CNB 主题色'
-      : '正在编辑 GitHub 的配置 · 左侧竖条为 GitHub 主题色';
+    if (t.mode === 'active') {
+      hint.textContent =
+        '正在编辑 ' + PLATFORM_NAME[plat] + ' 的配置 · 整程序都在用它';
+    } else if (t.mode === 'new') {
+      hint.textContent =
+        PLATFORM_NAME[plat] + ' 还没有配置 · 填好仓库信息保存即可新建一份（不会顶掉当前的）';
+    } else {
+      hint.textContent =
+        '正在编辑 ' + PLATFORM_NAME[plat] + ' 的配置 · 当前使用的是 ' + PLATFORM_NAME[actPlat];
+    }
   }
 
   $('#tokenHelp').innerHTML = TOKEN_HELP[isCnb ? 'cnb' : 'github'];
@@ -785,7 +917,7 @@ function fillPlatform() {
 
 function fillLinkRules() {
   const c = state.cfg || {};
-  const platform = c.platform || 'github';
+  const platform = editTarget().platform;
   const rules = CPLinks.LINK_RULES.filter((r) => r.platforms.indexOf(platform) >= 0);
   const sel = $('#cfgLinkRule');
   const current = c.linkRule || 'auto';
@@ -805,7 +937,7 @@ function updateRuleDesc() {
 function updateLinkPreview() {
   const c = state.cfg || {};
   const sample = {
-    platform: c.platform,
+    platform: editTarget().platform,
     owner: $('#cfgOwner').value || c.owner || 'owner',
     repo: $('#cfgRepo').value || c.repo || 'repo',
     branch: $('#cfgBranch').value || c.branch || 'main',
@@ -846,15 +978,34 @@ function fill() {
   const ui = c.ui || {};
 
   fillPlatform();
-  $('#cfgOwner').value = c.owner || '';
-  $('#cfgRepo').value = c.repo || '';
-  $('#cfgBranch').value = c.branch || 'main';
-  $('#cfgApiBase').value = c.apiBase || '';
-  $('#cfgToken').value = '';
-  $('#cfgToken').placeholder = c.hasToken ? '已保存：' + (c.tokenMask || '********') + '（留空表示不修改）' : '粘贴 Token';
-  $('#tokenHint').textContent = c.hasToken ? '（已配置）' : '（未配置）';
 
-  $('#cfgLocalDir').value = c.localDir || '';
+  /**
+   * 「仓库信息 + 本地目录」属于正在编辑的那一份配置；
+   * 压缩、水印、同步、外观、文件链接这些是全局的，永远读当前生效那份。
+   */
+  const t = editTarget();
+  const repo =
+    t.mode === 'active'
+      ? { owner: c.owner, repo: c.repo, branch: c.branch, apiBase: c.apiBase, localDir: c.localDir, hasToken: c.hasToken, tokenMask: c.tokenMask }
+      : {
+          owner: (t.profile && t.profile.owner) || '',
+          repo: (t.profile && t.profile.repo) || '',
+          branch: (t.profile && t.profile.branch) || 'main',
+          apiBase: (t.profile && t.profile.apiBase) || '',
+          localDir: (t.profile && t.profile.localDir) || '',
+          hasToken: !!(t.profile && t.profile.hasToken),
+          tokenMask: (t.profile && t.profile.tokenMask) || ''
+        };
+
+  $('#cfgOwner').value = repo.owner || '';
+  $('#cfgRepo').value = repo.repo || '';
+  $('#cfgBranch').value = repo.branch || 'main';
+  $('#cfgApiBase').value = repo.apiBase || '';
+  $('#cfgToken').value = '';
+  $('#cfgToken').placeholder = repo.hasToken ? '已保存：' + (repo.tokenMask || '********') + '（留空表示不修改）' : '粘贴 Token';
+  $('#tokenHint').textContent = repo.hasToken ? '（已配置）' : '（未配置）';
+
+  $('#cfgLocalDir').value = repo.localDir || '';
   $('#cfgAutoPull').checked = sync.autoPull !== false;
   $('#cfgSyncStrategy').value = sync.strategy || 'pull';
 
@@ -896,9 +1047,8 @@ function fill() {
 }
 
 function collect() {
-  const activePlatform = document.querySelector('#cfgPlatform button.active');
   const patch = {
-    platform: activePlatform ? activePlatform.dataset.platform : 'github',
+    platform: editTarget().platform,
     owner: $('#cfgOwner').value.trim(),
     repo: $('#cfgRepo').value.trim(),
     branch: $('#cfgBranch').value.trim() || 'main',
@@ -943,6 +1093,11 @@ async function refreshGitStatus() {
   const box = $('#gitStatus');
   const gv = await window.cloudpic.git.version();
   const lines = [];
+  // 本机的 Git 状态是按「当前使用中」那份配置的本地目录算的（主进程只认它），
+  // 正在编辑别的配置时先说清楚，免得用户以为看的是手上这份
+  if (editTarget().mode !== 'active') {
+    lines.push('<span class="hint">以下 Git 状态按「当前使用中」的配置显示</span>');
+  }
   lines.push('Git：' + (gv && gv.version ? '<span class="ok">' + escapeHtml(gv.version) + '</span>' : '<span class="bad">未检测到，本地同步功能不可用</span>'));
 
   const cfg = state.cfg || {};
@@ -964,13 +1119,69 @@ async function refreshGitStatus() {
 
 /* ---------------------------------------------------------------- 操作 */
 
+/** 一份配置里「属于这份配置」的字段（对应 store.js 的 PROFILE_FIELDS + Token） */
+const CONN_KEYS = ['platform', 'owner', 'repo', 'branch', 'apiBase', 'localDir', 'token'];
+
+/**
+ * 保存。
+ *
+ * 关键点：写进「正在编辑的那一份」，而不是无条件写当前生效的那份 ——
+ * 平台按钮只切编辑对象，用户完全可以一边用着 GitHub、一边把 CNB 那份填好。
+ * 全局设置（压缩 / 水印 / 同步 / 外观 / 文件链接）不分配置，照旧写当前生效那份。
+ */
 async function save(opts) {
   const patch = collect();
-  await state.patch(patch);
+  const t = editTarget();
+  // 「还没填仓库、先不建」这一种要单独压掉结尾的「已保存」提示，否则一次弹两条
+  let justWarned = false;
+
+  if (t.mode === 'active') {
+    await state.patch(patch);
+  } else {
+    const conn = {};
+    for (const k of CONN_KEYS) {
+      if (k === 'token') {
+        if (patch.token) conn.token = patch.token;
+        continue;
+      }
+      if (patch[k] !== undefined) conn[k] = patch[k];
+    }
+    conn.platform = t.platform;
+    conn.branch = patch.branch || 'main';
+
+    const globalPatch = Object.assign({}, patch);
+    for (const k of CONN_KEYS) delete globalPatch[k];
+    await state.patch(globalPatch);
+
+    if (t.mode === 'profile') {
+      await state.updateProfile(t.profile.id, conn);
+    } else if (patch.owner && patch.repo) {
+      // 该平台还没有配置 —— 现在才真正建出来，并且不抢「当前使用」的位置
+      await state.newProfile(Object.assign({ activate: false }, conn));
+      const made = state.profiles
+        .filter((p) => platOf(p.platform) === t.platform)
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+      editTargetId = made ? made.id : '';
+    } else {
+      // 连仓库都没填就别建了 —— 不然每次自动保存都往配置里塞一个空壳（还看不见）
+      justWarned = true;
+      if (!(opts && opts.silent)) {
+        warn('填上「用户名」和「仓库名」再保存，才会为 ' + (PLATFORM_NAME[t.platform] || '') + ' 新建一份配置');
+      }
+    }
+  }
+
   tokenTouched = false;
   $('#cfgToken').value = '';
   fill();
-  if (!(opts && opts.silent)) ok('设置已保存');
+  if (!(opts && opts.silent) && !justWarned) {
+    const now = editTarget();
+    ok(
+      now.mode === 'active'
+        ? '设置已保存'
+        : '已保存到「' + platLabel(now.profile) + '」，当前使用的仍是 ' + PLATFORM_NAME[activePlatform()]
+    );
+  }
   window.dispatchEvent(new CustomEvent('cloudpic:changed'));
 }
 
@@ -1043,8 +1254,12 @@ export default {
     document.querySelectorAll('#cfgPlatform button').forEach((b) => {
       const plat = b.dataset.platform;
       b.innerHTML = brandIcon(plat, 15) + '<span>' + escapeHtml(PLATFORM_NAME[plat] || plat) + '</span>';
-      b.onclick = () => switchToPlatform(plat);
+      b.onclick = () => pickPlatform(plat);
     });
+
+    // 平台按钮只管「编辑哪一份」，真要切生效配置走这里 / 右上角下拉
+    const setActive = $('#btnSetActive');
+    if (setActive) setActive.onclick = () => useEditingTarget();
 
     renderWmPresets();
     fill();

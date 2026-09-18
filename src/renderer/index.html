@@ -269,12 +269,15 @@
           </aside>
           <div class="mg-main">
             <div class="mg-listhead" id="mgListHead" hidden>
-              <span class="lh-check"></span>
+              <span class="lh-check">
+                <button type="button" class="mg-check" id="mgCheckAll" role="checkbox" aria-checked="false" title="全选 / 取消全选">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                </button>
+              </span>
               <span class="lh-icon"></span>
               <button type="button" class="lh-sort lh-name" data-sort="name">名称</button>
               <button type="button" class="lh-sort lh-size" data-sort="size">大小</button>
               <button type="button" class="lh-sort lh-time" data-sort="mtime">修改时间</button>
-              <span class="lh-ops"></span>
             </div>
             <div class="mg-grid" id="mgGrid"></div>
             <div class="mg-empty" id="mgEmpty" hidden></div>
@@ -300,12 +303,24 @@
 
         <div class="settings-wrap">
 
+          <!-- 引导条：一句话说清「一份配置是什么、怎么用」，独立成卡比挤在标题下更容易被读到 -->
+          <section class="card guide-card">
+            <span class="gc-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 7.5 12 3.5l8 4-8 4z"/><path d="M4 12.5 12 16.5l8-4"/><path d="M4 17 12 21l8-4"/>
+              </svg>
+            </span>
+            <div class="gc-text">
+              <b>一份配置 = 仓库信息 + 本地目录 + 文件链接</b>
+              <span>三样东西合成一份配置，验证通过后归档保存；右上角「归档配置」里随时切换</span>
+            </div>
+          </section>
+
           <!-- ============ 仓库设置：仓库信息 + 本地目录 + 文件链接 ============ -->
           <section class="card repo-module">
             <div class="card-head">
               <div class="head-main">
                 <h2>仓库设置 <span class="prof-count" id="profCount" hidden></span></h2>
-                <p>仓库信息、本地目录、文件链接合成一份配置；验证通过后归档，随时切换</p>
               </div>
               <div class="head-tools">
                 <div class="archive-pick">
@@ -326,11 +341,13 @@
 
               <!-- 平台图层：切平台时整块左右滑动，左边竖条是该平台的主题色 -->
               <div class="plat-frame plat-layer" id="repoPane" data-platform="github" style="margin-top:13px">
-                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <div class="plat-head">
                   <span class="plat-badge" id="platBadge">
                     <span class="pb-ico" id="platBadgeIcon"></span><span id="platBadgeText">GitHub</span>
                   </span>
-                  <span class="hint" id="platHint" style="margin:0"></span>
+                  <span class="plat-state" id="platState"></span>
+                  <span class="hint" id="platHint"></span>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btnSetActive" hidden>设为当前使用</button>
                 </div>
 
                 <!-- 一、仓库信息 -->

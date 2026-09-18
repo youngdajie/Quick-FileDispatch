@@ -27,9 +27,9 @@ function quotaTable() {
     '<thead><tr><th>项目</th><th>GitHub 免费账号</th><th>CNB 社区版（个人）</th></tr></thead>' +
     '<tbody>' +
     '<tr><td>仓库数量</td><td>不限（公开 / 私有随意）</td><td>公开不限，私有 5 个</td></tr>' +
-    '<tr><td>单仓库容量</td><td>建议 ≤ 1 GB（超出会收到提醒）</td><td>仓库存储免费额度 100 GiB</td></tr>' +
+    '<tr><td>单仓库容量</td><td>建议 ≤ 1 GB（超出会收到提醒）</td><td>仓库存储免费额度 100 GB</td></tr>' +
     '<tr><td>单文件上限</td><td>100 MB（Git Data API）</td><td>200 MB</td></tr>' +
-    '<tr><td>账号总容量</td><td>无硬性总容量，按仓库分别计算</td><td>Git 对象 100 GiB + 对象存储 100 GiB</td></tr>' +
+    '<tr><td>账号总容量</td><td>无硬性总容量，按仓库分别计算</td><td>Git 对象 100 GB + 对象存储 100 GB</td></tr>' +
     '<tr><td>单文件建议</td><td>≤ 25 MB 体验最稳</td><td>≤ 50 MB 体验最稳</td></tr>' +
     '<tr><td>国内直连</td><td>raw 域名时好时坏，可用 jsDelivr / raw.githack 等 CDN</td><td>直连快，也可用 JSDMirror 再加速</td></tr>' +
     '</tbody></table>'

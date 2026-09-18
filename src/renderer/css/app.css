@@ -413,6 +413,12 @@ select.csel-native {
 .csel-opt-check { flex: 0 0 auto; display: grid; place-items: center; opacity: 0; color: var(--accent); }
 .csel-opt.is-sel .csel-opt-check { opacity: 1; }
 .csel-opt[disabled] { opacity: 0.4; cursor: default; }
+/*
+ * 选项之间留出呼吸空间。
+ * 以前每项只有 padding: 8px 10px，上下两块挨得严丝合缝，几行「owner/repo（平台）」
+ * 在面板里糊成一整片分不出行 —— 尤其归档配置这种各项长得都差不多的列表。
+ */
+.csel-opt + .csel-opt { margin-top: 3px; }
 /* 分节标题（如字体清单里的「中文 / 西文 / 等宽」）：不可点，一条细线把它和上一节分开 */
 .csel-opt.is-group {
   opacity: 1; cursor: default; padding: 10px 10px 4px;
@@ -451,6 +457,39 @@ select.csel-native {
 }
 .csel-filter:focus { border-color: var(--accent-line); }
 .csel-filter::placeholder { color: var(--placeholder); }
+
+/* ---------------------------------------------------------------- 右键菜单 */
+/* 和自绘下拉面板同一套视觉语言；挂 body 上 fixed 定位，不会被卡片的 overflow 裁掉 */
+.ctx-menu {
+  position: fixed; z-index: 9998; min-width: 182px; max-width: 300px;
+  padding: 5px; border-radius: 11px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 var(--inner), 0 2px 6px rgba(0, 0, 0, 0.28), 0 18px 40px -14px rgba(0, 0, 0, 0.62);
+  animation: ctxIn 0.13s var(--ease) both;
+}
+@keyframes ctxIn { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }
+.ctx-title {
+  padding: 5px 9px 7px; margin-bottom: 3px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  border-bottom: 1px solid var(--hair);
+  max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ctx-sep { height: 1px; background: var(--hair); margin: 5px 6px; }
+.ctx-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 7px 9px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: 12.5px;
+  text-align: left; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.ctx-item:hover:not([disabled]) { background: var(--accent-soft); color: var(--text); }
+.ctx-item[disabled] { opacity: 0.38; cursor: default; }
+.ctx-item.danger { color: var(--danger-text); }
+.ctx-item.danger:hover:not([disabled]) { background: var(--danger-soft); color: var(--danger-text); }
+.ctx-ico { flex: 0 0 auto; display: grid; place-items: center; width: 15px; height: 15px; opacity: 0.9; }
+.ctx-ico svg { display: block; }
+.ctx-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-hint { flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 
 .sub-sep { height: 1px; background: var(--border-soft); margin: 14px 0; }
 
@@ -698,6 +737,27 @@ select.csel-native {
 .card-danger::before { background: linear-gradient(180deg, var(--danger), transparent 70%); }
 .settings-wrap { max-width: 920px; }
 
+/*
+ * 引导条：把「一份配置是什么」这句提示从卡片标题下拎出来单独成块。
+ * 挂在标题下时它和一堆表单字段挨在一起，等于没说；单独一块、加个图标、
+ * 用强调色描边，才真的起到「先看这里」的作用。
+ */
+.guide-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px; overflow: visible;
+  background: var(--accent-soft); border-color: var(--accent-line);
+}
+/* 这张卡本身就是强调块，再叠一层品牌竖条会显得脏 */
+.guide-card::before { display: none; }
+.gc-ico {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px;
+  display: grid; place-items: center;
+  background: var(--panel); border: 1px solid var(--accent-line); color: var(--accent-hi);
+}
+.gc-text { min-width: 0; font-size: 12px; line-height: 1.65; }
+.gc-text b { display: block; color: var(--text); font-size: 12.5px; font-weight: 600; }
+.gc-text span { color: var(--text-dim); }
+
 .callout {
   background: var(--bg-soft); border: 1px dashed var(--border);
   border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px;
@@ -940,16 +1000,52 @@ select.csel-native {
   transition: color 0.14s, border-color 0.14s;
 }
 .side-mini:hover { color: var(--accent-hi); border-color: var(--border-hover); }
-/* 检测结论胶囊：本地 / 云端两条短 SHA 并排，一眼看出谁新谁旧 */
-.side-git .sha {
-  font-family: var(--mono); font-size: 10.5px; padding: 0 5px; border-radius: 4px;
-  background: var(--bg-soft); border: 1px solid var(--border-soft); color: var(--text-dim);
+/*
+ * 检测结论：云端一行、本地一行，中间用一条竖线 + 自绘双箭头连起来。
+ * 以前是「本地 xxx ⟷ 云端 xxx」挤一行、靠一个全角箭头字符表达方向，
+ * 190px 的侧栏里中文夹等宽串很难读，改成两行之后谁在上谁在下就是层级关系。
+ */
+.side-git .cd-rows {
+  display: flex; flex-direction: column;
+  padding: 4px 7px 5px; margin-bottom: 6px;
+  border: 1px solid var(--border-soft); border-radius: 8px; background: var(--panel);
 }
-.side-git .arrow { color: var(--muted); margin: 0 3px; }
+.side-git .cd-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.side-git .cd-ico { flex: 0 0 auto; display: grid; place-items: center; color: var(--muted); }
+.side-git .cd-ico.cloud { color: var(--accent); }
+.side-git .cd-ico.local { color: var(--ok); }
+.side-git .cd-ico.off { opacity: 0.55; }
+.side-git .cd-label { flex: 0 0 auto; font-size: 10.5px; letter-spacing: 0.3px; color: var(--muted); }
+.side-git .sha {
+  margin-left: auto; max-width: 86px;
+  font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 5px;
+  background: var(--bg-soft); border: 1px solid var(--border-soft); color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.side-git .sha.off { color: var(--muted); }
+/* 连接线：一条极细竖线穿过，双箭头压在中间，读起来就是「本地 ↔ 云端」 */
+.side-git .cd-link { position: relative; height: 18px; display: grid; place-items: center; }
+.side-git .cd-link::before {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px;
+  background: var(--border); transform: translateX(-50%);
+}
+.side-git .cd-link svg { position: relative; padding: 0 3px; color: var(--muted); background: var(--panel); }
+.side-git .cd-verdict { font-size: 11px; line-height: 1.65; }
 
 /* 列宽共用变量，保证列表模式的表头和行严丝合缝对齐 */
-.mg-main { flex: 1; min-width: 0; padding: 13px; --col-icon: 40px; --col-size: 96px; --col-time: 142px; --col-ops: 150px; border-bottom-right-radius: var(--radius); }
+.mg-main {
+  flex: 1; min-width: 0; padding: 13px; position: relative;
+  --col-icon: 40px; --col-check: 30px; --col-size: 96px; --col-time: 142px;
+  border-bottom-right-radius: var(--radius);
+}
 .mg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 11px; }
+/* 框选时画的橡皮筋选框 —— fixed 定位，全程按视口坐标算 */
+.mg-marquee {
+  position: fixed; z-index: 40; pointer-events: none;
+  border: 1px solid var(--accent); border-radius: 4px;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px rgba(78, 155, 234, 0.14);
+}
 
 /* ---------------------------------------------------------------- 文件类型图标 */
 /*
@@ -975,18 +1071,45 @@ select.csel-native {
 .fi-data { --fc: #6fb6d6; }
 .fi-default { --fc: #7f93ad; }
 
+/*
+ * 复选框（OpenList 那种）：圆角方块 + 自绘对勾。
+ * 网格里悬浮/选中才露头，避免平时糊在缩略图上；列表里常驻。
+ */
+.mg-check {
+  width: 20px; height: 20px; padding: 0; flex: 0 0 auto;
+  display: grid; place-items: center; cursor: pointer;
+  border-radius: 6px; color: transparent;
+  background: var(--thumb-badge);
+  border: 1.5px solid color-mix(in srgb, var(--text) 42%, transparent);
+  transition: background 0.14s, border-color 0.14s, color 0.14s, opacity 0.14s, transform 0.14s var(--ease);
+}
+.mg-check svg { width: 13px; height: 13px; display: block; }
+.mg-check:hover { border-color: color-mix(in srgb, var(--text) 72%, transparent); }
+.mg-check[aria-checked="true"] {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  box-shadow: 0 1px 6px -1px rgba(11, 74, 156, 0.6);
+}
+/* 半选：一道横杠 */
+.mg-check[aria-checked="mixed"] {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-hi);
+}
+.mg-check[aria-checked="mixed"] svg { display: none; }
+.mg-check[aria-checked="mixed"]::after {
+  content: ""; width: 9px; height: 2px; border-radius: 2px; background: currentColor;
+}
+
 .tile {
   position: relative; display: flex; flex-direction: column;
-  border-radius: 9px; overflow: hidden;
+  border-radius: 11px; overflow: hidden;
   background: var(--panel-2); border: 1px solid var(--border-soft);
   cursor: pointer;
   animation: tileIn 0.36s var(--ease) both;
   animation-delay: calc(var(--i, 0) * 20ms);
-  transition: border-color 0.15s, transform 0.15s var(--ease), box-shadow 0.18s;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s var(--ease), box-shadow 0.18s;
 }
 @keyframes tileIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
 .tile:hover { border-color: var(--tile-border-hover); transform: translateY(-2px); box-shadow: var(--shadow); }
-.tile.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.tile.selected { border-color: var(--accent); background: var(--panel-3); box-shadow: 0 0 0 1px var(--accent); }
 .tile-thumb {
   aspect-ratio: 1 / 1; width: 100%; position: relative; overflow: hidden;
   background: var(--thumb-bg) center/cover no-repeat;
@@ -999,29 +1122,13 @@ select.csel-native {
 .tile-name { padding: 8px 10px 0; font-size: 11.5px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-size { padding: 1px 10px 9px; font-size: 10.5px; color: var(--muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-time { display: none; }
+
+/* 网格里的复选框：悬浮或选中才显形 */
 .tile-check {
-  position: absolute; top: 7px; left: 7px; width: 19px; height: 19px;
-  border-radius: 5px; border: 1.5px solid rgba(255, 255, 255, 0.5);
-  background: var(--thumb-badge); display: grid; place-items: center;
-  opacity: 0; transition: opacity 0.14s, transform 0.14s var(--ease); color: #fff; font-size: 11px;
-  transform: scale(0.85);
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  opacity: 0; transform: scale(0.84);
 }
-.tile:hover .tile-check, .tile.selected .tile-check { opacity: 1; transform: scale(1); }
-.tile.selected .tile-check { background: var(--accent); border-color: var(--accent); }
-.tile-ops {
-  position: absolute; top: 6px; right: 6px; display: flex; gap: 4px;
-  opacity: 0; transition: opacity 0.14s;
-}
-.tile:hover .tile-ops { opacity: 1; }
-.tile-ops button {
-  width: 25px; height: 25px; border-radius: 6px; display: grid; place-items: center;
-  background: rgba(8, 12, 19, 0.78); border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #e8eefa; cursor: pointer;
-  transition: background 0.13s, border-color 0.13s, transform 0.1s;
-}
-.tile-ops button:hover { background: var(--accent); border-color: var(--accent); }
-.tile-ops button:active { transform: scale(0.9); }
-.tile-ops button.danger:hover { background: var(--danger); border-color: var(--danger); }
+.tile:hover .tile-check, .tile.selected .tile-check { opacity: 1; transform: none; }
 
 /* ---------------------------------------------------------------- 列表视图 */
 .mg-listhead {
@@ -1032,7 +1139,7 @@ select.csel-native {
   position: sticky; top: 0; z-index: 4;
   background: var(--panel);
 }
-.mg-listhead .lh-check { width: 25px; flex: 0 0 auto; }
+.mg-listhead .lh-check { width: var(--col-check); flex: 0 0 auto; display: flex; align-items: center; }
 .mg-listhead .lh-icon { width: var(--col-icon); flex: 0 0 auto; }
 .mg-listhead .lh-sort {
   background: none; border: 0; color: inherit; font: inherit; cursor: pointer;
@@ -1042,7 +1149,6 @@ select.csel-native {
 .mg-listhead .lh-name { flex: 1; min-width: 0; justify-content: flex-start; padding-right: 10px; }
 .mg-listhead .lh-size { width: var(--col-size); flex: 0 0 auto; justify-content: flex-end; padding-right: 10px; }
 .mg-listhead .lh-time { width: var(--col-time); flex: 0 0 auto; justify-content: flex-end; padding-right: 10px; }
-.mg-listhead .lh-ops { width: var(--col-ops); flex: 0 0 auto; }
 .mg-listhead .lh-sort:hover { color: var(--text); }
 .mg-listhead .lh-sort.active { color: var(--accent-hi); font-weight: 600; }
 .mg-listhead .lh-sort.active[data-dir="asc"]::after { content: "↑"; font-size: 10px; }
@@ -1063,9 +1169,10 @@ select.csel-native {
   animation-delay: calc(var(--i, 0) * 12ms);
 }
 .list-view .tile + .tile { margin-top: 1px; }
-.list-view .tile:hover { background: var(--panel-2); border-color: var(--border-soft); }
-.list-view .tile.selected { background: var(--accent-soft); border-color: var(--accent-line); }
-.list-view .tile-check { position: static; margin: 0 6px 0 0; opacity: 1; transform: none; }
+.list-view .tile:hover { background: var(--panel-2); border-color: var(--border-soft); transform: none; box-shadow: none; }
+.list-view .tile.selected { background: var(--accent-soft); border-color: var(--accent-line); box-shadow: none; }
+/* 列表里复选框常驻：一列到底，扫一眼就知道哪些被勾了 */
+.list-view .tile-check { position: static; margin: 0 10px 0 0; opacity: 1; transform: none; }
 .list-view .tile-thumb {
   width: var(--col-icon); height: var(--col-icon); flex: 0 0 auto;
   aspect-ratio: auto; background: transparent; border-radius: 0;
@@ -1084,11 +1191,6 @@ select.csel-native {
   font-size: 11.5px; color: var(--muted); font-family: var(--mono);
   white-space: nowrap;
 }
-.list-view .tile-ops {
-  position: static; width: var(--col-ops); flex: 0 0 auto;
-  justify-content: flex-end; opacity: 0;
-}
-.list-view .tile:hover .tile-ops, .list-view .tile.selected .tile-ops { opacity: 1; }
 
 .mg-empty { text-align: center; padding: 62px 30px; color: var(--muted); font-size: 12.5px; line-height: 1.9; animation: rowIn 0.3s var(--ease) both; }
 .mg-empty .big { font-size: 14.5px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
@@ -1452,6 +1554,21 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 }
 .plat-badge .pb-ico { display: grid; place-items: center; width: 14px; height: 14px; flex: 0 0 auto; }
 .plat-badge .pb-ico .brand-ico { display: block; }
+
+/* 平台头一行：徽标 + 「当前使用中 / 仅编辑 / 新建」状态 + 说明 + 就地切换入口 */
+.plat-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.plat-head .hint { margin: 0; min-width: 0; }
+/* .btn 自带 display，会盖掉 UA 的 [hidden]{display:none}，这里显式补一刀 */
+.plat-head .btn[hidden] { display: none; }
+.plat-state {
+  flex: 0 0 auto; font-size: 11px; font-weight: 600;
+  padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+}
+/* 当前生效的那份：说清楚「你现在改的就是全程序在用的」 */
+.plat-state.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-hi); }
+/* 这个平台还没有配置，保存才会新建 */
+.plat-state.new { border-color: rgba(221, 162, 63, 0.36); background: rgba(221, 162, 63, 0.1); color: var(--warn); }
 
 /* 两个图层左右滑动：切换平台时旧图层滑出、新图层滑入 */
 .plat-layer { will-change: transform, opacity; }

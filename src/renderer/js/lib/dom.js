@@ -148,6 +148,98 @@ export function previewImage(src, name) {
   });
 }
 
+/* ---------------------------------------------------------------- 右键菜单 */
+
+let ctxOpen = null;
+
+export function closeContextMenu() {
+  if (!ctxOpen) return;
+  const { el, onDocDown, onKey, onScroll } = ctxOpen;
+  el.remove();
+  document.removeEventListener('mousedown', onDocDown, true);
+  document.removeEventListener('keydown', onKey, true);
+  window.removeEventListener('scroll', onScroll, true);
+  window.removeEventListener('resize', onScroll, true);
+  ctxOpen = null;
+}
+
+/**
+ * 自绘右键菜单。
+ *
+ * items 里每一项：{ label, icon, hint, danger, disabled, onClick }，
+ * 或者 { sep: true } 画一条分隔线；也可以传 '—' 字符串图省事。
+ *
+ * 挂在 document.body 上用 fixed 定位：文件管理的卡片和网格都带 overflow，
+ * 挂在原地会被裁掉。坐标给 clientX / clientY（视口坐标）。
+ */
+export function contextMenu(opts) {
+  const o = opts || {};
+  closeContextMenu();
+
+  const el = document.createElement('div');
+  el.className = 'ctx-menu';
+  el.setAttribute('role', 'menu');
+
+  if (o.title) {
+    const t = document.createElement('div');
+    t.className = 'ctx-title';
+    t.textContent = o.title;
+    el.appendChild(t);
+  }
+
+  (o.items || []).forEach((it) => {
+    if (!it || it.sep || it === '—') {
+      const s = document.createElement('div');
+      s.className = 'ctx-sep';
+      el.appendChild(s);
+      return;
+    }
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ctx-item' + (it.danger ? ' danger' : '');
+    b.disabled = !!it.disabled;
+    b.setAttribute('role', 'menuitem');
+    b.innerHTML =
+      '<span class="ctx-ico">' + (it.icon || '') + '</span>' +
+      '<span class="ctx-label">' + escapeHtml(it.label) + '</span>' +
+      (it.hint ? '<span class="ctx-hint">' + escapeHtml(it.hint) + '</span>' : '');
+    b.onclick = () => {
+      closeContextMenu();
+      if (it.onClick) it.onClick();
+    };
+    el.appendChild(b);
+  });
+
+  // 先放到左上角外面量尺寸，再收进视口 —— 避免先闪一下再跳位置
+  el.style.left = '-9999px';
+  el.style.top = '0';
+  document.body.appendChild(el);
+  const r = el.getBoundingClientRect();
+  const x = Math.max(8, Math.min(o.x || 0, window.innerWidth - r.width - 10));
+  const y = Math.max(8, Math.min(o.y || 0, window.innerHeight - r.height - 10));
+  el.style.left = Math.round(x) + 'px';
+  el.style.top = Math.round(y) + 'px';
+
+  const onDocDown = (e) => {
+    if (!el.contains(e.target)) closeContextMenu();
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      closeContextMenu();
+    }
+  };
+  const onScroll = () => closeContextMenu();
+
+  document.addEventListener('mousedown', onDocDown, true);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('scroll', onScroll, true);
+  window.addEventListener('resize', onScroll, true);
+
+  ctxOpen = { el, onDocDown, onKey, onScroll };
+  return { close: closeContextMenu, el };
+}
+
 /* ---------------------------------------------------------------- 动效小工具 */
 
 /** 数值变化时让它「弹」一下，比静默替换更容易被注意到 */

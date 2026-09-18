@@ -9,6 +9,7 @@ import {
   modal,
   confirmDialog,
   previewImage,
+  contextMenu,
   escapeHtml,
   debounce,
   pulse,
@@ -21,13 +22,34 @@ import state from '../lib/state.js';
 const CPLinks = window.CPLinks;
 const PAGE = 120;
 
+const svg = (d, w) =>
+  '<svg viewBox="0 0 24 24" width="' + (w || 15) + '" height="' + (w || 15) +
+  '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+
 const ICONS = {
-  copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/></svg>',
-  eye: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></svg>',
-  rename: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M14.5 4.6l4 4L9 18H5v-4z"/></svg>',
-  replace: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.4-5.9"/><path d="M20 12a8 8 0 0 1-13.4 5.9"/><path d="M17.5 3v3.6h-3.6"/><path d="M6.5 21v-3.6h3.6"/></svg>',
-  trash: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7"/><path d="M6.5 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5l.8-12"/></svg>'
+  copy: svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/>', 14),
+  eye: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/>', 14),
+  rename: svg('<path d="M4 20h16"/><path d="M14.5 4.6l4 4L9 18H5v-4z"/>', 14),
+  replace: svg('<path d="M4 12a8 8 0 0 1 13.4-5.9"/><path d="M20 12a8 8 0 0 1-13.4 5.9"/><path d="M17.5 3v3.6h-3.6"/><path d="M6.5 21v-3.6h3.6"/>', 14),
+  trash: svg('<path d="M4 7h16"/><path d="M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7"/><path d="M6.5 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5l.8-12"/>', 14),
+  open: svg('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17z"/>', 14),
+  path: svg('<path d="M4 6h6"/><path d="M4 12h10"/><path d="M4 18h7"/><path d="M16 15l3 3-3 3"/><path d="M21 18h-5"/>', 14),
+  list: svg('<path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h1"/><path d="M4 12h1"/><path d="M4 18h1"/>', 14),
+  close: svg('<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6"/><path d="M15 9l-6 6"/>', 14),
+  refresh: svg('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>', 14),
+  check: svg('<path d="M5 12.5l4.5 4.5L19 7.5" stroke-width="2.6"/>', 13),
+  /** 云端：一朵云 */
+  cloud: svg('<path d="M7 18h9.5a3.5 3.5 0 0 0 .3-7A5 5 0 0 0 7.2 9.6 3.7 3.7 0 0 0 7 18z"/>', 15),
+  /** 本地：一台显示器 */
+  monitor: svg('<rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6"/><path d="M12 16.5V20"/>', 15),
+  /** 本地 ↔ 云端：上下互换的双箭头，替掉以前那个 ⟷ 字符 */
+  swap: svg('<path d="M8 4.5v13"/><path d="M4.6 7.9 8 4.5l3.4 3.4"/><path d="M16 19.5v-13"/><path d="M12.6 16.1 16 19.5l3.4-3.4"/>', 15)
 };
+
+/**
+ * 把操作按钮挪进右键菜单后，这里提供带图标的菜单项。
+ * 菜单对齐的是「对这一个条目能做什么」，而不是原来的悬停工具条数组。
+ */
 
 const view = {
   source: 'local',
@@ -119,6 +141,217 @@ function fmtTime(ms) {
 
 function selectedFiles() {
   return view.items.filter((i) => view.selected.has(i.path) && i.type === 'file');
+}
+
+/* ---------------------------------------------------------------- 选中 */
+
+/**
+ * 选中只有三条路：勾复选框、右键、在空白处按住左键拖框。
+ *
+ * 以前是「整块 tile 点一下就选中」，于是每次想双击预览、双击进目录，都会先
+ * 把它选上，回头还得手动取消 —— 这是这次重做最主要的动机。
+ * 现在单击条目不再改变选中状态（Ctrl / Cmd + 单击保留，当桌面上的肌肉记忆）。
+ */
+function findItem(path) {
+  return view.items.find((i) => i.path === path) || null;
+}
+
+/** 只刷新 class / aria，不重建 DOM —— 拖框选每移动一下都要跑，重建会卡 */
+function syncTileChecks() {
+  const grid = $('#mgGrid');
+  if (grid) {
+    grid.querySelectorAll('.tile').forEach((t) => {
+      const on = view.selected.has(t.dataset.path);
+      t.classList.toggle('selected', on);
+      const c = t.querySelector('.tile-check');
+      if (c) c.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  }
+  syncHeadCheck();
+}
+
+function setSelection(paths) {
+  view.selected = new Set(paths);
+  syncTileChecks();
+  updateSelectionBar();
+}
+
+function toggleSelect(path) {
+  if (view.selected.has(path)) view.selected.delete(path);
+  else view.selected.add(path);
+  syncTileChecks();
+  updateSelectionBar();
+}
+
+function selectOnly(path) {
+  setSelection([path]);
+}
+
+function clearSelection() {
+  setSelection([]);
+}
+
+/** 当前可见（已渲染出来）的条目 */
+function visibleItems() {
+  return filtered().slice(0, view.shown);
+}
+
+/** 列表表头那个全选：未选 / 半选 / 全选 三态 */
+function syncHeadCheck() {
+  const el = $('#mgCheckAll');
+  if (!el) return;
+  const list = visibleItems();
+  const n = list.filter((i) => view.selected.has(i.path)).length;
+  const mark = !n || !list.length ? 'false' : n === list.length ? 'true' : 'mixed';
+  el.setAttribute('aria-checked', mark);
+}
+
+/* ---------------------------------------------------------------- 框选 */
+
+/**
+ * 空白处按住左键拖动 = 拉一个选框，碰到的条目都选上（OpenList 那种手感）。
+ * 按住 Ctrl / Cmd 则是叠加到现有选区，而不是替换。
+ *
+ * 选框挂在 body 上用 position: fixed —— 全部按视口坐标算，
+ * 不用去跟 .content 的滚动位置对账，滚动时也不会错位。
+ */
+function startMarquee(e) {
+  const grid = $('#mgGrid');
+  if (!grid) return;
+  const additive = e.ctrlKey || e.metaKey;
+  const base = additive ? new Set(view.selected) : new Set();
+  const box = document.createElement('div');
+  box.className = 'mg-marquee';
+  document.body.appendChild(box);
+  let moved = false;
+
+  const hit = (x1, y1, x2, y2, out) => {
+    const l = Math.min(x1, x2);
+    const r = Math.max(x1, x2);
+    const t = Math.min(y1, y2);
+    const b = Math.max(y1, y2);
+    grid.querySelectorAll('.tile').forEach((el) => {
+      const q = el.getBoundingClientRect();
+      if (q.right > l && q.left < r && q.bottom > t && q.top < b) out.add(el.dataset.path);
+    });
+  };
+
+  /** 拖到上下边缘时自动滚，否则长目录拖不到底 */
+  const autoScroll = (clientY) => {
+    const c = $('.content');
+    const r = c.getBoundingClientRect();
+    if (clientY > r.bottom - 46) c.scrollTop += 16;
+    else if (clientY < r.top + 46) c.scrollTop -= 16;
+  };
+
+  const move = (ev) => {
+    const w = Math.abs(ev.clientX - e.clientX);
+    const h = Math.abs(ev.clientY - e.clientY);
+    // 只是点了一下空白，还没拖起来 —— 先不画选框，免得闪一下
+    if (!moved && w < 4 && h < 4) return;
+    moved = true;
+    box.style.left = Math.min(e.clientX, ev.clientX) + 'px';
+    box.style.top = Math.min(e.clientY, ev.clientY) + 'px';
+    box.style.width = w + 'px';
+    box.style.height = h + 'px';
+    const next = new Set(base);
+    hit(e.clientX, e.clientY, ev.clientX, ev.clientY, next);
+    setSelection(next);
+    autoScroll(ev.clientY);
+  };
+
+  const up = () => {
+    document.removeEventListener('mousemove', move, true);
+    document.removeEventListener('mouseup', up, true);
+    box.remove();
+    // 空白处「点一下、不拖」= 取消选择（Windows 资源管理器、OpenList 都这样）
+    if (!moved && !additive) clearSelection();
+  };
+
+  document.addEventListener('mousemove', move, true);
+  document.addEventListener('mouseup', up, true);
+}
+
+/* ---------------------------------------------------------------- 右键菜单 */
+
+/** 复制单条链接（菜单里用，和工具栏的「复制链接」同一套格式） */
+function copyLinkOf(it) {
+  const fmt = ($('#mgFormat') && $('#mgFormat').value) || (state.cfg && state.cfg.linkFormat) || 'markdown';
+  window.cloudpic.clipboard
+    .write(CPLinks.formatLink(linkOf(it), fmt, it.name, isImg(it)))
+    .then(() => ok('已复制链接'));
+}
+
+async function copyPaths(paths) {
+  if (!paths || !paths.length) return;
+  await window.cloudpic.clipboard.write(paths.join('\n'));
+  ok('已复制 ' + paths.length + ' 条路径');
+}
+
+function currentFormatName() {
+  const id = ($('#mgFormat') && $('#mgFormat').value) || (state.cfg && state.cfg.linkFormat) || 'markdown';
+  const f = (CPLinks.LINK_FORMATS || []).find((x) => x.id === id);
+  return f ? f.name : '';
+}
+
+/** 单个条目的菜单：以前悬停出现的那五个按钮，现在都在这里 */
+function menuForItem(it) {
+  if (it.type === 'dir') {
+    return [
+      { label: '打开', icon: ICONS.open, onClick: () => navigate(it.path) },
+      { label: '复制仓库内路径', icon: ICONS.path, onClick: () => copyPaths([it.path]) }
+    ];
+  }
+  return [
+    { label: '复制链接', icon: ICONS.copy, hint: currentFormatName(), onClick: () => copyLinkOf(it) },
+    { label: '预览', icon: ICONS.eye, disabled: !isImg(it), onClick: () => previewImage(thumbSrc(it), it.path) },
+    { label: '复制仓库内路径', icon: ICONS.path, onClick: () => copyPaths([it.path]) },
+    { sep: true },
+    { label: '重命名 / 移动', icon: ICONS.rename, onClick: () => openRenameDialog([it]) },
+    { label: '用新文件替换内容', icon: ICONS.replace, onClick: () => doReplace(it) },
+    { sep: true },
+    { label: '删除', icon: ICONS.trash, danger: true, onClick: () => removeOne([it]) }
+  ];
+}
+
+/** 多选时的批量菜单，和底部那条批量工具条一一对应 */
+function menuForSelection() {
+  const files = selectedFiles();
+  const n = view.selected.size;
+  return [
+    { label: '复制链接', icon: ICONS.copy, hint: files.length + ' 个文件', disabled: !files.length, onClick: copySelectedLinks },
+    { label: '复制路径', icon: ICONS.path, disabled: !n, onClick: copySelectedPaths },
+    { label: '导出清单', icon: ICONS.list, disabled: !files.length, onClick: exportSelected },
+    { sep: true },
+    {
+      label: files.length > 1 ? '批量移动' : '重命名 / 移动',
+      icon: ICONS.rename,
+      disabled: !files.length,
+      onClick: () => openRenameDialog(files)
+    },
+    { label: '用新文件替换内容', icon: ICONS.replace, disabled: files.length !== 1, onClick: () => doReplace(files[0]) },
+    { sep: true },
+    { label: '删除 ' + n + ' 项', icon: ICONS.trash, danger: true, disabled: !files.length, onClick: () => removeOne(selectedFiles()) },
+    { label: '取消选择', icon: ICONS.close, onClick: clearSelection }
+  ];
+}
+
+/** 空白处右键：对这些「整目录级」的动作 */
+function blankMenuItems() {
+  const list = visibleItems();
+  const allOn = list.length > 0 && list.every((i) => view.selected.has(i.path));
+  return [
+    {
+      label: allOn ? '取消全选' : '全选当前目录',
+      icon: ICONS.check,
+      hint: list.length + ' 项',
+      disabled: !list.length,
+      onClick: () => setSelection(allOn ? [] : list.map((i) => i.path))
+    },
+    { label: '取消选择', icon: ICONS.close, disabled: !view.selected.size, onClick: clearSelection },
+    { sep: true },
+    { label: '刷新', icon: ICONS.refresh, onClick: () => load() }
+  ];
 }
 
 /* ---------------------------------------------------------------- 数据加载 */
@@ -261,7 +494,14 @@ async function refreshCloudDetect(force) {
   bindCloudDetectActions();
 }
 
-/** 两个短 SHA 并排摆出来，再配一行结论 + 动作按钮 */
+/**
+ * 本地 / 云端两条短 SHA。
+ *
+ * 以前是「本地 xxx ⟷ 云端 xxx」挤在一行，中文夹两个等宽串，还要靠一个全角
+ * 箭头字符去表达方向，窄侧栏里读起来很费劲。现在改成上下两行：云端在上、
+ * 本地在下（云端是「源」，本地是跟着它走的那个），中间用自绘的 SVG 双箭头
+ * 连接，谁新谁旧一眼能对上。
+ */
 function renderCloudDetect(d) {
   if (!d) return '<span class="txt">未检测</span>';
   if (d.relation === 'unconfigured') return '<span class="txt">未配置仓库</span>';
@@ -273,13 +513,28 @@ function renderCloudDetect(d) {
     );
   }
 
-  const localCell = d.local.isRepo
-    ? '本地 <span class="sha" title="' + escapeHtml(d.local.sha || '') + '">' + escapeHtml(d.local.short || '?') + '</span>'
-    : '本地 <span class="sha">未克隆</span>';
   const cloudShort = d.cloud.short || (d.cloud.ok ? '?' : '空');
-  const cloudCell =
-    '云端 <span class="sha" title="' + escapeHtml(d.cloud.sha || '') + '">' + escapeHtml(cloudShort) + '</span>';
-  const shaLine = '<div>' + localCell + '<span class="arrow">⟷</span>' + cloudCell + '</div>';
+  const cloudRow =
+    '<div class="cd-row">' +
+    '<span class="cd-ico cloud">' + ICONS.cloud + '</span>' +
+    '<span class="cd-label">云端</span>' +
+    '<span class="sha" title="' + escapeHtml(d.cloud.sha || '') + '">' + escapeHtml(cloudShort) + '</span>' +
+    '</div>';
+
+  const localRow = d.local.isRepo
+    ? '<div class="cd-row">' +
+      '<span class="cd-ico local">' + ICONS.monitor + '</span>' +
+      '<span class="cd-label">本地</span>' +
+      '<span class="sha" title="' + escapeHtml(d.local.sha || '') + '">' + escapeHtml(d.local.short || '?') + '</span>' +
+      '</div>'
+    : '<div class="cd-row">' +
+      '<span class="cd-ico local off">' + ICONS.monitor + '</span>' +
+      '<span class="cd-label">本地</span>' +
+      '<span class="sha off">未克隆</span>' +
+      '</div>';
+
+  const rows =
+    '<div class="cd-rows">' + cloudRow + '<div class="cd-link">' + ICONS.swap + '</div>' + localRow + '</div>';
 
   const MAP = {
     same: { cls: 'ok', text: '本地与云端一致', act: '' },
@@ -291,7 +546,7 @@ function renderCloudDetect(d) {
   };
   const st = MAP[d.relation] || MAP.unknown;
 
-  let html = shaLine + '<div class="' + (st.cls || '') + '">' + escapeHtml(st.text) + '</div>';
+  let html = rows + '<div class="cd-verdict ' + (st.cls || '') + '">' + escapeHtml(st.text) + '</div>';
 
   if (d.relation === 'local-behind') {
     html += '<button class="btn btn-primary btn-sm" id="btnMgCloudPull">拉取云端</button>';
@@ -418,9 +673,13 @@ function renderBreadcrumb() {
  * 一个条目 = 一行/一块。DOM 结构是「平铺的子元素」，
  * 网格还是列表完全由 CSS 决定布局（列表模式改 flex-direction + 给列宽），
  * 这样两种视图共用同一套 DOM 和同一套事件，不用写两份渲染逻辑。
+ *
+ * 复选框从「一个 ✓ 字符」换成了自绘控件（.mg-check）：勾中态、半选态、
+ * 深浅主题下都看得清；同时把原来的悬停工具条整块删掉 —— 五个按钮压在缩略图上
+ * 既挡内容又容易误点，操作全搬到右键菜单里了。
  */
 function tileHtml(it, idx) {
-  const sel = view.selected.has(it.path) ? ' selected' : '';
+  const sel = view.selected.has(it.path);
   const i = ' style="--i:' + Math.min(idx, 22) + '"';
   const isDir = it.type === 'dir';
 
@@ -440,24 +699,17 @@ function tileHtml(it, idx) {
     thumb = fileIcon(it.name, { isDir: isDir });
   }
 
-  const ops = isDir
-    ? ''
-    : '<div class="tile-ops">' +
-      '<button data-act="copy" title="复制链接">' + ICONS.copy + '</button>' +
-      '<button data-act="preview" title="预览">' + ICONS.eye + '</button>' +
-      '<button data-act="rename" title="重命名 / 移动">' + ICONS.rename + '</button>' +
-      '<button data-act="replace" title="用新文件替换内容">' + ICONS.replace + '</button>' +
-      '<button data-act="delete" class="danger" title="删除">' + ICONS.trash + '</button>' +
-      '</div>';
-
   return (
-    '<div class="tile' + sel + '"' + i + ' data-path="' + escapeHtml(it.path) + '" data-type="' + it.type + '">' +
-    '<div class="tile-check">✓</div>' +
+    '<div class="tile' + (sel ? ' selected' : '') + '"' + i + ' data-path="' + escapeHtml(it.path) + '" data-type="' + it.type + '">' +
+    '<button type="button" class="tile-check mg-check" data-act="check" role="checkbox" aria-checked="' +
+    (sel ? 'true' : 'false') +
+    '" tabindex="-1" title="选中（右键还可做更多）">' +
+    ICONS.check +
+    '</button>' +
     '<div class="tile-thumb">' + thumb + '</div>' +
     '<div class="tile-name" title="' + escapeHtml(it.path) + '">' + escapeHtml(it.name) + '</div>' +
     '<div class="tile-size">' + (isDir ? '文件夹' : CPLinks.formatBytes(it.size || 0)) + '</div>' +
     (view.hasTime ? '<div class="tile-time">' + (isDir ? '—' : fmtTime(it.mtime)) + '</div>' : '') +
-    ops +
     '</div>'
   );
 }
@@ -512,6 +764,7 @@ function renderGrid(placeholder) {
   grid.innerHTML = slice.map((it, idx) => tileHtml(it, idx)).join('');
   grid.classList.toggle('list-view', view.mode === 'list');
   syncListHead();
+  syncHeadCheck();
 }
 
 function attachImageFallback() {
@@ -610,7 +863,7 @@ async function exportSelected() {
   const txt = sel
     .map((i) => CPLinks.formatLink(linkOf(i), fmt, i.name, isImg(i)) + '\t' + CPLinks.formatBytes(i.size || 0))
     .join('\n');
-  const r = await window.cloudpic.fs.exportText({ content: txt, defaultName: 'jie-filelist.txt' });
+  const r = await window.cloudpic.fs.exportText({ content: txt, defaultName: 'Quick-FileDispatch-filelist.txt' });
   if (r.ok) ok('已导出到 ' + r.filePath);
 }
 
@@ -1000,45 +1253,69 @@ function bind() {
   });
 
   const grid = $('#mgGrid');
+  const main = $('.mg-main');
+
+  // 单击：只有点在复选框上才算「选中」，点条目本身不再改变选中状态
   grid.addEventListener('click', (e) => {
     const tile = e.target.closest('.tile');
     if (!tile) return;
-    const path = tile.dataset.path;
-    const it = view.items.find((i) => i.path === path);
-
-    const opBtn = e.target.closest('.tile-ops button');
-    if (opBtn) {
-      e.stopPropagation();
-      if (!it) return;
-      const act = opBtn.dataset.act;
-      if (act === 'copy') {
-        const fmt = $('#mgFormat').value || 'markdown';
-        window.cloudpic.clipboard
-          .write(CPLinks.formatLink(linkOf(it), fmt, it.name, isImg(it)))
-          .then(() => ok('已复制链接'));
-      } else if (act === 'preview') {
-        previewImage(thumbSrc(it), it.path);
-      } else if (act === 'rename') {
-        openRenameDialog([it]);
-      } else if (act === 'replace') {
-        doReplace(it);
-      } else if (act === 'delete') {
-        removeOne([it]);
-      }
+    if (e.target.closest('.tile-check')) {
+      toggleSelect(tile.dataset.path);
       return;
     }
+    // Ctrl / Cmd + 单击：桌面上的肌肉记忆，留一条快速多选的路
+    if (e.ctrlKey || e.metaKey) toggleSelect(tile.dataset.path);
+  });
 
-    if (path === undefined) return;
-    if (view.selected.has(path)) view.selected.delete(path);
-    else view.selected.add(path);
-    tile.classList.toggle('selected', view.selected.has(path));
-    updateSelectionBar();
+  // 表头的全选
+  const checkAll = $('#mgCheckAll');
+  if (checkAll) {
+    checkAll.onclick = () => {
+      const list = visibleItems();
+      const allOn = list.length > 0 && list.every((i) => view.selected.has(i.path));
+      setSelection(allOn ? [] : list.map((i) => i.path));
+    };
+  }
+
+  // 空白处按住左键拖动 → 框选
+  main.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.tile') || e.target.closest('.mg-listhead')) return;
+    e.preventDefault();
+    startMarquee(e);
+  });
+
+  // 右键：条目上给该条目的菜单，空白处给整目录的菜单
+  main.addEventListener('contextmenu', (e) => {
+    const tile = e.target.closest('.tile');
+    if (!tile) {
+      e.preventDefault();
+      contextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        title: view.dir || '仓库根目录',
+        items: blankMenuItems()
+      });
+      return;
+    }
+    e.preventDefault();
+    const it = findItem(tile.dataset.path);
+    if (!it) return;
+    // 右键的这项不在选区里 → 只选它；已经在选区里 → 保留整批，方便接着做批量操作
+    if (!view.selected.has(it.path)) selectOnly(it.path);
+    const multi = view.selected.size > 1;
+    contextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      title: multi ? '已选 ' + view.selected.size + ' 项' : it.path,
+      items: multi ? menuForSelection() : menuForItem(it)
+    });
   });
 
   grid.addEventListener('dblclick', (e) => {
     const tile = e.target.closest('.tile');
-    if (!tile || e.target.closest('.tile-ops')) return;
-    const it = view.items.find((i) => i.path === tile.dataset.path);
+    if (!tile) return;
+    const it = findItem(tile.dataset.path);
     if (!it) return;
     if (it.type === 'dir') navigate(it.path);
     else if (isImg(it)) previewImage(thumbSrc(it), it.path);

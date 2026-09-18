@@ -1,5 +1,5 @@
 {
-  "name": "local-file-upload-management-tool",
+  "name": "Quick-FileDispatch",
   "version": "2.4.0",
   "description": "快捷文件分发服务@JIE —— 基于 GitHub / CNB 仓库的本地图床与云端文件管理工具",
   "main": "src/main/main.js",

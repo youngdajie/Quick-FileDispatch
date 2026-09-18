@@ -10,7 +10,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu } = require(
 const path = require('path');
 const fs = require('fs');
 
-const { Store } = require('./store');
+const { Store, migrateLegacyUserData } = require('./store');
 const { startServer, allowRoot } = require('./server');
 const { CloudClient, fileLimitBytes } = require('./platform');
 const git = require('./git');
@@ -42,6 +42,10 @@ if (PROFILE_ARG) {
     console.error('[profile] 无法切换 userData：' + e.message);
   }
 }
+
+// 包名改过一回（local-file-upload-management-tool → Quick-FileDispatch），userData 跟着变，
+// 老配置要搬过来。自检 / 指定 profile 用的是独立目录，不参与搬家。
+if (!PROFILE_ARG) migrateLegacyUserData();
 
 const store = new Store();
 let mainWindow = null;
@@ -508,7 +512,15 @@ function runSelfTest() {
           diag.tiles = document.querySelectorAll('#mgGrid .tile').length;
           const fileTile = document.querySelector('#mgGrid .tile[data-type="file"]');
           const oldPath = fileTile.dataset.path;
+          // 选中方式已经改掉了：单击条目不再选中，得点复选框（右键 / 空白拖框是另外两条路）
           fileTile.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          const afterPlainClick = document.querySelectorAll('#mgGrid .tile.selected').length;
+          const checkbox = fileTile.querySelector('.tile-check');
+          if (checkbox) checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          const afterCheck = document.querySelectorAll('#mgGrid .tile.selected').length;
+          log.push({ step: 'select', afterPlainClick: afterPlainClick, afterCheckbox: afterCheck });
+          if (afterPlainClick !== 0) failed.push('单击条目不该直接选中：选中了 ' + afterPlainClick + ' 项');
+          if (afterCheck !== 1) failed.push('勾复选框没有选中该条目：选中 ' + afterCheck + ' 项');
           document.getElementById('btnMgRename').click();
           await sleep(400);
           const dirInput = document.getElementById('mgEditDir');
@@ -715,39 +727,72 @@ function runSelfTest() {
             profiles: (window.__state.cfg.profiles || []).map((p) => p.label + '@' + p.platform)
           });
 
-          // —— 1. 平台切换：整表必须跟着刷新
+          // —— 1. 平台按钮：只切「正在编辑的配置」，不许碰全局生效的那份
           const before = form();
+          const actIdBefore = window.__state.cfg.activeProfileId;
+          const countBefore = (window.__state.cfg.profiles || []).length;
           log.push({ step: 'form-before', form: before });
 
-          // CNB 下没有任何配置，切过去应当开一份空白配置、表单清空
+          // CNB 下没有任何配置 → 表单清空，但「当前使用」仍然是那份 GitHub 配置
           document.querySelector('#cfgPlatform button[data-platform="cnb"]').click();
           await sleep(1500);
           const onCnb = form();
-          log.push({ step: 'switch-cnb', form: onCnb, profiles: (window.__state.cfg.profiles || []).length });
+          log.push({
+            step: 'switch-cnb',
+            form: onCnb,
+            profiles: (window.__state.cfg.profiles || []).length,
+            active: window.__state.cfg.activeProfileId,
+            platform: window.__state.cfg.platform,
+            flag: (document.getElementById('platState') || {}).textContent,
+            setActiveHidden: (document.getElementById('btnSetActive') || {}).hidden
+          });
           eq(onCnb.platform, 'cnb', '切到 CNB 后平台按钮没跟上');
           eq(onCnb.owner, '', '切到 CNB 后 owner 没有刷新（还是 GitHub 的）');
           eq(onCnb.localDir, '', '切到 CNB 后本地目录没有刷新（还是 GitHub 的）');
-          if ((window.__state.cfg.profiles || []).length < 2) {
-            failed.push('切到没有配置的平台时没有开空白配置当落点');
+          // 平台按钮不再是「切生效配置」：不能新建、不能改 activeProfileId、不能改全局平台
+          if ((window.__state.cfg.profiles || []).length !== countBefore) {
+            failed.push('点平台按钮不该新建配置：' + countBefore + ' -> ' + (window.__state.cfg.profiles || []).length);
           }
-          // 但这个空白落点是「草稿」—— 它绝不能出现在归档列表 / 下拉里
-          //（用户报的就是这个：来回切平台，凭空多出一个「（未填写仓库）· 待验证 · 无 Token」）
+          if (window.__state.cfg.activeProfileId !== actIdBefore) failed.push('点平台按钮把「当前使用」的配置也换了');
+          if (window.__state.cfg.platform !== MOCK_PLATFORM) {
+            failed.push('点平台按钮把全局生效的平台也改了：' + window.__state.cfg.platform);
+          }
+          if ((document.getElementById('platState') || {}).textContent !== '新建') {
+            failed.push('平台状态没显示「新建」：' + (document.getElementById('platState') || {}).textContent);
+          }
+          // 还没建出来的落点，归档列表 / 下拉里都不该多出条目
           {
             const rows = document.querySelectorAll('#profileList .pf-row').length;
             const opts = Array.from((document.getElementById('profilePick') || { options: [] }).options).filter(
               (o) => o.value && !o.disabled && o.value.indexOf('__') !== 0
             );
-            log.push({ step: 'draft-not-archived', rows: rows, pickOpts: opts.length, profiles: (window.__state.cfg.profiles || []).length });
-            if (rows !== 1) failed.push('切平台后归档列表里多出了条目（草稿不该显示）：' + rows + ' 行');
-            if (opts.length !== 1) failed.push('切平台后归档下拉里多出了条目（草稿不该显示）：' + opts.length + ' 项');
+            log.push({ step: 'no-draft', rows: rows, pickOpts: opts.length, profiles: (window.__state.cfg.profiles || []).length });
+            if (rows !== 1) failed.push('切平台后归档列表里多出了条目：' + rows + ' 行');
+            if (opts.length !== 1) failed.push('切平台后归档下拉里多出了条目：' + opts.length + ' 项');
           }
 
-          // 给 CNB 填一套完整信息
+          // 给 CNB 填一套完整信息 + 点「保存」→ 应该落成一份 CNB 配置，但不抢「当前使用」
           document.getElementById('cfgOwner').value = 'cnb-user';
           document.getElementById('cfgRepo').value = 'cnb-repo';
           document.getElementById('cfgLocalDir').value = 'D:/cnb-repo';
-          await sleep(1600);
-          log.push({ step: 'cnb-filled', form: form() });
+          await sleep(400);
+          document.getElementById('btnSave').click();
+          await sleep(1800);
+          const cnbProf = (window.__state.cfg.profiles || []).find((p) => p.platform === 'cnb');
+          log.push({
+            step: 'cnb-filled',
+            form: form(),
+            created: !!cnbProf,
+            createdActive: !!(cnbProf && window.__state.cfg.activeProfileId === cnbProf.id),
+            activeStillBase: window.__state.cfg.activeProfileId === actIdBefore,
+            flag: (document.getElementById('platState') || {}).textContent,
+            setActiveHidden: (document.getElementById('btnSetActive') || {}).hidden
+          });
+          if (!cnbProf) failed.push('保存后没有新建出一份 CNB 配置');
+          if (window.__state.cfg.activeProfileId !== actIdBefore) failed.push('保存 CNB 配置时把「当前使用」也换掉了');
+          if ((document.getElementById('btnSetActive') || {}).hidden !== false) {
+            failed.push('编辑一份「非当前使用」的配置时，应该给出「设为当前使用」入口');
+          }
 
           // 切回 GitHub：应当整份还原
           document.querySelector('#cfgPlatform button[data-platform="github"]').click();
@@ -758,8 +803,7 @@ function runSelfTest() {
           eq(back.owner, before.owner, '切回 GitHub 后 owner 没还原');
           eq(back.localDir, before.localDir, '切回 GitHub 后本地目录没还原');
 
-          // —— 2. 归档列表：点某一行能整份切过去
-          const cnbProf = (window.__state.cfg.profiles || []).find((p) => p.platform === 'cnb');
+          // —— 2. 归档列表：点某一行能整份切过去（这才是真正换生效配置的入口）
           if (!cnbProf) {
             failed.push('找不到刚建的 CNB 配置');
           } else {
@@ -769,8 +813,11 @@ function runSelfTest() {
               const useBtn = row.querySelector('button[data-act="use"]');
               (useBtn || row).click();
               await sleep(1500);
-              log.push({ step: 'use-cnb-profile', form: form() });
+              log.push({ step: 'use-cnb-profile', form: form(), active: window.__state.cfg.activeProfileId });
               eq(form().owner, 'cnb-user', '点归档项没有切到该配置');
+              if (window.__state.cfg.activeProfileId !== cnbProf.id) {
+                failed.push('点归档项后「当前使用」的配置没换过去');
+              }
             }
           }
 
@@ -1629,7 +1676,8 @@ function runSelfTest() {
              for (var i = 0; i < 50; i++) {
                var t = document.querySelector('#mgGrid .tile[data-type="file"]');
                if (t) {
-                 t.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                 var cb = t.querySelector('.tile-check');
+                 if (cb) cb.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
                  document.getElementById('btnMgRename').click();
                  await sleep(500);
                  return document.querySelectorAll('.modal-foot .btn').length;
@@ -2203,7 +2251,7 @@ function registerIpc() {
     const stamp = new Date().toISOString().slice(0, 10);
     const r = await dialog.showSaveDialog(mainWindow, {
       title: '导出归档配置',
-      defaultPath: 'jie-profiles-' + stamp + '.json',
+      defaultPath: 'Quick-FileDispatch-' + stamp + '.json',
       filters: [{ name: 'JSON 配置', extensions: ['json'] }, { name: '所有文件', extensions: ['*'] }]
     });
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
@@ -2235,7 +2283,9 @@ function registerIpc() {
     if (!payload || !Array.isArray(payload.profiles)) {
       throw new Error('配置文件里没有 profiles 列表');
     }
-    if (payload.kind && payload.kind !== 'jie-dispatch-profiles') {
+    // 老版本的 kind 是 jie-dispatch-profiles，一并认，免得以前导出的文件导不回来
+    const KINDS = ['Quick-FileDispatch', 'jie-dispatch-profiles'];
+    if (payload.kind && KINDS.indexOf(payload.kind) < 0) {
       throw new Error('这不像本程序导出的配置（kind=' + payload.kind + '）');
     }
     const res = store.importProfiles(payload);

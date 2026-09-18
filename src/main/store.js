@@ -248,6 +248,39 @@ function copyToken(from, to) {
   else if (from._tokenPlain) to._tokenPlain = from._tokenPlain;
 }
 
+/**
+ * 配置目录一次性搬家。
+ *
+ * npm 包名从 local-file-upload-management-tool 改成了 Quick-FileDispatch，
+ * 而 Electron 的 userData 目录就是「appData + 应用名」—— 改个名，老用户
+ * 原本的 config.json（仓库信息 + Token + 归档配置）就凭空消失了，看起来
+ * 像是「升级之后配置全没了」。
+ *
+ * 所以启动时先看一眼：新目录里还没有 config.json，就去旧目录把它拷过来。
+ * 只在真的没有旧数据时拷一次，之后新目录里就有了，不会再动。
+ */
+function migrateLegacyUserData() {
+  const dir = app.getPath('userData');
+  const dest = path.join(dir, 'config.json');
+  if (fs.existsSync(dest)) return;
+
+  const appData = app.getPath('appData');
+  for (const name of ['local-file-upload-management-tool']) {
+    const oldDir = path.join(appData, name);
+    if (path.resolve(oldDir) === path.resolve(dir)) continue;
+    const src = path.join(oldDir, 'config.json');
+    if (!fs.existsSync(src)) continue;
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.copyFileSync(src, dest);
+      console.log('[migrate] 已把旧配置搬到 ' + dest);
+    } catch (e) {
+      console.error('[migrate] 配置迁移失败：' + e.message);
+    }
+    return;
+  }
+}
+
 class Store {
   constructor() {
     this.file = path.join(app.getPath('userData'), 'config.json');
@@ -418,9 +451,17 @@ class Store {
       apiBase: '',
       localDir: ''
     };
+    // 允许把连接字段一起带进来建（设置页「配置某个平台 → 保存」走的就是这条）
+    if (patch) for (const k of PROFILE_FIELDS) if (patch[k] !== undefined) p[k] = patch[k];
+    if (!p.branch) p.branch = 'main';
+    if (patch && patch.token) this._encryptInto(p, patch.token);
     this.data.profiles = this.data.profiles || [];
     this.data.profiles.push(p);
-    this._mirrorFrom(p);
+    /**
+     * activate === false：只建，不抢「当前使用」这个位置。
+     * 平台按钮现在只切「正在编辑的对象」，顺手把全局生效的配置也换掉是副作用。
+     */
+    if (!patch || patch.activate !== false) this._mirrorFrom(p);
     this._write();
     return this.get();
   }
@@ -446,6 +487,16 @@ class Store {
   updateProfile(id, patch) {
     const p = (this.data.profiles || []).find((x) => x.id === id);
     if (!p) throw new Error('配置不存在');
+    // Token 也要能改到「非当前使用」的那份上（设置页可以编辑任意一份配置）
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'token')) {
+      const t = patch.token;
+      delete patch.token;
+      if (t !== undefined && t !== null && !/^\*+$/.test(String(t))) {
+        if (t === '') this._encryptInto(p, '');
+        else this._encryptInto(p, String(t));
+        if (p.id === this.data.activeProfileId) copyToken(p, this.data);
+      }
+    }
     const conn = {};
     for (const k of PROFILE_FIELDS) {
       if (patch && Object.prototype.hasOwnProperty.call(patch, k)) {
@@ -516,7 +567,7 @@ class Store {
   exportProfiles() {
     const cfg = this.data;
     return {
-      kind: 'jie-dispatch-profiles',
+      kind: 'Quick-FileDispatch',
       version: 2,
       exportedAt: new Date().toISOString(),
       settings: {
@@ -647,4 +698,4 @@ function maskToken(t) {
   return t.slice(0, 4) + '*'.repeat(Math.min(12, t.length - 8)) + t.slice(-4);
 }
 
-module.exports = { Store, DEFAULT_CONFIG, PLATFORMS, normalizePlatform };
+module.exports = { Store, DEFAULT_CONFIG, PLATFORMS, normalizePlatform, migrateLegacyUserData };
