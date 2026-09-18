@@ -42,6 +42,9 @@
      这里先写死一份是为了首帧不闪字体 —— JS 起来后会按用户选择再覆盖一次。 */
   --font-ui: "霞鹜文楷 屏幕阅读版", "LXGW WenKai Screen", "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, -apple-system, sans-serif;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* 回弹缓动：松手时冲过一点再回落，文件格子按下去弹回来就有「手感」。
+     常规 --ease 太稳，收缩再放大看着是平移，不像被按过。 */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* 零散色：深色下就是原来写死的那些值，浅色主题会整套换掉，
      这样主题切换只需要覆盖变量，不用满文件找魔法色值 */
@@ -1037,7 +1040,20 @@ select.csel-native {
   flex: 1; min-width: 0; padding: 13px; position: relative;
   --col-icon: 40px; --col-check: 30px; --col-size: 96px; --col-time: 142px;
   border-bottom-right-radius: var(--radius);
+  /* 桌面程序里不该能划选文字：双击文件名出现一条蓝色选词高亮，一眼就露馅是网页。
+     条目层整体关掉，只对真正的输入控件放开（重命名弹层、搜索框）。
+     顺带一提，关掉 user-select 也顺手禁掉了双击选词触发的原生拖拽。 */
+  user-select: none;
+  -webkit-user-select: none;
 }
+.mg-main input,
+.mg-main textarea,
+.mg-main [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* 缩略图不许被拖 —— 拖出来那个半透明残影也是网页味 */
+.mg-main img { -webkit-user-drag: none; }
 .mg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 11px; }
 /* 框选时画的橡皮筋选框 —— fixed 定位，全程按视口坐标算 */
 .mg-marquee {
@@ -1103,12 +1119,27 @@ select.csel-native {
   border-radius: 11px; overflow: hidden;
   background: var(--panel-2); border: 1px solid var(--border-soft);
   cursor: pointer;
+  transform-origin: center;
+  will-change: transform;
   animation: tileIn 0.36s var(--ease) both;
   animation-delay: calc(var(--i, 0) * 20ms);
-  transition: border-color 0.15s, background 0.15s, transform 0.15s var(--ease), box-shadow 0.18s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.18s,
+              transform 0.22s var(--ease-pop);
 }
 @keyframes tileIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
-.tile:hover { border-color: var(--tile-border-hover); transform: translateY(-2px); box-shadow: var(--shadow); }
+/* 悬停轻轻顶起来一点，按下缩回去、松手弹回来 —— 有点像按果冻。
+   translateY 保留原来那 2px 的抬升，只是叠加了缩放。 */
+.tile:hover {
+  border-color: var(--tile-border-hover);
+  transform: translateY(-2px) scale(1.022);
+  box-shadow: var(--shadow);
+  z-index: 1;
+}
+.tile:active {
+  transform: translateY(0) scale(0.968);
+  box-shadow: none;
+  transition-duration: 0.07s;
+}
 .tile.selected { border-color: var(--accent); background: var(--panel-3); box-shadow: 0 0 0 1px var(--accent); }
 .tile-thumb {
   aspect-ratio: 1 / 1; width: 100%; position: relative; overflow: hidden;
@@ -1170,6 +1201,9 @@ select.csel-native {
 }
 .list-view .tile + .tile { margin-top: 1px; }
 .list-view .tile:hover { background: var(--panel-2); border-color: var(--border-soft); transform: none; box-shadow: none; }
+/* 列表是整行 44px 的条，缩放会让相邻行打架（.list-view .tile 上那条
+   transform: none !important 也把它摁住了），所以这里只用底色表达按下 */
+.list-view .tile:active { background: var(--panel-3); }
 .list-view .tile.selected { background: var(--accent-soft); border-color: var(--accent-line); box-shadow: none; }
 /* 列表里复选框常驻：一列到底，扫一眼就知道哪些被勾了 */
 .list-view .tile-check { position: static; margin: 0 10px 0 0; opacity: 1; transform: none; }
@@ -1323,6 +1357,78 @@ select.csel-native {
 .modal.wide .modal-body img { max-width: 100%; max-height: 74vh; display: block; }
 
 .modal .field input { width: 100%; }
+
+/* ---------------------------------------------------------------- 路径选择器 */
+/*
+ * 「重命名 / 移动」里那个目录输入框：让用户点着目录树把目标挑出来，
+ * 而不是凭记忆敲一串相对路径。
+ *
+ * 就地展开、不叠第二个弹层 —— #modalWrap 全项目只有一个，再 modal() 一次
+ * 会把正在编辑的这个弹层整个换掉（内容全丢）。
+ */
+.dir-row { display: flex; gap: 7px; align-items: stretch; }
+.dir-row input { flex: 1; min-width: 0; }
+.dir-row > .btn { flex: 0 0 auto; padding: 0 12px; }
+
+/* 输入框底下那行「本地路径」——把相对路径翻译成磁盘上的绝对路径，
+   用户才能确认自己选的是不是想要的那个文件夹 */
+.dir-local {
+  margin-top: 6px; display: flex; gap: 6px; align-items: flex-start;
+  font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.6;
+  word-break: break-all;
+}
+.dir-local .dl-ico { flex: 0 0 auto; margin-top: 1px; color: var(--text-dim); display: flex; }
+/* 路径很长，得让它自己换行，别把弹层撑宽 */
+.dir-local .dl-txt { flex: 1; min-width: 0; word-break: break-all; }
+/* 路径自身保持常规色；只有说出「哪儿没对上」那句才染暖色 */
+.dir-local .dl-path { color: var(--muted); }
+.dir-local .dl-note { color: var(--warn); }
+.dir-local.off .dl-ico { color: var(--warn); }
+
+.dirpick {
+  margin-top: 11px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--panel-2); overflow: hidden;
+  animation: rowIn 0.2s var(--ease) both;
+}
+.dirpick-bar {
+  display: flex; align-items: center; gap: 7px;
+  min-height: 34px; padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.dirpick-crumb {
+  flex: 1; min-width: 0; display: flex; align-items: center;
+  flex-wrap: wrap; gap: 1px; font-size: 11.5px;
+}
+.dirpick-crumb button {
+  max-width: 180px; padding: 1px 5px; border: 0; border-radius: 4px;
+  background: none; color: var(--text-dim); font: inherit; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background 0.14s, color 0.14s;
+}
+.dirpick-crumb button:hover { background: var(--panel-3); color: var(--text); }
+.dirpick-crumb button.last { color: var(--text); font-weight: 600; background: var(--panel-3); }
+.dirpick-crumb .sep { color: var(--muted); opacity: 0.55; }
+
+.dirpick-list { max-height: 216px; overflow-y: auto; padding: 5px; }
+.dirpick-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 6px 6px 8px; border-radius: 7px; cursor: pointer;
+  font-size: 12.5px; color: var(--text-dim);
+  transition: background 0.13s, color 0.13s;
+}
+.dirpick-row:hover { background: var(--panel-3); color: var(--text); }
+.dirpick-row .fi { width: 17px; height: 17px; flex: 0 0 auto; }
+/* 文件夹图标是蓝的，跟缩略图里那个区分开 */
+.dirpick-row .fi.dp-dir { color: var(--accent); }
+.dirpick-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dirpick-row .pick { flex: 0 0 auto; opacity: 0; padding: 3px 9px; font-size: 11px; transition: opacity 0.14s; }
+.dirpick-row:hover .pick { opacity: 1; }
+.dirpick-empty { padding: 22px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+.dirpick-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; border-top: 1px solid var(--border-soft);
+  font-size: 11px; color: var(--muted);
+}
 
 .spinner {
   width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto;

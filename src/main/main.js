@@ -527,6 +527,52 @@ function runSelfTest() {
           const nameInput = document.getElementById('mgEditName');
           if (!dirInput || !nameInput) return { error: '重命名弹层没出现', diag, log, oldPath };
           log.push({ step: 'dialog', prefillDir: dirInput.value, prefillName: nameInput.value, buttons: document.querySelectorAll('.modal-foot .btn').length });
+
+          // —— 目录选择器：本地与云端一致时，应该能点着本地目录树把路径挑出来，
+          // 而不是让人默写一串相对路径。此时刚好有一个文件被选中，弹层已经开着。
+          {
+            const hint = document.getElementById('mgDirLocalTxt');
+            const pickBtn = document.getElementById('mgDirPickBtn');
+            const pick = {
+              step: 'dirpick',
+              hint: hint ? hint.innerText.trim() : null,
+              hasPicker: !!pickBtn,
+              localDir: (sweepCfg && sweepCfg.localDir) || ''
+            };
+            if (!hint || !hint.innerText.trim()) {
+              failed.push('目录输入框下面那行「本地路径」提示是空的');
+            }
+            if (pickBtn) {
+              pickBtn.click();
+              await waitFor(() => document.querySelector('.dirpick-list'), 4000);
+              const crumb = document.querySelector('.dirpick-crumb');
+              pick.panel = !!document.querySelector('.dirpick');
+              pick.crumb = crumb ? crumb.innerText.replace(/\s+/g, ' ').trim() : '';
+              pick.rows = document.querySelectorAll('.dirpick-row').length;
+              if (!pick.panel) failed.push('点了「浏览…」却没展开目录面板');
+              const here = document.getElementById('mgDirPickHere');
+              if (!here) {
+                failed.push('目录面板里没有「选当前文件夹」按钮');
+              } else {
+                here.click();
+                await sleep(80);
+                pick.picked = dirInput.value;
+                pick.closed = !document.querySelector('.dirpick');
+                pick.hintAfter = hint.innerText.trim();
+                if (document.querySelector('.dirpick')) failed.push('选了目录后面板没收起来');
+                const root = ((sweepCfg && sweepCfg.localDir) || '').replace(/[\\/]+$/, '');
+                if (root && pick.hintAfter.indexOf(root) !== 0) {
+                  failed.push('采纳目录后本地路径没指到本地仓库里：' + pick.hintAfter);
+                }
+              }
+            } else {
+              // 这条用例跑在配好本地目录 + 本地是 Git 仓库的环境里，
+              // 选择器没有理由不出现 —— 例如又把它绑回「必须 relation === 'same'」
+              pick.reason = hint ? hint.innerText.trim() : '';
+              failed.push('本地目录就绪却没出现「浏览…」按钮，路径选择器没启用：' + pick.reason);
+            }
+            log.push(pick);
+          }
           dirInput.value = 'renamed';
           nameInput.value = 'after-rename.txt';
           document.querySelectorAll('.modal-foot .btn')[1].click();
@@ -547,6 +593,43 @@ function runSelfTest() {
             targetCreated: renamedThere,
             rootNow: rootAfter.items.map((i) => i.type + ':' + i.path)
           });
+
+          // —— 条目上也能拉框：以前只有空白区能框选，一片夹着文件的区域没法一次框住
+          {
+            const marq = { step: 'marquee-from-tile' };
+            const tile = document.querySelector('#mgGrid .tile');
+            if (!tile) {
+              failed.push('框选用例：网格里没有条目可框');
+              log.push(marq);
+            } else {
+              const r = tile.getBoundingClientRect();
+              const x0 = r.left + 3;
+              const y0 = r.top + 3;
+              tile.dispatchEvent(
+                new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: x0, clientY: y0 })
+              );
+              // 只按住、不动：长按判定应当自己把框拉起来
+              await sleep(260);
+              marq.afterHold = !!document.querySelector('.mg-marquee');
+              document.dispatchEvent(
+                new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: x0 + 6, clientY: y0 + 6 })
+              );
+              await sleep(30);
+              marq.boxDrawn = !!document.querySelector('.mg-marquee');
+              marq.selected = document.querySelectorAll('#mgGrid .tile.selected').length;
+              document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+              await sleep(30);
+              marq.boxGone = !document.querySelector('.mg-marquee');
+              log.push(marq);
+              if (!marq.afterHold) failed.push('在条目上长按没拉出选框：框选仍然只认空白区');
+              if (!marq.selected) failed.push('在条目上拉框没选中任何条目');
+              if (!marq.boxGone) failed.push('松手后选框没被移除');
+              // 这条用例把选区改掉了，刷一次让它归零，免得干扰后面的断言
+              const rf = document.getElementById('btnMgRefresh');
+              if (rf) rf.click();
+              await sleep(600);
+            }
+          }
 
           // —— 本地替换内容：与「替换内容」按钮同一条 IPC
           await window.cloudpic.fs.localWrite({ path: 'renamed/after-rename.txt', data: new Uint8Array([72, 73, 74, 73, 69]) });
@@ -1692,6 +1775,28 @@ function runSelfTest() {
         fs.writeFileSync(path.join(dir, 'manage-rename.png'), img3.toPNG());
         console.log('SHOT manage-rename');
         if (opened > 0) {
+          // 顺手把路径选择器也拍下来：这是「重命名 / 移动」里最值得看的一屏
+          const panel = await wc.executeJavaScript(
+            `(async function(){
+               var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+               var b = document.getElementById('mgDirPickBtn');
+               if (!b) return { ok: false, why: (document.getElementById('mgDirLocalTxt') || {}).innerText || '' };
+               b.click();
+               for (var i = 0; i < 30; i++) {
+                 if (document.querySelector('.dirpick-list')) break;
+                 await sleep(120);
+               }
+               return {
+                 ok: !!document.querySelector('.dirpick'),
+                 rows: document.querySelectorAll('.dirpick-row').length,
+                 crumb: (document.querySelector('.dirpick-crumb') || {}).innerText || ''
+               };
+             })()`
+          );
+          console.log('SHOT_DIRPICK ' + JSON.stringify(panel));
+          const imgPick = await wc.capturePage();
+          fs.writeFileSync(path.join(dir, 'manage-dirpick.png'), imgPick.toPNG());
+          console.log('SHOT manage-dirpick');
           await wc.executeJavaScript(`document.querySelectorAll('.modal-foot .btn')[0].click();`);
         } else {
           errors.push('rename 弹层没打开，按钮数=' + opened);

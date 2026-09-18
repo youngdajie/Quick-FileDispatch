@@ -72,6 +72,13 @@ const view = {
 let replaceTarget = null;
 
 /**
+ * 框选拖完那一刻，浏览器还会补一个 click。
+ * 那个 click 落在条目上时如果带着 Ctrl，就会把刚框进来的这一格又取消掉 ——
+ * 所以拖完短暂闭麦，让这个尾巴 click 直接丢掉。
+ */
+let suppressClickUntil = 0;
+
+/**
  * 当前生效的「仓库身份」。
  * 归档配置一切换，远端仓库 + 分支 + 本地目录是一起换的，
  * 用这个串比对就能知道「是不是换仓库了」。
@@ -209,13 +216,17 @@ function syncHeadCheck() {
 /* ---------------------------------------------------------------- 框选 */
 
 /**
- * 空白处按住左键拖动 = 拉一个选框，碰到的条目都选上（OpenList 那种手感）。
+ * 按住左键拖动 = 拉一个选框，碰到的条目都选上（OpenList 那种手感）。
  * 按住 Ctrl / Cmd 则是叠加到现有选区，而不是替换。
  *
  * 选框挂在 body 上用 position: fixed —— 全部按视口坐标算，
  * 不用去跟 .content 的滚动位置对账，滚动时也不会错位。
+ *
+ * fromTile 表示这框是从某个条目身上拉起来的（长按触发）。区别只有一个：
+ * 空白处「点一下、不拖」要取消选择，条目上这么来一下不算「点了空白」，
+ * 不该把用户辛苦勾的选区清掉。
  */
-function startMarquee(e) {
+function startMarquee(e, fromTile) {
   const grid = $('#mgGrid');
   if (!grid) return;
   const additive = e.ctrlKey || e.metaKey;
@@ -250,6 +261,7 @@ function startMarquee(e) {
     // 只是点了一下空白，还没拖起来 —— 先不画选框，免得闪一下
     if (!moved && w < 4 && h < 4) return;
     moved = true;
+    suppressClickUntil = Date.now() + 350;
     box.style.left = Math.min(e.clientX, ev.clientX) + 'px';
     box.style.top = Math.min(e.clientY, ev.clientY) + 'px';
     box.style.width = w + 'px';
@@ -265,7 +277,7 @@ function startMarquee(e) {
     document.removeEventListener('mouseup', up, true);
     box.remove();
     // 空白处「点一下、不拖」= 取消选择（Windows 资源管理器、OpenList 都这样）
-    if (!moved && !additive) clearSelection();
+    if (!moved && !additive && !fromTile) clearSelection();
   };
 
   document.addEventListener('mousemove', move, true);
@@ -869,9 +881,46 @@ async function exportSelected() {
 
 /* ---------------------------------------------------------------- 改名 / 移动 */
 
+/**
+ * 路径选择器能不能用，以及本地这棵目录树可不可信。
+ *
+ * 底图是本地克隆，所以起码得有个 Git 仓库，才谈得上「看着目录挑」。
+ *
+ * 同步状态不当作开关：本地落后 / 分叉时照样能挑，只是把话说在前面 ——
+ * 你选的这个目录在云端可能还没建，记得先同步再提交。原因有两个：
+ *   1. 只盯着 relation === 'same' 会让「提交历史比不出来」的情况（自定义 API
+ *      地址，检测器自己都会提示这种）永远用不上这个功能；
+ *   2. 目的本来就是让用户别手打路径，一个纯粹的便利功能不该卡在网络状态上。
+ */
+function dirPickState() {
+  const cfg = state.cfg || {};
+  if (!cfg.localDir) return { ok: false, synced: false, why: '没配本地目录，只能手打相对路径' };
+  if (!view.git) return { ok: false, synced: false, why: '本地目录不是 Git 仓库，只能手打相对路径' };
+
+  const c = view.cloud;
+  if (!c || !c.ok) return { ok: true, synced: false, why: '还没读到云端提交' };
+  if (view.git.dirty) return { ok: true, synced: false, why: '本地有未提交改动' };
+  if (c.relation === 'same') return { ok: true, synced: true, why: '' };
+
+  const MAP = {
+    'local-behind': '本地落后云端 ' + c.behind + ' 个提交',
+    'local-ahead': '本地领先云端 ' + c.ahead + ' 个提交',
+    diverged: '本地与云端分叉',
+    'no-local': '这台电脑还没克隆仓库'
+  };
+  return { ok: true, synced: false, why: MAP[c.relation] || '本地与云端还没对上' };
+}
+
+/** 目录选择面板的临时状态（只活在「重命名 / 移动」这个弹层里） */
+let dp = { open: false, dir: '' };
+
 function openRenameDialog(targets) {
   const multi = targets.length > 1;
   const first = targets[0];
+  const startDir = multi ? view.dir : dirOf(first.path);
+  const pk = dirPickState();
+  dp = { open: false, dir: '' };
+
   const box = document.createElement('div');
   box.innerHTML =
     '<p class="rule-desc" style="margin:0 0 12px">' +
@@ -879,14 +928,23 @@ function openRenameDialog(targets) {
       ? '把选中的 <b>' + targets.length + '</b> 个文件移动到同一个目录；留空即仓库根目录。'
       : '改目录 = 移动，改文件名 = 重命名，两个一起改也可以。') +
     '</p>' +
-    '<label class="field"><span class="field-label">目录 <span class="hint">相对仓库根目录</span></span>' +
+    // 这里用 div 而不是 label：label 里塞按钮会让点按钮顺带触发 label 的默认行为
+    '<div class="field"><span class="field-label">目录 <span class="hint">相对仓库根目录</span></span>' +
+    '<span class="dir-row">' +
     '<input type="text" id="mgEditDir" placeholder="留空 = 仓库根目录" value="' +
-    escapeHtml(multi ? view.dir : dirOf(first.path)) +
-    '" /></label>' +
+    escapeHtml(startDir) +
+    '" />' +
+    (pk.ok ? '<button type="button" class="btn btn-ghost" id="mgDirPickBtn">浏览…</button>' : '') +
+    '</span>' +
+    '<span class="dir-local' + (pk.ok && pk.synced ? '' : ' off') + '">' +
+    '<span class="dl-ico">' + ICONS.monitor + '</span><span class="dl-txt" id="mgDirLocalTxt"></span>' +
+    '</span>' +
+    '</div>' +
     (multi
       ? ''
       : '<label class="field"><span class="field-label">文件名</span>' +
         '<input type="text" id="mgEditName" value="' + escapeHtml(baseOf(first.path)) + '" /></label>') +
+    '<div id="mgDirPick"></div>' +
     '<div class="callout" style="margin-bottom:0">' +
     (view.source === 'local'
       ? '本地目录会直接改名；改完后记得在左侧点「提交并推送」把改动同步到云端。'
@@ -910,6 +968,155 @@ function openRenameDialog(targets) {
       }
     ]
   });
+
+  const dirInput = $('#mgEditDir');
+  if (dirInput) dirInput.addEventListener('input', dpSyncHint);
+  const pickBtn = $('#mgDirPickBtn');
+  if (pickBtn) pickBtn.onclick = dpToggle;
+  dpSyncHint();
+}
+
+/**
+ * 输入框里的相对路径 → 底下那行提示。
+ *
+ * 这行是这次改动的重点：以前只有一个「目录」输入框，得自己把
+ * `2026/毕业照/合影` 这种相对路径默写出来，还得记住大小写和斜杠方向。
+ * 现在把它翻译成磁盘上真实的绝对路径摆出来，用户一眼能确认落点对不对。
+ * 本地和云端没完全对齐时，把差异缀在后面（换暖色），别让人以为万事大吉。
+ */
+function dpSyncHint() {
+  const el = $('#mgDirLocalTxt');
+  if (!el) return;
+  const pk = dirPickState();
+  const input = $('#mgEditDir');
+  const dir = CPLinks.normalizePath((input && input.value) || '');
+  const line = el.parentElement;
+  if (line) line.classList.toggle('off', !pk.ok || !pk.synced);
+
+  if (!pk.ok) {
+    el.innerHTML = '<span class="dl-note">' + escapeHtml(pk.why) + '</span>';
+    return;
+  }
+  // 路径本身用常规色，只有「没对上」那句才染暖色 —— 整行都变黄反而看不清路径
+  el.innerHTML =
+    '<span class="dl-path">' + escapeHtml(absLocalPath(dir)) + '</span>' +
+    (pk.synced ? '' : ' <span class="dl-note">（' + escapeHtml(pk.why) + '，选完记得同步）</span>');
+}
+
+async function dpToggle() {
+  const box = $('#mgDirPick');
+  if (!box) return;
+  if (dp.open) {
+    dpClose();
+    return;
+  }
+  const input = $('#mgEditDir');
+  dp.open = true;
+  dp.dir = CPLinks.normalizePath((input && input.value) || '');
+  box.innerHTML = '<div class="dirpick"><div class="dirpick-empty">正在读本地目录…</div></div>';
+  await dpRender();
+}
+
+function dpClose() {
+  dp.open = false;
+  const box = $('#mgDirPick');
+  if (box) box.innerHTML = '';
+}
+
+/** 画出面板：面包屑 + 当前目录的子文件夹 */
+async function dpRender() {
+  const box = $('#mgDirPick');
+  if (!box || !dp.open) return;
+  const dir = dp.dir;
+
+  let dirs = [];
+  let failed = '';
+  try {
+    const res = await window.cloudpic.cloud.list({ dir: dir, source: 'local' });
+    dirs = (res.items || []).filter((i) => i.type === 'dir');
+    dirs.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  } catch (e) {
+    failed = e.message || String(e);
+  }
+  // 读盘期间用户又翻到别处了 → 这次结果作废，别把旧目录的内容画上去
+  if (!dp.open || dp.dir !== dir) return;
+
+  const segs = dir.split('/').filter(Boolean);
+  let crumb =
+    '<button type="button" data-go=""' + (segs.length ? '' : ' class="last"') + '>仓库根目录</button>';
+  let acc = '';
+  segs.forEach((s, i) => {
+    acc = acc ? acc + '/' + s : s;
+    const last = i === segs.length - 1;
+    crumb +=
+      '<span class="sep">/</span>' +
+      '<button type="button" data-go="' + escapeHtml(acc) + '"' + (last ? ' class="last"' : '') + '>' +
+      escapeHtml(s) +
+      '</button>';
+  });
+
+  const rows = dirs.length
+    ? dirs
+        .map(
+          (d) =>
+            '<div class="dirpick-row" data-go="' + escapeHtml(d.path) + '">' +
+            '<span class="fi dp-dir">' + fileIcon(d.name, { isDir: true }) + '</span>' +
+            '<span class="nm">' + escapeHtml(d.name) + '</span>' +
+            '<button type="button" class="btn btn-ghost pick" data-pick="' + escapeHtml(d.path) + '">选它</button>' +
+            '</div>'
+        )
+        .join('')
+    : '<div class="dirpick-empty">' +
+      (failed ? escapeHtml(friendlyError(failed)) : '这个目录下没有子文件夹') +
+      '</div>';
+
+  box.innerHTML =
+    '<div class="dirpick">' +
+    '<div class="dirpick-bar">' +
+    '<span class="dirpick-crumb">' + crumb + '</span>' +
+    '<button type="button" class="btn btn-ghost btn-sm" id="mgDirPickUp"' +
+    (dir ? '' : ' disabled') +
+    '>上级</button>' +
+    '</div>' +
+    '<div class="dirpick-list">' + rows + '</div>' +
+    '<div class="dirpick-foot">' +
+    '<span>点目录进下一层，「选它」直接采用</span>' +
+    '<button type="button" class="btn btn-primary btn-sm" id="mgDirPickHere">选当前文件夹</button>' +
+    '</div>' +
+    '</div>';
+
+  box.querySelectorAll('[data-go]').forEach((el) => {
+    el.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-pick]')) return;
+      dp.dir = el.dataset.go || '';
+      dpRender();
+    });
+  });
+  box.querySelectorAll('[data-pick]').forEach((el) => {
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      dpChoose(el.dataset.pick || '');
+    });
+  });
+  const up = $('#mgDirPickUp');
+  if (up) {
+    up.onclick = () => {
+      const parts = dp.dir.split('/').filter(Boolean);
+      parts.pop();
+      dp.dir = parts.join('/');
+      dpRender();
+    };
+  }
+  const here = $('#mgDirPickHere');
+  if (here) here.onclick = () => dpChoose(dp.dir);
+}
+
+/** 采用某个目录：写回输入框、刷新本地路径提示、收起面板 */
+function dpChoose(dir) {
+  const input = $('#mgEditDir');
+  if (input) input.value = dir || '';
+  dpClose();
+  dpSyncHint();
 }
 
 async function runRename(targets, multi, handle) {
@@ -1257,6 +1464,8 @@ function bind() {
 
   // 单击：只有点在复选框上才算「选中」，点条目本身不再改变选中状态
   grid.addEventListener('click', (e) => {
+    // 刚拖完框选，这个 click 是鼠标松手的尾巴，别拿来改选中
+    if (Date.now() < suppressClickUntil) return;
     const tile = e.target.closest('.tile');
     if (!tile) return;
     if (e.target.closest('.tile-check')) {
@@ -1277,12 +1486,56 @@ function bind() {
     };
   }
 
-  // 空白处按住左键拖动 → 框选
+  /**
+   * 按住左键拖动 → 框选。
+   *
+   * 以前只认空白处，条目身上按下去什么都不发生 —— 想框一片夹着文件的区域，
+   * 得绕开每一个格子找缝下笔，很难用。现在条目上也能起手，但不能像空白处
+   * 那样「按下去立刻开框」：那样单击、双击全被抢走。折中是延迟判定 ——
+   * 按住不动超过 180ms，或者拖出 4px，才认定这是框选。
+   */
+  const HOLD_MS = 180;
+  const DRAG_PX = 4;
+
+  const beginMarquee = (e, fromTile) => {
+    e.preventDefault();
+    startMarquee(e, fromTile);
+  };
+
   main.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest('.tile') || e.target.closest('.mg-listhead')) return;
-    e.preventDefault();
-    startMarquee(e);
+    if (e.target.closest('.mg-listhead')) return;
+    // 复选框自己处理点击。它就在角上，把它也算进拖拽起点反而点不准
+    if (e.target.closest('.tile-check')) return;
+
+    if (!e.target.closest('.tile')) {
+      beginMarquee(e, false);
+      return;
+    }
+
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let fired = false;
+    let timer = 0;
+
+    function onMove(ev) {
+      if (Math.abs(ev.clientX - sx) > DRAG_PX || Math.abs(ev.clientY - sy) > DRAG_PX) fire();
+    }
+    function stop() {
+      clearTimeout(timer);
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', stop, true);
+    }
+    function fire() {
+      if (fired) return;
+      fired = true;
+      stop();
+      beginMarquee(e, true);
+    }
+
+    timer = setTimeout(fire, HOLD_MS);
+    document.addEventListener('mousemove', onMove, true);
+    document.addEventListener('mouseup', stop, true);
   });
 
   // 右键：条目上给该条目的菜单，空白处给整目录的菜单

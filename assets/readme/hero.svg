@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-label="快捷文件分发服务@JIE — 把 GitHub / CNB 代码仓库当文件仓库用的 Windows 桌面应用">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b0b12"/>
+      <stop offset="50%" stop-color="#14101f"/>
+      <stop offset="100%" stop-color="#0a0a0f"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="50%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ec4899" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ec4899" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#bg)"/>
+
+  <!-- 光晕 -->
+  <ellipse cx="230" cy="110" rx="280" ry="200" fill="url(#glow1)"/>
+  <ellipse cx="980" cy="330" rx="300" ry="210" fill="url(#glow2)"/>
+
+  <!-- 细网格 -->
+  <g stroke="#ffffff" stroke-opacity="0.045" stroke-width="1">
+    <path d="M0 70 H1200 M0 140 H1200 M0 210 H1200 M0 280 H1200 M0 350 H1200"/>
+    <path d="M100 0 V420 M220 0 V420 M340 0 V420 M460 0 V420 M580 0 V420 M700 0 V420 M820 0 V420 M940 0 V420 M1060 0 V420"/>
+  </g>
+
+  <!-- 左侧：标题 -->
+  <g transform="translate(88, 96)">
+    <rect x="0" y="0" width="200" height="26" rx="13" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.12"/>
+    <text x="16" y="18" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" letter-spacing="2.4" fill="#c9c9d6">WINDOWS DESKTOP APP</text>
+
+    <text x="0" y="112" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="46" font-weight="200" letter-spacing="2" fill="#ffffff">快捷文件分发服务@JIE</text>
+
+    <text x="2" y="156" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="300" letter-spacing="2" fill="#ffffff" fill-opacity="0.55">把代码仓库当文件仓库用 · 本地压缩 · 一次提交分发</text>
+
+    <rect x="2" y="186" width="72" height="3" rx="1.5" fill="url(#accent)"/>
+
+    <text x="2" y="240" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="1" fill="#8b8b9e">本地目录 → 仓库 → 一条直链</text>
+
+    <g transform="translate(2, 268)">
+      <rect x="0" y="0" width="204" height="30" rx="15" fill="none" stroke="#ffffff" stroke-opacity="0.16"/>
+      <text x="18" y="20" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#ffffff" fill-opacity="0.72">PNG / JPEG / WebP / AVIF</text>
+
+      <rect x="218" y="0" width="166" height="30" rx="15" fill="none" stroke="#ffffff" stroke-opacity="0.16"/>
+      <text x="236" y="20" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#ffffff" fill-opacity="0.72">GitHub / CNB 双平台</text>
+    </g>
+  </g>
+
+  <!-- 右侧：上传流转示意 -->
+  <g transform="translate(700, 92)">
+    <rect x="0" y="0" width="412" height="236" rx="18" fill="#ffffff" fill-opacity="0.035" stroke="#ffffff" stroke-opacity="0.09"/>
+
+    <text x="26" y="40" font-family="ui-monospace, Menlo, monospace" font-size="11" letter-spacing="2" fill="#ffffff" fill-opacity="0.38">UPLOAD PIPELINE</text>
+
+    <!-- 节点 1 -->
+    <g transform="translate(26, 62)">
+      <rect x="0" y="0" width="150" height="38" rx="10" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.12"/>
+      <text x="16" y="24" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#e6e6f0">选择文件</text>
+    </g>
+
+    <path d="M176 81 H206" stroke="url(#accent)" stroke-width="2"/>
+    <path d="M200 76 L208 81 L200 86" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- 节点 2 -->
+    <g transform="translate(212, 62)">
+      <rect x="0" y="0" width="172" height="38" rx="10" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.12"/>
+      <text x="16" y="24" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#e6e6f0">本机多核压缩</text>
+    </g>
+
+    <!-- 分支 -->
+    <path d="M298 100 V126" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.6"/>
+    <path d="M232 126 H364" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.6"/>
+    <path d="M232 126 V146" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.6"/>
+    <path d="M364 126 V146" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.6"/>
+
+    <g transform="translate(176, 146)">
+      <rect x="0" y="0" width="112" height="52" rx="10" fill="#6366f1" fill-opacity="0.14" stroke="#6366f1" stroke-opacity="0.35"/>
+      <text x="16" y="22" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#c7c9ff">GitHub</text>
+      <text x="16" y="40" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#ffffff" fill-opacity="0.42">API 一次提交</text>
+    </g>
+
+    <g transform="translate(300, 146)">
+      <rect x="0" y="0" width="112" height="52" rx="10" fill="#ec4899" fill-opacity="0.14" stroke="#ec4899" stroke-opacity="0.35"/>
+      <text x="16" y="22" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#ffc7e4">CNB</text>
+      <text x="16" y="40" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#ffffff" fill-opacity="0.42">本地 Git 提交</text>
+    </g>
+
+    <text x="26" y="222" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#ffffff" fill-opacity="0.3">云端有新提交 · 提示该拉还是该推</text>
+  </g>
+</svg>
