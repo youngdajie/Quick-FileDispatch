@@ -1734,6 +1734,17 @@ function runSelfTest() {
         await new Promise((r) => setTimeout(r, 2600));
         await wc.executeJavaScript(`document.querySelector('.nav-item[data-page="manage"]').click();`);
         await new Promise((r) => setTimeout(r, 2600));
+        // 自己把浏览源切到「本地目录」。不能指望上一步（--fstest）留下的状态：
+        // 单独跑 --shots 时源会停在云端，demo-files 根本不在云端列表里，dive 必然落空。
+        const srcLocal = await wc.executeJavaScript(
+          `(function(){
+             var b = document.querySelector('#sourceSeg button[data-source="local"]');
+             if (!b || b.classList.contains('active')) return false;
+             b.click();
+             return true;
+           })()`
+        );
+        if (srcLocal) await new Promise((r) => setTimeout(r, 2200));
         await dive('#mgGrid .tile[data-path="demo-files"]', 'manage-icons');
         await wc.executeJavaScript(`document.getElementById('btnMgList').click();`);
         await new Promise((r) => setTimeout(r, 900));
