@@ -6,11 +6,29 @@ import { enhanceNumbers } from './lib/numfield.js';
 import * as fileIcons from './lib/fileicons.js';
 import state from './lib/state.js';
 import * as appearance from './lib/appearance.js';
+import { initUniverse, universeState } from './lib/universe.js';
 import onboard from './lib/onboard.js';
 import uploadPage from './pages/upload.js';
 import managePage from './pages/manage.js';
 import settingsPage from './pages/settings.js';
 import aboutPage from './pages/about.js';
+
+/**
+ * 顶栏那个昼夜按钮的图标：露出来的永远是「点了会变成什么」。
+ * 深色主题下显示太阳（点击转亮），浅色主题下显示月亮（点击转暗）。
+ */
+const ICON_SUN =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="12" cy="12" r="4"/>' +
+  '<path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>';
+const ICON_MOON =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M20.6 14.7A8.6 8.6 0 0 1 9.3 3.4a8.6 8.6 0 1 0 11.3 11.3z"/></svg>';
+
+/** 当前是不是浅色主题（配置为准，不是看 DOM） */
+function themeIsLight() {
+  return !!(state.cfg && state.cfg.ui && state.cfg.ui.theme === 'light');
+}
 
 const PAGES = {
   upload: uploadPage,
@@ -53,6 +71,15 @@ function updateChrome() {
   $('#cpuBadge').textContent = (info.cpuCount || navigator.hardwareConcurrency || '-') + ' 核';
   $('#cpuBadge').title = '压缩线程池按 CPU 核心数并行';
   $('#verBadge').textContent = 'v' + (info.version || '1.2');
+
+  // 顶栏的昼夜按钮跟着配置走。state 每次变更都会回到这儿，
+  // 所以在设置页里点主题卡片，顶栏图标也会跟着换，不会两边对不上。
+  const btnTheme = $('#btnTheme');
+  if (btnTheme) {
+    const light = themeIsLight();
+    btnTheme.innerHTML = light ? ICON_MOON : ICON_SUN;
+    btnTheme.title = light ? '切换到深色模式' : '切换到浅色模式';
+  }
 }
 
 function bindChrome() {
@@ -66,6 +93,12 @@ function bindChrome() {
     };
   });
   $('#repoChip').onclick = () => go('settings');
+
+  // 昼夜切换：这里只改配置，界面颜色交给 state.on → applyAppearance 去落。
+  // 顺带的好处是设置页里那两张主题卡片也会跟着亮（它走 onConfigChanged）。
+  $('#btnTheme').onclick = () => {
+    state.patch({ ui: { theme: themeIsLight() ? 'dark' : 'light' } }).catch((e) => err(e.message || String(e)));
+  };
 
   $('#btnOpenLocalDir').onclick = async () => {
     const cfg = state.cfg || {};
@@ -120,6 +153,9 @@ async function boot() {
   appearance.applyAppearance(state.cfg);
   updateChrome();
 
+  // 粒子背景挂上就不用管了：它自己盯着 <html data-theme> 决定跑不跑
+  initUniverse();
+
   bindChrome();
   Object.keys(PAGES).forEach((k) => {
     try {
@@ -160,6 +196,7 @@ async function boot() {
   window.__nf = { enhanceNumbers };
   window.__state = state;
   window.__appearance = appearance;
+  window.__universe = universeState;
 
   window.addEventListener('cloudpic:changed', () => {
     state.refresh();

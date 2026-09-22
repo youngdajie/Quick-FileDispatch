@@ -1799,3 +1799,114 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 /* 目标目录这一行：输入框 + 浏览按钮 */
 .dir-input-row { display: flex; gap: 8px; align-items: center; }
 .dir-input-row input { flex: 1; }
+
+/* ============================================================
+   深空粒子背景（浅色主题专属）
+   画布固定在最底层；浅色下把几块大面积面板调成半透明，粒子才透得出来。
+   卡片保留 0.84 的不透明度 —— 既能让粒子在它后面淡淡地动，正文又不糊。
+   ============================================================ */
+
+#universe {
+  position: fixed; inset: 0; z-index: 0;
+  display: none;            /* 深色下干脆不参与；浅色由下面这条打开 */
+  pointer-events: none;
+}
+html[data-theme="light"] #universe { display: block; }
+
+/* 界面整体压在画布之上。.content / .page 本来就没有底色，
+   它们那一块会直接透出粒子；有底色的容器得半透明才透得过。 */
+.app { position: relative; z-index: 1; }
+
+html[data-theme="light"] .topbar { background: rgba(247, 249, 252, 0.72); }
+html[data-theme="light"] .sidebar { background: rgba(247, 249, 252, 0.58); }
+html[data-theme="light"] .card { background: rgba(255, 255, 255, 0.84); }
+
+/* 关于页作者行：左边「作者 + 站点」，右边项目地址，两端对齐；窄窗口自动换行 */
+.about-hero .author {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px 18px; flex-wrap: wrap;
+}
+.about-hero .author .proj {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 12px;
+}
+.about-hero .author .proj svg { flex: 0 0 auto; opacity: 0.7; }
+
+/* ============================================================
+   压缩前后对比（squoosh 那种中缝对比）
+   两张图上下叠着，上面那张用 clip-path 从中间裁开。
+   ============================================================ */
+
+.cmp { width: 100%; padding: 16px 18px 14px; }
+
+.cmp-stage {
+  --split: 50%;
+  position: relative;
+  /* 关键：收缩到图片本身的显示尺寸。裁切是按外层盒子算的，
+     盒子要是撑满容器，contain 留下的空白会让中缝和图片边界对不上。 */
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  line-height: 0;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0b0f16;
+}
+
+/* 特异性要压过 .modal.wide .modal-body img 那条通用规则 */
+.modal.wide .modal-body .cmp-a {
+  display: block; width: auto; height: auto;
+  max-width: 100%; max-height: 62vh; margin: 0 auto;
+}
+.modal.wide .modal-body .cmp-b {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  max-width: none; max-height: none;
+  object-fit: fill; display: block;
+  clip-path: inset(0 0 0 var(--split));
+}
+
+.cmp-bar {
+  position: absolute; top: 0; bottom: 0; left: var(--split);
+  width: 2px; margin-left: -1px;
+  background: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+}
+.cmp-knob {
+  position: absolute; top: 50%; left: 50%;
+  width: 30px; height: 30px; margin: -15px 0 0 -15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.cmp-knob::before, .cmp-knob::after {
+  content: ""; position: absolute; top: 50%; width: 0; height: 0;
+  border: 4px solid transparent; transform: translateY(-50%);
+}
+.cmp-knob::before { left: 5px; border-right-color: #35455c; }
+.cmp-knob::after { right: 5px; border-left-color: #35455c; }
+
+.cmp-tag {
+  position: absolute; top: 10px;
+  padding: 3px 9px; border-radius: 999px;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  background: rgba(8, 12, 19, 0.66); color: #e8eefa;
+  pointer-events: none;
+}
+.cmp-tag.l { left: 10px; }
+.cmp-tag.r { right: 10px; }
+
+.cmp-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px 14px;
+  margin-top: 13px; padding-top: 12px;
+  border-top: 1px solid rgba(126, 172, 236, 0.12);
+  font-family: var(--mono); font-size: 12px; color: #a5b6cd;
+}
+.cmp-meta .cmp-name {
+  color: #e8eefa; max-width: 46%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cmp-meta .cmp-hint { margin-left: auto; color: #66798f; }

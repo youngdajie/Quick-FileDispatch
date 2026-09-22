@@ -10,6 +10,8 @@
 </head>
 <body>
 
+<canvas id="universe" aria-hidden="true"></canvas>
+
 <div class="app" id="appRoot">
 
   <header class="topbar">
@@ -25,6 +27,12 @@
 
     <div class="topbar-spacer"></div>
 
+    <button class="icon-btn" id="btnTheme" title="切换主题">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="btnOpenLocalDir" title="打开本地目录">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 7.5A2 2 0 0 1 5 5.5h3.6a2 2 0 0 1 1.4.6l1 1a2 2 0 0 0 1.4.6H19a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>

@@ -73,6 +73,7 @@ function ensureNode(it) {
   if (el) return el;
   el = document.createElement('div');
   el.className = 'q-item';
+  el.dataset.id = String(it.id);
   el.style.setProperty('--i', String(Math.min(nodes.size, 18)));
   el.innerHTML =
     '<div class="q-thumb"></div>' +
@@ -321,6 +322,123 @@ async function processPending() {
   );
 }
 
+/* ---------------------------------------------------------------- 前后对比 */
+
+/**
+ * 压缩产物的扩展名 → MIME。
+ * 给 Blob 标对类型再喂给 <img>：多数格式浏览器能自己嗅探出来，
+ * 但 avif / svg 这类不标清楚会直接不显示。
+ */
+const OUT_MIME = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', jfif: 'image/jpeg',
+  png: 'image/png', webp: 'image/webp', avif: 'image/avif',
+  gif: 'image/gif', bmp: 'image/bmp', ico: 'image/x-icon',
+  tif: 'image/tiff', tiff: 'image/tiff', svg: 'image/svg+xml'
+};
+
+/** 这一项凑不凑得出前后对比：得是图片、压缩完了、而且原图的预览地址还在 */
+function canCompare(it) {
+  return !!(it && it.isImage && it.outBuffer && it.previewUrl);
+}
+
+/**
+ * 压缩前后对比（squoosh 那种中缝对比）。
+ *
+ * 两张图叠在一起：底下那张是原图，上面那张是压缩产物，
+ * 用 clip-path 从中间裁开，中缝拖到哪就裁到哪 —— 比左右并排更容易看出
+ * 压缩到底吃掉了什么细节，因为同一个像素在切换前后落在屏幕上的位置完全没变。
+ *
+ * 有一点得注意：裁切是按**外层盒子**算的，所以外层必须收缩到图片本身的显示尺寸
+ * （CSS 里用 width: fit-content 做到），否则 contain 留下的空白会让中缝和图片边界对不上。
+ */
+function openCompare(it) {
+  const afterUrl = URL.createObjectURL(
+    new Blob([it.outBuffer], { type: OUT_MIME[CPLinks.extOf(it.outName)] || '' })
+  );
+
+  const dim =
+    it.outW && it.srcW && (it.srcW !== it.outW || it.srcH !== it.outH)
+      ? it.srcW + '×' + it.srcH + ' → ' + it.outW + '×' + it.outH
+      : it.outW
+        ? it.outW + '×' + it.outH
+        : '';
+
+  const meta = [dim, it.quality && !it.passthrough ? 'q' + it.quality : '', it.note]
+    .filter(Boolean)
+    .map((x) => '<span>' + escapeHtml(String(x)) + '</span>')
+    .join('');
+
+  const node = document.createElement('div');
+  node.className = 'cmp';
+  node.innerHTML =
+    '<div class="cmp-stage">' +
+    '<img class="cmp-a" src="' + escapeHtml(it.previewUrl) + '" alt="压缩前" draggable="false" />' +
+    '<img class="cmp-b" src="' + escapeHtml(afterUrl) + '" alt="压缩后" draggable="false" />' +
+    '<span class="cmp-tag l">压缩前 ' + escapeHtml(CPLinks.formatBytes(it.origSize)) + '</span>' +
+    '<span class="cmp-tag r">压缩后 ' + escapeHtml(CPLinks.formatBytes(it.outSize)) + '</span>' +
+    '<div class="cmp-bar"><span class="cmp-knob"></span></div>' +
+    '</div>' +
+    '<div class="cmp-meta">' +
+    '<span class="cmp-name">' + escapeHtml(it.outName || it.origName) + '</span>' +
+    meta +
+    '<span class="cmp-hint">按住左右拖动中缝</span>' +
+    '</div>';
+
+  const stage = node.querySelector('.cmp-stage');
+  let dragging = false;
+
+  const setSplit = (clientX) => {
+    const r = stage.getBoundingClientRect();
+    if (!r.width) return;
+    const p = Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100));
+    stage.style.setProperty('--split', p.toFixed(2) + '%');
+  };
+
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    try {
+      stage.setPointerCapture(e.pointerId);
+    } catch (err) {
+      /* 拿不到指针捕获也能用，只是拖出界会断 */
+    }
+    setSplit(e.clientX);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (dragging) setSplit(e.clientX);
+  });
+  const stop = (e) => {
+    dragging = false;
+    try {
+      stage.releasePointerCapture(e.pointerId);
+    } catch (err) {
+      /* ignore */
+    }
+  };
+  stage.addEventListener('pointerup', stop);
+  stage.addEventListener('pointercancel', stop);
+
+  modal({
+    title: '压缩前后对比',
+    wide: true,
+    node: node,
+    buttons: [{ label: '关闭', primary: true }],
+    onClose: () => URL.revokeObjectURL(afterUrl)
+  });
+}
+
+/**
+ * 点缩略图：能对比就拉对比，否则退回普通放大预览。
+ * 队列和结果两处共用 —— 两边的判断条件本来就是一回事。
+ */
+function openThumbFor(id) {
+  const it = queue.find((q) => String(q.id) === String(id));
+  if (!it || !it.previewUrl) return false;
+  if (canCompare(it)) openCompare(it);
+  else previewImage(it.previewUrl);
+  return true;
+}
+
 /* ---------------------------------------------------------------- 上传 */
 
 function resultUrl(it) {
@@ -427,7 +545,7 @@ function renderResults() {
         ? '<div class="r-thumb" style="background-image:url(\'' + it.previewUrl + '\')"></div>'
         : '<div class="r-thumb ext">' + escapeHtml((CPLinks.extOf(it.outName) || 'file').toUpperCase().slice(0, 4)) + '</div>';
       return (
-        '<div class="r-item" style="--i:' + Math.min(idx, 18) + '">' + thumb +
+        '<div class="r-item" data-id="' + it.id + '" style="--i:' + Math.min(idx, 18) + '">' + thumb +
         '<div class="r-info"><div class="r-path">' + escapeHtml(it.path) + '</div>' +
         '<div class="r-link" title="' + escapeHtml(link) + '">' + escapeHtml(link) + '</div></div>' +
         '<div class="queue-actions">' +
@@ -458,8 +576,8 @@ function bindResultActions() {
     }
     const t = e.target.closest('.r-thumb');
     if (t && t.style.backgroundImage) {
-      const m = /url\(["']?(.*?)["']?\)/.exec(t.style.backgroundImage || '');
-      if (m) previewImage(m[1]);
+      const item = e.target.closest('.r-item');
+      if (item && item.dataset.id) openThumbFor(item.dataset.id);
     }
   });
 }
@@ -860,11 +978,15 @@ export default {
     };
 
     $('#queueList').addEventListener('click', (e) => {
-      const t = e.target.closest('.q-thumb');
-      if (!t) return;
-      const m = /url\(["']?(.*?)["']?\)/.exec(t.style.backgroundImage || '');
-      if (m) previewImage(m[1]);
+      const thumb = e.target.closest('.q-thumb');
+      if (!thumb) return;
+      const item = e.target.closest('.q-item');
+      if (item) openThumbFor(item.dataset.id);
     });
+
+    // 无头自检的钩子：自检没法真跑一遍压缩，就自己捏一份「压缩结果」喂进来，
+    // 验证对比弹层装不装得起来（见 main.js 的 ui 段）
+    window.__cmp = { open: openCompare, can: canCompare };
   },
 
   onEnter() {

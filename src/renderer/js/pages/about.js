@@ -6,6 +6,7 @@ import state from '../lib/state.js';
 const APP = '快捷文件分发服务@JIE';
 const AUTHOR = '小杰';
 const SITE = 'https://www.yangjie.site';
+const REPO = 'https://cnb.cool/youngdajie/Quick-FileDispatch';
 
 const TECH = [
   ['Electron', '桌面外壳，把 Chromium 和 Node.js 一起打包进 Windows 应用'],
@@ -48,8 +49,14 @@ function render() {
     '<div>' +
     '<h2>' + escapeHtml(APP) + '</h2>' +
     '<div class="ver">版本 ' + escapeHtml(info.version || '1.2') + ' · Windows 桌面版 · 本地压缩 + 云端分发</div>' +
-    '<div class="author">作者：<b>' + escapeHtml(AUTHOR) + '</b>　·　' +
-    '<a href="#" data-ext="' + SITE + '">' + escapeHtml(SITE.replace('https://', '')) + '</a></div>' +
+    '<div class="author">' +
+    '<span>作者：<b>' + escapeHtml(AUTHOR) + '</b>　·　' +
+    '<a href="#" data-ext="' + SITE + '">' + escapeHtml(SITE.replace('https://', '')) + '</a></span>' +
+    '<a class="proj" href="#" data-ext="' + REPO + '" title="' + escapeHtml(REPO) + '">' +
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M9 18l-6-6 6-6"/><path d="M15 6l6 6-6 6"/></svg>' +
+    '<span>项目地址</span></a>' +
+    '</div>' +
     '</div>' +
     '</div>' +
 

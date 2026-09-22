@@ -1163,6 +1163,112 @@ function runSelfTest() {
           await sleep(700);
           eq(document.documentElement.dataset.theme, 'dark', '切回深色主题失败');
 
+          // 顶栏的昼夜按钮：跟设置页那两张卡片共用同一个配置字段，
+          // 两边都点一遍，确认图标、配置、卡片高亮、粒子背景是同一套状态
+          const btnTheme = document.getElementById('btnTheme');
+          if (!btnTheme) failed.push('顶栏没有昼夜切换按钮 #btnTheme');
+          else {
+            const iconDark = btnTheme.innerHTML.length;
+            btnTheme.click();
+            await sleep(900);
+            const uLight = window.__universe ? window.__universe() : null;
+            const cv = document.getElementById('universe');
+            log.push({
+              step: 'topbar-theme',
+              theme: document.documentElement.dataset.theme,
+              cfg: (window.__state.cfg.ui || {}).theme,
+              cardOn: Array.from(document.querySelectorAll('#themeCards .theme-card.on')).map((c) => c.dataset.theme).join(','),
+              iconChanged: btnTheme.innerHTML.length !== iconDark,
+              canvasHidden: cv ? cv.hidden : null,
+              universe: uLight
+            });
+            eq(document.documentElement.dataset.theme, 'light', '顶栏按钮没把主题切成浅色');
+            eq((window.__state.cfg.ui || {}).theme, 'light', '顶栏按钮切换后没把 ui.theme 落盘');
+            if (btnTheme.innerHTML.length === iconDark) failed.push('顶栏按钮的图标没跟着换（太阳/月亮）');
+            if (!uLight || !uLight.mounted) failed.push('浅色下粒子背景没挂上');
+            else {
+              if (!uLight.light) failed.push('粒子背景没认出浅色主题');
+              if (!uLight.running) failed.push('浅色下粒子动画没跑起来');
+              if (uLight.dots < 10) failed.push('粒子数太少，背景等于没有：' + uLight.dots);
+            }
+            if (cv && cv.hidden) failed.push('浅色下粒子画布还挂着 hidden');
+
+            // 光看 running 不算数 —— 画布尺寸、变换矩阵任何一处写错，
+            // 动画照样「在跑」，但一个像素都落不下去。直接数一遍画布上真着了色的像素。
+            if (cv) {
+              const c2d = cv.getContext('2d');
+              const data = c2d.getImageData(0, 0, cv.width, cv.height).data;
+              let painted = 0;
+              for (let i = 3; i < data.length; i += 16) if (data[i] > 8) painted++;
+              log.push({ step: 'universe-paint', canvas: [cv.width, cv.height], painted: painted });
+              if (painted < 200) failed.push('粒子背景在跑，但画布上几乎没着色：' + painted);
+            }
+
+            // 再点一次切回深色：动画必须停、画布必须收起来，否则白耗电
+            btnTheme.click();
+            await sleep(900);
+            const uDark = window.__universe ? window.__universe() : null;
+            log.push({
+              step: 'topbar-theme-back',
+              theme: document.documentElement.dataset.theme,
+              canvasHidden: cv ? cv.hidden : null,
+              universe: uDark
+            });
+            eq(document.documentElement.dataset.theme, 'dark', '顶栏按钮没切回深色');
+            if (uDark && uDark.running) failed.push('深色主题下粒子动画还在跑（白耗电）');
+            if (cv && !cv.hidden) failed.push('深色下粒子画布没收起来');
+          }
+
+          // 压缩前后对比：自检跑不了真的压缩，就自己捏一份「压缩结果」喂进去，
+          // 验弹层装不装得起来、中缝拖不拖得动
+          if (!window.__cmp) failed.push('上传页没暴露前后对比的钩子');
+          else {
+            const probe = document.createElement('canvas');
+            probe.width = 60; probe.height = 40;
+            const pc = probe.getContext('2d');
+            pc.fillStyle = '#4e9bea'; pc.fillRect(0, 0, 60, 40);
+            pc.fillStyle = '#f76945'; pc.fillRect(20, 10, 20, 20);
+            const srcBlob = await new Promise((r) => probe.toBlob(r, 'image/png'));
+            const srcBuf = await srcBlob.arrayBuffer();
+            const srcUrl = URL.createObjectURL(srcBlob);
+            window.__cmp.open({
+              id: 9001, isImage: true, previewUrl: srcUrl,
+              outBuffer: srcBuf, outSize: srcBuf.byteLength, origSize: srcBuf.byteLength * 3,
+              outName: 'cmp-probe.png', outW: 60, outH: 40, srcW: 60, srcH: 40,
+              quality: 80, passthrough: false, note: ''
+            });
+            await sleep(700);
+            const stage = document.querySelector('.modal .cmp-stage');
+            const imgB = document.querySelector('.modal .cmp-b');
+            log.push({
+              step: 'compare-open',
+              stage: !!stage,
+              before: !!document.querySelector('.modal .cmp-a'),
+              after: !!imgB,
+              clip: imgB ? getComputedStyle(imgB).clipPath : '',
+              tags: document.querySelectorAll('.modal .cmp-tag').length
+            });
+            if (!stage) failed.push('前后对比弹层没打开');
+            if (!imgB) failed.push('对比弹层里没有压缩后那一层');
+            else if (!getComputedStyle(imgB).clipPath || getComputedStyle(imgB).clipPath === 'none') {
+              failed.push('对比层没有裁切，中缝不会出现');
+            }
+            if (document.querySelectorAll('.modal .cmp-tag').length !== 2) {
+              failed.push('对比弹层两侧的标注不是两个');
+            }
+            // 拖一下中缝，看裁切位置真的会动
+            const rect = stage.getBoundingClientRect();
+            stage.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: rect.left + rect.width * 0.25, pointerId: 1, button: 0 }));
+            const dragged = stage.style.getPropertyValue('--split');
+            stage.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: rect.left, pointerId: 1 }));
+            log.push({ step: 'compare-drag', split: dragged });
+            if (!dragged) failed.push('拖动中缝没写进 --split');
+            URL.revokeObjectURL(srcUrl);
+            document.querySelector('.modal-foot .btn').click();
+            await sleep(500);
+            if (document.querySelector('.modal .cmp-stage')) failed.push('对比弹层点关闭后没关掉');
+          }
+
           // 字体清单：探测本机已装字体，并验证选中后会落盘 + 改 --font-ui
           const fontSel = document.getElementById('cfgFont');
           if (!fontSel) failed.push('设置页没有字体下拉 #cfgFont');
