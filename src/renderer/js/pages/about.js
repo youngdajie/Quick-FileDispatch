@@ -8,19 +8,75 @@ const AUTHOR = '小杰';
 const SITE = 'https://www.yangjie.site';
 const REPO = 'https://cnb.cool/youngdajie/Quick-FileDispatch';
 
-const TECH = [
-  ['Electron', '桌面外壳，把 Chromium 和 Node.js 一起打包进 Windows 应用'],
-  ['Node.js', '主进程负责文件系统、Git 调用，以及和 GitHub / CNB 的接口通信'],
+/**
+ * 技术栈。分三段拼，因为头和尾**跟着运行时走**。
+ *
+ * 起因：这一页原先把「Electron / Node.js」写死在表里。项目在 2.8.0 之后分出一支
+ * 用 Go 重写的版本（CNB 的 go 分支），两侧共用这份渲染层 —— 再写成死表，
+ * 就会出现「Go 版程序自称基于 Electron」这种自相矛盾。
+ *
+ * 判据取 app.info() 的字段，不猜环境：Go 版给 go（后端运行时）、electron 留空；
+ * Electron 版给 electron / node。渲染层一个字都不用为版本分叉。
+ */
+function isGoShell(info) {
+  return !!((info && info.go) || !(info && info.electron));
+}
+
+/** 外壳 + 负责「进程外那些事」的那一层 */
+function shellTech(info) {
+  return isGoShell(info)
+    ? [
+        ['Go', '桌面外壳。后端编译成单个 exe，不随包携带任何运行时，所以安装包只有十几 MB'],
+        ['WebView2', '复用系统里的 Chromium 内核来画界面，不再把 Chromium 打进安装包（过渡期先用 Edge 的应用模式）'],
+        ['127.0.0.1 本地服务', '后端本身就是它：只监听回环地址，界面和它之间走 HTTP，天然不对外暴露']
+      ]
+    : [
+        ['Electron', '桌面外壳，把 Chromium 和 Node.js 一起打包进 Windows 应用'],
+        ['Node.js', '主进程负责文件系统、Git 调用，以及和 GitHub / CNB 的接口通信'],
+        ['本地 127.0.0.1 服务', '给渲染层提供模块化与本地文件直出，私有仓库的缩略图也由主进程代取']
+      ];
+}
+
+/** 两版共用的部分：这部分在渲染层，换外壳不影响 */
+const CORE_TECH = [
   ['Web Worker', '压缩跑在独立线程池里，线程数 = CPU 核心数，真正吃满多核算力'],
   ['OffscreenCanvas', '用 Chromium 自带的原生编解码器做缩放与重编码，不额外依赖任何二进制'],
   ['Canvas 2D', '水印、缩放、颜色填充'],
   ['Web Crypto', 'SHA-256 哈希化文件名'],
   ['GitHub REST v3', '仓库读取；批量上传与改名走 Git Data API，一次提交搞定整批文件'],
   ['CNB Open API', '腾讯云 CNB 的官方接口；读走 REST，写走 Git（公开接口没有创建提交的端点）'],
-  ['Git CLI', '把仓库拉到本地，让本地目录与云端仓库始终对齐；CNB 的写入也由它完成'],
-  ['safeStorage', 'Token 用 Windows DPAPI 系统级加密后落盘，不以明文保存'],
-  ['本地 127.0.0.1 服务', '给渲染层提供模块化与本地文件直出，私有仓库的缩略图也由主进程代取']
+  ['Git CLI', '把仓库拉到本地，让本地目录与云端仓库始终对齐；CNB 的写入也由它完成']
 ];
+
+/** Token 加密那一格：机制两版一样（都是 Windows DPAPI），名字跟着外壳走 */
+function tailTech(info) {
+  return [
+    isGoShell(info)
+      ? ['DPAPI', 'Token 用 Windows DPAPI 系统级加密后落盘，不以明文保存']
+      : ['safeStorage', 'Token 用 Windows DPAPI 系统级加密后落盘，不以明文保存']
+  ];
+}
+
+function tech(info) {
+  return shellTech(info).concat(CORE_TECH, tailTech(info));
+}
+
+/** 运行环境：同样是「跟着运行时走」的几张表，别把 Electron 那一行留给 Go 版 */
+function envRows(info) {
+  const ua = navigator.userAgent || '';
+  const engine = ((ua.match(/Edg\/([\d.]+)/) || ua.match(/Chrome\/([\d.]+)/) || [])[1]) || '';
+  return isGoShell(info)
+    ? [
+        ['桌面外壳', info.shell || 'WebView2'],
+        ['Go 运行时', info.go || '-'],
+        ['渲染引擎', (engine ? 'Chromium ' + engine : '-') + '（系统自带）']
+      ]
+    : [
+        ['Electron', info.electron || '-'],
+        ['Chromium', info.chrome || '-'],
+        ['Node.js', info.node || '-']
+      ];
+}
 
 function quotaTable() {
   return (
@@ -41,6 +97,7 @@ function render() {
   const info = state.info || {};
   const used = info.cpuCount || navigator.hardwareConcurrency || '-';
   const threads = Math.max(1, Math.min(16, navigator.hardwareConcurrency || 4));
+  const TECH = tech(info);
 
   $('#aboutWrap').innerHTML =
     /* hero */
@@ -116,9 +173,9 @@ function render() {
     '<dl class="kv">' +
     '<dt>软件版本</dt><dd>' + escapeHtml(APP + ' ' + (info.version || '-')) + '</dd>' +
     '<dt>作者</dt><dd>' + escapeHtml(AUTHOR) + '（' + escapeHtml(SITE) + '）</dd>' +
-    '<dt>Electron</dt><dd>' + escapeHtml(info.electron || '-') + '</dd>' +
-    '<dt>Chromium</dt><dd>' + escapeHtml(info.chrome || '-') + '</dd>' +
-    '<dt>Node.js</dt><dd>' + escapeHtml(info.node || '-') + '</dd>' +
+    envRows(info)
+      .map((r) => '<dt>' + escapeHtml(r[0]) + '</dt><dd>' + escapeHtml(String(r[1])) + '</dd>')
+      .join('') +
     '<dt>操作系统</dt><dd>' + escapeHtml(info.platform || '-') + '</dd>' +
     '<dt>CPU 逻辑核心</dt><dd>' + escapeHtml(String(used)) + ' 核（默认启用 ' + threads + ' 个压缩线程）</dd>' +
     '<dt>配置文件</dt><dd>' + escapeHtml(info.configFile || '-') + '</dd>' +
