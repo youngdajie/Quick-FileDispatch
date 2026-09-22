@@ -1170,6 +1170,9 @@ function runSelfTest() {
           else {
             const iconDark = btnTheme.innerHTML.length;
             btnTheme.click();
+            // 涟漪是「点下去那一刻」挂的类，动画归 CSS 播，等 900ms 再看就没了
+            const rippleCls = btnTheme.classList.contains('ripple');
+            const rippleAnim = getComputedStyle(btnTheme, '::before').animationName;
             await sleep(900);
             const uLight = window.__universe ? window.__universe() : null;
             const cv = document.getElementById('universe');
@@ -1180,11 +1183,15 @@ function runSelfTest() {
               cardOn: Array.from(document.querySelectorAll('#themeCards .theme-card.on')).map((c) => c.dataset.theme).join(','),
               iconChanged: btnTheme.innerHTML.length !== iconDark,
               canvasHidden: cv ? cv.hidden : null,
+              ripple: rippleCls,
+              rippleAnim: rippleAnim,
               universe: uLight
             });
             eq(document.documentElement.dataset.theme, 'light', '顶栏按钮没把主题切成浅色');
             eq((window.__state.cfg.ui || {}).theme, 'light', '顶栏按钮切换后没把 ui.theme 落盘');
             if (btnTheme.innerHTML.length === iconDark) failed.push('顶栏按钮的图标没跟着换（太阳/月亮）');
+            if (!rippleCls) failed.push('点昼夜按钮没挂上涟漪类');
+            if (rippleAnim !== 'theme-breath-out') failed.push('涟漪扩散动画没生效：' + rippleAnim);
             if (!uLight || !uLight.mounted) failed.push('浅色下粒子背景没挂上');
             else {
               if (!uLight.light) failed.push('粒子背景没认出浅色主题');
@@ -1204,7 +1211,7 @@ function runSelfTest() {
               if (painted < 200) failed.push('粒子背景在跑，但画布上几乎没着色：' + painted);
             }
 
-            // 再点一次切回深色：动画必须停、画布必须收起来，否则白耗电
+            // 再点一次切回深色：深色换的是星野形态，动画要继续跑
             btnTheme.click();
             await sleep(900);
             const uDark = window.__universe ? window.__universe() : null;
@@ -1215,8 +1222,25 @@ function runSelfTest() {
               universe: uDark
             });
             eq(document.documentElement.dataset.theme, 'dark', '顶栏按钮没切回深色');
-            if (uDark && uDark.running) failed.push('深色主题下粒子动画还在跑（白耗电）');
-            if (cv && !cv.hidden) failed.push('深色下粒子画布没收起来');
+            if (!uDark || uDark.mode !== 'dark') failed.push('深色下背景没切成星野形态：' + (uDark && uDark.mode));
+            else {
+              if (!uDark.running) failed.push('深色下星野动画没跑起来');
+              if (uDark.stars < 40) failed.push('深色下星星太少，背景等于没有：' + uDark.stars);
+              if (uDark.giants < 1) failed.push('深色下星星里没有巨星：' + uDark.giants);
+            }
+            if (cv && cv.hidden) failed.push('深色下背景画布被收起来了，星野画不出来');
+            eq(btnTheme.classList.contains('ripple'), false, '涟漪类没在动画结束后摘掉（会一直占着，下次点不再播）');
+
+            // 深色同样要数像素：星云和巨星都是离屏贴图，
+            // 贴图没建出来时 running 照样是 true，画布上却是空的
+            if (cv) {
+              const c2d = cv.getContext('2d');
+              const data = c2d.getImageData(0, 0, cv.width, cv.height).data;
+              let painted2 = 0;
+              for (let i = 3; i < data.length; i += 16) if (data[i] > 8) painted2++;
+              log.push({ step: 'universe-paint-dark', canvas: [cv.width, cv.height], painted: painted2 });
+              if (painted2 < 200) failed.push('深色星野在跑，但画布上几乎没着色：' + painted2);
+            }
           }
 
           // 压缩前后对比：自检跑不了真的压缩，就自己捏一份「压缩结果」喂进去，
@@ -2150,11 +2174,43 @@ function runSelfTest() {
         await wc.executeJavaScript(`document.body.click();`);
         await new Promise((r) => setTimeout(r, 500));
 
+        // 目录选择器是弹层，body 上点一下关不掉。收掉它，后面几张图才不会被遮罩压暗。
+        // 优先点「取消」，走它自己的关闭流程；找不到按钮就直接摘掉弹层兜底。
+        await wc.executeJavaScript(`(function(){
+          var w = document.getElementById('modalWrap');
+          if (!w || w.hidden) return;
+          var btns = w.querySelectorAll('.modal-foot button');
+          for (var i = 0; i < btns.length; i++) {
+            if (btns[i].textContent.trim() === '取消') { btns[i].click(); return; }
+          }
+          w.hidden = true; w.innerHTML = '';
+        })()`);
+        await new Promise((r) => setTimeout(r, 600));
+
         // 回深色，别把后面的截图染成浅色
         await wc.executeJavaScript(`document.querySelector('.nav-item[data-page="settings"]').click();`);
         await new Promise((r) => setTimeout(r, 900));
         await wc.executeJavaScript(`document.querySelector('#themeCards .theme-card[data-theme="dark"]').click();`);
         await new Promise((r) => setTimeout(r, 900));
+
+        // 昼夜按钮的涟漪：正常只播 620ms，照常拍必然拍了个空 —— 临时把时长拉长，
+        // 拍它扩散到半路上的样子，拍完把临时样式和类都撤掉
+        await wc.executeJavaScript(`(function(){
+          var s = document.createElement('style');
+          s.id = 'slow-ripple';
+          s.textContent = '#btnTheme.ripple::before,#btnTheme.ripple::after{animation-duration:3.2s !important}' +
+                          '#btnTheme.ripple svg{animation-duration:2s !important}';
+          document.head.appendChild(s);
+          document.getElementById('btnTheme').classList.add('ripple');
+        })()`);
+        await new Promise((r) => setTimeout(r, 700));
+        const imgRipple = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'theme-ripple.png'), imgRipple.toPNG());
+        console.log('SHOT theme-ripple');
+        await wc.executeJavaScript(`(function(){
+          var s = document.getElementById('slow-ripple'); if (s) s.remove();
+          var b = document.getElementById('btnTheme'); if (b) b.classList.remove('ripple');
+        })()`);
       } catch (e) {
         errors.push('shot new-ui failed: ' + e.message);
       }

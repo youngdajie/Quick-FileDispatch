@@ -1801,17 +1801,19 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 .dir-input-row input { flex: 1; }
 
 /* ============================================================
-   深空粒子背景（浅色主题专属）
-   画布固定在最底层；浅色下把几块大面积面板调成半透明，粒子才透得出来。
-   卡片保留 0.84 的不透明度 —— 既能让粒子在它后面淡淡地动，正文又不糊。
+   深空背景（浅色 / 深色各一套形态，共用同一块画布）
+   画布固定在最底层；两套主题都把几块大面积面板调成半透明，粒子才透得出来。
+   浅色卡片留 0.84 —— 既能让粒子在它后面淡淡地动，正文又不糊；
+   深色背景本来就暗，卡片可以更实一点（0.88），文字对比度才不掉。
    ============================================================ */
 
 #universe {
   position: fixed; inset: 0; z-index: 0;
-  display: none;            /* 深色下干脆不参与；浅色由下面这条打开 */
+  display: none;            /* 主题没落定前不参与；下面两条按主题打开 */
   pointer-events: none;
 }
-html[data-theme="light"] #universe { display: block; }
+html[data-theme="light"] #universe,
+html[data-theme="dark"] #universe { display: block; }
 
 /* 界面整体压在画布之上。.content / .page 本来就没有底色，
    它们那一块会直接透出粒子；有底色的容器得半透明才透得过。 */
@@ -1821,16 +1823,52 @@ html[data-theme="light"] .topbar { background: rgba(247, 249, 252, 0.72); }
 html[data-theme="light"] .sidebar { background: rgba(247, 249, 252, 0.58); }
 html[data-theme="light"] .card { background: rgba(255, 255, 255, 0.84); }
 
-/* 关于页作者行：左边「作者 + 站点」，右边项目地址，两端对齐；窄窗口自动换行 */
-.about-hero .author {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 6px 18px; flex-wrap: wrap;
+html[data-theme="dark"] .topbar { background: rgba(10, 16, 25, 0.78); }
+html[data-theme="dark"] .sidebar { background: rgba(10, 16, 25, 0.64); }
+html[data-theme="dark"] .card { background: rgba(14, 22, 34, 0.88); }
+
+/* ------------------------------------------------ 昼夜按钮的涟漪
+   点一下：一圈从图标中心向外炸开并淡出，同时一圈光晕从外向内收回来，
+   快照一样把「正在切换」这件事交代清楚。伪元素不占 innerHTML，
+   顶栏每次重画图标都不会把它冲掉。 */
+#btnTheme { position: relative; }
+#btnTheme::before,
+#btnTheme::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 32px; height: 32px; margin: -16px 0 0 -16px;
+  border-radius: 50%; pointer-events: none; opacity: 0;
+  transform: scale(0.35);
 }
-.about-hero .author .proj {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--mono); font-size: 12px;
+#btnTheme::before { border: 1px solid currentColor; }
+/* 收缩的那一层得是「光晕」不是「实心圆」：实心圆的边缘太硬，
+   看上去就是个带边的盘子，跟涟漪没关系 */
+#btnTheme::after {
+  background: radial-gradient(circle, currentColor 0%, currentColor 42%, transparent 72%);
 }
-.about-hero .author .proj svg { flex: 0 0 auto; opacity: 0.7; }
+
+#btnTheme.ripple::before { animation: theme-breath-out 0.62s var(--ease) both; }
+#btnTheme.ripple::after { animation: theme-breath-in 0.62s var(--ease) both; }
+#btnTheme.ripple svg { animation: theme-icon-pop 0.42s var(--ease-pop) both; }
+
+/* 一散一收：细圈从小放大冲出去，光晕从大往回收。
+   两者起点拉开距离，中途才不会糊成「一个带边的圆盘」。 */
+@keyframes theme-breath-out {
+  from { opacity: 0.6; transform: scale(0.35); }
+  to { opacity: 0; transform: scale(2.5); }
+}
+@keyframes theme-breath-in {
+  from { opacity: 0.3; transform: scale(2.7); }
+  to { opacity: 0; transform: scale(0.45); }
+}
+@keyframes theme-icon-pop {
+  from { transform: rotate(-35deg) scale(0.6); opacity: 0.35; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #btnTheme.ripple::before,
+  #btnTheme.ripple::after,
+  #btnTheme.ripple svg { animation: none; }
+}
 
 /* ============================================================
    压缩前后对比（squoosh 那种中缝对比）

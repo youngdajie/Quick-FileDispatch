@@ -49,14 +49,9 @@ function render() {
     '<div>' +
     '<h2>' + escapeHtml(APP) + '</h2>' +
     '<div class="ver">版本 ' + escapeHtml(info.version || '1.2') + ' · Windows 桌面版 · 本地压缩 + 云端分发</div>' +
-    '<div class="author">' +
-    '<span>作者：<b>' + escapeHtml(AUTHOR) + '</b>　·　' +
-    '<a href="#" data-ext="' + SITE + '">' + escapeHtml(SITE.replace('https://', '')) + '</a></span>' +
-    '<a class="proj" href="#" data-ext="' + REPO + '" title="' + escapeHtml(REPO) + '">' +
-    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M9 18l-6-6 6-6"/><path d="M15 6l6 6-6 6"/></svg>' +
-    '<span>项目地址</span></a>' +
-    '</div>' +
+    '<div class="author">作者：<b>' + escapeHtml(AUTHOR) + '</b>　·　' +
+    '<a href="#" data-ext="' + SITE + '">' + escapeHtml(SITE.replace('https://', '')) + '</a>　·　' +
+    '<a href="#" data-ext="' + REPO + '" title="' + escapeHtml(REPO) + '">项目地址</a></div>' +
     '</div>' +
     '</div>' +
 

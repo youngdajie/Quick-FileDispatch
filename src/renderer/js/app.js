@@ -96,7 +96,15 @@ function bindChrome() {
 
   // 昼夜切换：这里只改配置，界面颜色交给 state.on → applyAppearance 去落。
   // 顺带的好处是设置页里那两张主题卡片也会跟着亮（它走 onConfigChanged）。
-  $('#btnTheme').onclick = () => {
+  // 图标外面那圈涟漪是纯装饰：先摘类再强制重排一次，连点也能重新播。
+  const btnTheme = $('#btnTheme');
+  let rippleTimer = 0;
+  btnTheme.onclick = () => {
+    btnTheme.classList.remove('ripple');
+    void btnTheme.offsetWidth;
+    btnTheme.classList.add('ripple');
+    clearTimeout(rippleTimer);
+    rippleTimer = setTimeout(() => btnTheme.classList.remove('ripple'), 700);
     state.patch({ ui: { theme: themeIsLight() ? 'dark' : 'light' } }).catch((e) => err(e.message || String(e)));
   };
 
