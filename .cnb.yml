@@ -6,28 +6,37 @@
 #   invalid_scope），所以本地建不了版本、也改不了仓库信息。
 #   而 tag_push 属于「可信事件」，流水线里的 CNB_TOKEN 天生带这个权限。
 #
-# 前提：installers/ 下放着这一版的安装包。它走 Git LFS 存，所以仓库本体
-# 不会被撑大（LFS 对象占对象存储额度，免费 100 GiB）。
-# 一个版本只放一个包，发新版时把上一个删掉，这样下面的 glob 永远只匹配到一个文件
-# —— 否则给 v2.5.0 发版时会把 v2.4.0 的包也一起挂上去。
+# 这个仓库有**两条线**，标签格式就是它们的身份：
+#   v2.8.1 这种（v*）      —— Electron 版，安装包在 installers/ 里，走流水线挂上去
+#   2.8.0-go 这种（*-go）  —— Go 版，单 exe 十几 MB，由作者自己从网页上传
+# 下面每个 stage 都按这个区分来分流，别把两条线混在一起处理 ——
+# 混的后果是真实的：Go 版的包删掉就没了（手工传的，仓库里没有第二份），
+# 而 Electron 那版要长期可下载。
 #
 # 发下一个版本的动作清单：
-#   1. npm version 升版本号、打包，把新安装包拷进 installers/，删掉上一版的包
-#   2. 版本说明写到 docs/releases/<tag>.md（页面上的内容就是它）
-#   3. git commit -am "..." && git push
-#   4. git tag -a v2.5.0 -m "..." && git push origin refs/tags/v2.5.0
-# 第 4 步一推，这里就自动跑起来。
+#   Electron 版：
+#     1. npm version 升版本号、打包，把新安装包拷进 installers/，删掉上一版的包
+#     2. 版本说明写到 docs/releases/<tag>.md（页面上的内容就是它）
+#     3. git commit -am "..." && git push
+#     4. git tag -a v2.8.1 -m "..." && git push origin refs/tags/v2.8.1
+#   Go 版：
+#     1. 构建出单 exe（比 64 MB 的网页上传上限小得多，不需要进仓库、不需要 LFS）
+#     2. 版本说明写到 docs/releases/<tag>.md
+#     3. git tag -a 2.8.0-go -m "..." && git push origin refs/tags/2.8.0-go
+#        —— 这一步只会把版本页建出来，附件留给你在网页上手工传
 #
-# 注：标签一旦推上去就删不掉了（服务端 hook 会拒），要重跑流水线只能改配置再推新标签。
+# 注：标签一旦推上去，本地就删不掉了（`cnb git delete-tag` 要 repo-release:rw，
+# 本地令牌没有；流水线的可信令牌可以，但要另开一条 api_trigger 流水线）。
+# 要重跑流水线，稳妥办法是推一个新标签。
 #
 # 关于存储 —— 2026-09-23 实测，别再凭感觉估：
 #   对象存储用量 = Git LFS 对象 + Release 附件，同一份安装包被算了**两份**。
 #   拿所有版本的文件大小求和，正好等于用量页面上的数字（差 3.9 KB 元数据）。
-#   附件那一份由最后那个「清理旧版本」stage 每发一版回收一次，只留最新一版。
+#   附件那一份由最后那个「清理旧版本」stage 每发一版回收一次。
 #   LFS 那一份**回收不掉**：对象按 OID 存在服务端，只要还有 ref（标签）指向
-#   含该指针文件的提交，它就得留着；而标签删不掉（见上一条）。所以 LFS 会按
-#   一版约 106 MB 单向增长。免费额度 100 GiB，眼下远够用 —— 但别再往仓库里
-#   塞第二份大文件（例如顺手把 unpacked 目录也提交了）。
+#   含该指针文件的提交，它就得留着。所以 LFS 会按一版约 106 MB 单向增长。
+#   免费额度 100 GiB，眼下远够用 —— 但别再往仓库里塞第二份大文件。
+#   Go 版不进仓库，这条增长曲线到 2.8.0 为止。
 
 $:
   tag_push:
@@ -35,6 +44,17 @@ $:
         - name: 取安装包
           script: |
             set -e
+            # Go 版：包不进仓库，没什么可取的。把 installers/ 清掉还有第二个用处 ——
+            # 万一下面「挂安装包」那个 if 没生效，glob 匹配不到文件，也挂不上东西。
+            # 清掉的只是流水线工作区里的一份克隆，不影响仓库。
+            case "$CNB_BRANCH" in
+              *-go)
+                echo "标签 $CNB_BRANCH 是 Go 版：不取安装包（包由作者手工上传）"
+                rm -f installers/*.exe
+                exit 0
+                ;;
+            esac
+
             git lfs install --local || true
             git lfs pull || true
             ls -lh installers/
@@ -79,26 +99,41 @@ $:
               *)  echo "创建版本没成功（HTTP $CODE）；若提示已存在可忽略";;
             esac
 
-        # attachments 插件只能把附件挂到「已经存在」的版本上，所以顺序不能颠倒
+        # attachments 插件只能把附件挂到「已经存在」的版本上，所以顺序不能颠倒。
+        #
+        # 只有 Electron 版（v* 标签）才挂附件。Go 版必须跳过 —— installers/ 里
+        # 那份是 Electron 的安装包，挂上去等于给 Go 版本配了个 106 MB 的 Electron
+        # 安装程序，用户下下来会一脸问号。
         - name: 挂安装包
+          if: |
+            case "$CNB_BRANCH" in *-go) exit 1 ;; esac
           image: cnbcool/attachments:latest
           settings:
             attachments:
               - "./installers/*.exe"
 
-        # 清理历次版本的安装包，只留这一版。
+        # 清理本线历次版本的安装包，只留当前这一版。
         #
         # 为什么非清不可：同一份安装包在对象存储里存了两份 —— 一份是 Git LFS 的对象，
         # 一份是 Release 附件（attachments 插件是重新上传，不是引用 LFS 对象）。
         # 实测两者字节数完全相等，用量页面把两份加在一起算。附件这份是可以回收的，
         # 不清就会一版一版堆下去（2026-09-23 清掉了 6 个旧版本、约 330 MiB）。
         #
-        # 必须排在「挂安装包」之后：先把当前版本的附件挂上，再挑出要保留的那一版来删。
-        # 判断依据用 is_latest 而不是写死 tag 名，重复跑是幂等的。
+        # **只清同一条线上的**，这是这个 stage 最要紧的一条规则：
+        # 原先按「只留 is_latest」来删，两条线一起存在时就会互相删 ——
+        # 推 2.8.0-go 会把 v2.8.0（Electron）删掉，推 v2.8.1 又会把 2.8.0-go 删掉，
+        # 而 Go 版的包是作者手工上传的，删掉就没了。
         #
         # 清理失败不能让发版变红，所以脚本哪里出错都走 exit 0。
         - name: 清理旧版本
           script: |
+            case "$CNB_BRANCH" in
+              *-go) MY_LINE=go ;;
+              *)    MY_LINE=v ;;
+            esac
+            # 标签名拿不到就什么都不删 —— 判断依据全靠它，空值会把整条线误删
+            if [ -z "$CNB_BRANCH" ]; then echo "拿不到 CNB_BRANCH，为安全起见不删任何东西"; exit 0; fi
+
             URL="${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/releases"
             curl -sS "$URL?pageSize=100" \
               -H "Authorization: Bearer ${CNB_TOKEN}" \
@@ -108,14 +143,19 @@ $:
             # 注意：这个接口返回的是**裸数组**，不是 {data:[...]}。
             # cnb CLI 打印出来的 data: 那层信封是它自己加的，照它写 jq 会报
             # "Cannot index array with string \"data\""。
-            KEEP=$(jq -r '.[] | select(.is_latest == true) | .tag_name' /tmp/list.json)
-            if [ -z "$KEEP" ]; then
-              echo "没找到 latest 版本，为安全起见不删任何东西"; exit 0
-            fi
-            echo "保留：${KEEP}"
-
-            jq -r '.[] | select(.is_latest != true) | "\(.id)\t\(.tag_name)"' /tmp/list.json |
+            #
+            # jq 只负责把「id + 标签名」拆成两列 —— 这个写法在 v2.8.0 发版时跑通过。
+            # 挑哪条线、留哪一版都在 shell 里判断，免得往 jq 里塞它版本不支持的函数。
+            jq -r '.[] | "\(.id)\t\(.tag_name)"' /tmp/list.json |
             while IFS="$(printf '\t')" read -r RID TAG; do
+              [ -z "$RID" ] && continue
+              [ "$TAG" = "$CNB_BRANCH" ] && { echo "保留当前版本 ${TAG}"; continue; }
+              case "$TAG" in
+                *-go) ITS_LINE=go ;;
+                *)    ITS_LINE=v ;;
+              esac
+              [ "$ITS_LINE" = "$MY_LINE" ] || { echo "跳过其它线：${TAG}"; continue; }
+
               CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$URL/$RID" \
                 -H "Authorization: Bearer ${CNB_TOKEN}" \
                 -H "Accept: application/vnd.cnb.api+json")
