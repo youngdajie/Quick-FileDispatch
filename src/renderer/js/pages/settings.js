@@ -202,6 +202,14 @@ function profileRow(p) {
   }
   if (!p.hasToken) bits.push('<span class="pf-badge danger">无 Token</span>');
 
+  // 链接规则是每份配置自己的 —— 摆到列表里，一眼能看出这几份配置各用什么规则
+  const ruleId = p.linkRule || 'auto';
+  const rule = CPLinks.LINK_RULES.find((r) => r.id === ruleId);
+  const ruleText = ruleId === 'auto'
+    ? '链接：自动（' + (platOf(p.platform) === 'cnb' ? 'CNB 国内 CDN' : 'jsDelivr CDN') + '）'
+    : '链接：' + ((rule && rule.name) || ruleId);
+  bits.push('<span class="pf-sub" title="' + escapeHtml(ruleText) + '">' + escapeHtml(ruleText) + '</span>');
+
   const dir = p.localDir
     ? '<span class="pf-dir" title="' + escapeHtml(p.localDir) + '">📁 ' + escapeHtml(p.localDir) + '</span>'
     : '<span class="pf-dir bad">未绑定本地目录</span>';
@@ -447,8 +455,8 @@ function confirmExport(count, withToken) {
     const wrap = document.createElement('div');
     wrap.innerHTML =
       '<p class="hint" style="margin:0 0 10px">导出的 JSON 会带上：各份配置的仓库信息、' +
-      '<b class="accent">访问令牌（明文）</b>，以及「文件链接」的全部设置' +
-      '（链接规则 / 自定义域名 / 链接格式 / 预览代理）。</p>' +
+      '<b class="accent">访问令牌（明文）</b>，以及<b>每份配置各自的链接规则和自定义域名</b>；' +
+      '复制格式与预览代理是全局设置，也会一并带上。</p>' +
       '<p class="hint" style="margin:0 0 10px"><b>本地目录不会写入</b> —— 换台电脑原路径多半不存在，' +
       '导入后程序会引导你为本机重新绑定目录。</p>' +
       '<p class="rule-desc" style="margin:0">本次共 ' + count + ' 份配置，其中 ' + withToken + ' 份带令牌。' +
@@ -605,7 +613,7 @@ async function importProfiles() {
     (needFix ? '，<b style="color:var(--warn)">' + needFix + '</b> 份需要修一下' : '') +
     '。' +
     (skipped.length ? '另有 ' + skipped.length + ' 份被跳过。' : '') +
-    (res.settingsApplied ? '<br>「文件链接」的设置也一并恢复了。' : '') +
+    (res.settingsApplied ? '<br>「文件链接」的全局设置（复制格式 / 预览代理）也一并恢复了。' : '') +
     '</p>' +
     (needLocal
       ? '<p class="rule-desc" style="margin:0 0 10px">' +
@@ -915,13 +923,24 @@ function fillPlatform() {
   if (api) api.placeholder = isCnb ? 'https://api.cnb.cool' : 'https://api.github.com';
 }
 
+/**
+ * 链接规则是「正在编辑的这一份」自己的（跟 owner / repo 同一组，见 store 的 PROFILE_FIELDS）。
+ *
+ * 之前读的是 state.cfg（当前生效那份），于是编辑另一份配置时表单显示的是别人的规则，
+ * 保存还会顺手把别人那份冲掉；切到另一个平台时更明显 —— 平台专属的规则（jsdelivr
+ * 只给 GitHub、cnb_raw 只给 CNB）在新平台的下拉里根本不存在，只能回落到「自动」，
+ * 一保存用户的规则就没了。
+ */
 function fillLinkRules() {
-  const c = state.cfg || {};
-  const platform = editTarget().platform;
+  const t = editTarget();
+  const own = t.profile || {};
+  const platform = t.platform;
   const rules = CPLinks.LINK_RULES.filter((r) => r.platforms.indexOf(platform) >= 0);
   const sel = $('#cfgLinkRule');
-  const current = c.linkRule || 'auto';
+  const current = own.linkRule || 'auto';
   sel.innerHTML = rules.map((r) => '<option value="' + r.id + '">' + r.name + '</option>').join('');
+  // 规则不在这个平台的列表里（手改过配置、或这份配置的平台被改过）才回落到「自动」显示；
+  // 配置里存着的值不会被抹掉，只有用户真的保存才写回
   sel.value = rules.some((r) => r.id === current) ? current : 'auto';
   updateRuleDesc();
 }
@@ -980,8 +999,8 @@ function fill() {
   fillPlatform();
 
   /**
-   * 「仓库信息 + 本地目录」属于正在编辑的那一份配置；
-   * 压缩、水印、同步、外观、文件链接这些是全局的，永远读当前生效那份。
+   * 「仓库信息 + 本地目录 + 文件链接（规则 / 自定义域名）」属于正在编辑的那一份；
+   * 压缩、水印、同步、外观、链接格式、预览代理这些是全局的，永远读当前生效那份。
    */
   const t = editTarget();
   const repo =
@@ -1012,7 +1031,8 @@ function fill() {
   $('#cfgCommitMessage').value = c.commitMessage || '';
 
   fillLinkRules();
-  $('#cfgCustomDomain').value = c.customDomain || '';
+  // 自定义域名跟链接规则是一对，跟着配置走；下面两行是全局项
+  $('#cfgCustomDomain').value = (t.profile && t.profile.customDomain) || '';
   $('#cfgProxyUrl').value = c.proxyUrl || '';
   $('#cfgLinkFormat').innerHTML = CPLinks.LINK_FORMATS.map((f) => '<option value="' + f.id + '">' + f.name + '</option>').join('');
   $('#cfgLinkFormat').value = c.linkFormat || 'markdown';
@@ -1120,14 +1140,18 @@ async function refreshGitStatus() {
 /* ---------------------------------------------------------------- 操作 */
 
 /** 一份配置里「属于这份配置」的字段（对应 store.js 的 PROFILE_FIELDS + Token） */
-const CONN_KEYS = ['platform', 'owner', 'repo', 'branch', 'apiBase', 'localDir', 'token'];
+/**
+ * 「属于某一份配置」的字段 —— 保存时要写进正在编辑的那份，而不是顶层。
+ * 跟主进程 store.js 的 PROFILE_FIELDS 是一份名单，加字段两边都要动。
+ */
+const PER_PROFILE_KEYS = ['platform', 'owner', 'repo', 'branch', 'apiBase', 'localDir', 'linkRule', 'customDomain', 'token'];
 
 /**
  * 保存。
  *
  * 关键点：写进「正在编辑的那一份」，而不是无条件写当前生效的那份 ——
  * 平台按钮只切编辑对象，用户完全可以一边用着 GitHub、一边把 CNB 那份填好。
- * 全局设置（压缩 / 水印 / 同步 / 外观 / 文件链接）不分配置，照旧写当前生效那份。
+ * 全局设置（压缩 / 水印 / 同步 / 外观 / 链接格式 / 预览代理）不分配置，照旧写当前生效那份。
  */
 async function save(opts) {
   const patch = collect();
@@ -1139,7 +1163,7 @@ async function save(opts) {
     await state.patch(patch);
   } else {
     const conn = {};
-    for (const k of CONN_KEYS) {
+    for (const k of PER_PROFILE_KEYS) {
       if (k === 'token') {
         if (patch.token) conn.token = patch.token;
         continue;
@@ -1150,7 +1174,7 @@ async function save(opts) {
     conn.branch = patch.branch || 'main';
 
     const globalPatch = Object.assign({}, patch);
-    for (const k of CONN_KEYS) delete globalPatch[k];
+    for (const k of PER_PROFILE_KEYS) delete globalPatch[k];
     await state.patch(globalPatch);
 
     if (t.mode === 'profile') {
@@ -1398,11 +1422,12 @@ export default {
       window.cloudpic.shell.openExternal(a.dataset.ext);
     });
 
-    // 输入后自动保存（防抖），避免用户忘记点保存
+    // 输入后自动保存（防抖），避免用户忘记点保存。
+    // 链接规则 / 自定义域名也在内 —— 它们是每份配置自己的，选了不保存就会「看着没生效」。
     autoSave = debounce(() => {
       save({ silent: true }).catch(() => {});
     }, 1400);
-    ['#cfgOwner', '#cfgRepo', '#cfgBranch', '#cfgCommitMessage', '#cfgProxyUrl'].forEach((s) => {
+    ['#cfgOwner', '#cfgRepo', '#cfgBranch', '#cfgCommitMessage', '#cfgProxyUrl', '#cfgLinkRule', '#cfgCustomDomain'].forEach((s) => {
       const el = $(s);
       if (el) el.addEventListener('change', autoSave);
     });

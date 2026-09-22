@@ -830,7 +830,8 @@ function runSelfTest() {
           const form = () => ({
             platform: (document.querySelector('#cfgPlatform button.active') || {}).dataset
               ? document.querySelector('#cfgPlatform button.active').dataset.platform : '',
-            owner: val('cfgOwner'), repo: val('cfgRepo'), localDir: val('cfgLocalDir'), apiBase: val('cfgApiBase')
+            owner: val('cfgOwner'), repo: val('cfgRepo'), localDir: val('cfgLocalDir'), apiBase: val('cfgApiBase'),
+            linkRule: val('cfgLinkRule'), customDomain: val('cfgCustomDomain')
           });
 
           document.querySelector('.nav-item[data-page="settings"]').click();
@@ -938,6 +939,29 @@ function runSelfTest() {
             failed.push('编辑一份「非当前使用」的配置时，应该给出「设为当前使用」入口');
           }
 
+          // —— 1b. 链接规则是「每份配置自己的」：切配置、换平台都得跟着走
+          //    这里给刚建的 CNB 那份选一条 CNB 专属规则（jsdelivr 是 GitHub 专属，
+          //    以前切到 CNB 时下拉里没有它、只能回落成「自动」，一保存规则就丢了）
+          {
+            const sel = document.getElementById('cfgLinkRule');
+            sel.value = 'cnb_raw';
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            await sleep(300);
+            document.getElementById('btnSave').click();
+            await sleep(1800);
+            const savedCnb = (window.__state.cfg.profiles || []).find((p) => p.platform === 'cnb');
+            log.push({
+              step: 'linkrule-cnb-saved',
+              stored: savedCnb && savedCnb.linkRule,
+              form: form().linkRule,
+              top: window.__state.cfg.linkRule
+            });
+            eq(savedCnb && savedCnb.linkRule, 'cnb_raw', 'CNB 配置没存下自己选的链接规则');
+            if (window.__state.cfg.linkRule === 'cnb_raw') {
+              failed.push('编辑「非当前使用」的配置时，不该顺带改掉生效配置的链接规则');
+            }
+          }
+
           // 切回 GitHub：应当整份还原
           document.querySelector('#cfgPlatform button[data-platform="github"]').click();
           await sleep(1500);
@@ -946,6 +970,7 @@ function runSelfTest() {
           eq(back.platform, 'github', '切回 GitHub 后平台按钮没跟上');
           eq(back.owner, before.owner, '切回 GitHub 后 owner 没还原');
           eq(back.localDir, before.localDir, '切回 GitHub 后本地目录没还原');
+          eq(back.linkRule, before.linkRule, '切回 GitHub 后链接规则没还原（回到默认值了）');
 
           // —— 2. 归档列表：点某一行能整份切过去（这才是真正换生效配置的入口）
           if (!cnbProf) {
@@ -959,6 +984,9 @@ function runSelfTest() {
               await sleep(1500);
               log.push({ step: 'use-cnb-profile', form: form(), active: window.__state.cfg.activeProfileId });
               eq(form().owner, 'cnb-user', '点归档项没有切到该配置');
+              // 链接规则也要跟着这份配置走 —— 以前切过来就变回默认值
+              eq(form().linkRule, 'cnb_raw', '切到 CNB 配置后链接规则没跟着走');
+              eq(window.__state.cfg.linkRule, 'cnb_raw', '切到 CNB 配置后生效规则没跟着换');
               if (window.__state.cfg.activeProfileId !== cnbProf.id) {
                 failed.push('点归档项后「当前使用」的配置没换过去');
               }
@@ -973,6 +1001,11 @@ function runSelfTest() {
               (useBtn || row).click();
               await sleep(1500);
             }
+            // 来回切一圈之后：基准那份的规则要回到它自己的，CNB 那份也得还是自己那条
+            log.push({ step: 'rule-after-round-trip', form: form().linkRule, top: window.__state.cfg.linkRule });
+            eq(form().linkRule, before.linkRule, '来回切之后基准配置的链接规则没还原');
+            const cnbAfter = (window.__state.cfg.profiles || []).find((p) => p.platform === 'cnb');
+            eq(cnbAfter && cnbAfter.linkRule, 'cnb_raw', '来回切之后 CNB 那份的链接规则被别人改掉了');
             document.getElementById('btnProfArchive').click();
             await sleep(3200);
             const after = (window.__state.cfg.profiles || []).find((p) => p.id === baseProf.id);

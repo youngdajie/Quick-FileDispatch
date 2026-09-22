@@ -9,6 +9,8 @@
 const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
+// 链接规则表只有这一份（UMD，主进程和渲染层共用），迁移时要问它「这条规则适不适用这个平台」
+const CPLinks = require('../renderer/js/lib/links.js');
 
 /** 平台白名单：Gitee 已下线，现在只有 GitHub 和 CNB 两个 */
 const PLATFORMS = ['github', 'cnb'];
@@ -19,7 +21,7 @@ function normalizePlatform(p) {
 }
 
 const DEFAULT_CONFIG = {
-  version: 7,
+  version: 8,
   onboarded: false,
   platform: 'github', // github | cnb
   owner: '',
@@ -32,19 +34,21 @@ const DEFAULT_CONFIG = {
   /**
    * 归档的仓库配置。
    *
-   * 「云端仓库 + 本地目录」二者强制绑定在同一个 profile 上：
-   * 切换 profile 时，远端仓库信息和本地目录一起换，不会出现
-   * 「浏览器指着 A 仓库、本地却写着 B 仓库目录」的错位。
+   * 「云端仓库 + 本地目录 + 文件链接」三者绑定在同一个 profile 上：
+   * 切换 profile 时，远端仓库信息、本地目录、链接规则（含自定义域名）一起换，
+   * 不会出现「浏览器指着 A 仓库、本地却写着 B 仓库目录」「用 A 的规则给 B 生成链接」
+   * 这类错位。设置页那张引导卡写的就是这句话。
    *
-   * 顶层那组 platform/owner/repo/branch/apiBase/localDir + _tokenEnc 是
-   * 「当前生效」的镜像（整个 app 有上百处直接读 cfg.owner），
-   * 由 activeProfileId 指向的 profile 同步过来。
+   * 顶层那组 platform/owner/repo/branch/apiBase/localDir/linkRule/customDomain
+   * + _tokenEnc 是「当前生效」的镜像（整个 app 有上百处直接读 cfg.owner），
+   * 由 activeProfileId 指向的 profile 同步过来 —— 见 PROFILE_FIELDS。
    */
   profiles: [],
   activeProfileId: '',
 
-  linkRule: 'auto', // auto|github_raw|jsdelivr|statically|githack|cnb_raw|ghpages|custom
+  linkRule: 'auto', // auto|github_raw|jsdelivr|statically|githack|cnb_raw|cnb_jsdmirror|ghpages|custom
   customDomain: '',
+  // 下面两项确实是全局的：复制格式是个人偏好，预览代理是本机网络环境决定的
   linkFormat: 'markdown', // url | markdown | html | bbcode
 
   /**
@@ -101,8 +105,19 @@ const DEFAULT_CONFIG = {
   }
 };
 
-/** profile 上「属于某个仓库」的字段：切 profile 时整组一起换 */
-const PROFILE_FIELDS = ['platform', 'owner', 'repo', 'branch', 'apiBase', 'localDir'];
+/**
+ * profile 上「属于这一份配置」的字段：切 profile 时整组一起换。
+ *
+ * linkRule / customDomain 也在内 —— 设置页那张引导卡写的就是
+ * 「一份配置 = 仓库信息 + 本地目录 + 文件链接」，一个仓库用什么链接规则、
+ * 绑哪个自定义域名，本来就是这份配置自己的事。之前它们放在顶层当全局设置，
+ * 结果切到另一个平台时，平台专属的规则（如 jsdelivr 只给 GitHub）在新平台的
+ * 下拉里不存在，表单只能回落到「自动」，一保存就把用户的规则冲掉了。
+ */
+const PROFILE_FIELDS = ['platform', 'owner', 'repo', 'branch', 'apiBase', 'localDir', 'linkRule', 'customDomain'];
+
+/** PROFILE_FIELDS 里「空值该回落到什么」——别的字段空着就是空字符串 */
+const PROFILE_FIELD_DEFAULT = { branch: 'main', linkRule: 'auto' };
 
 /**
  * 「草稿」= 还没有任何仓库信息、也从没验证过的空落点。
@@ -126,7 +141,7 @@ function newProfileId() {
 /** 从当前顶层字段造一个 profile（迁移 / 兜底用） */
 function profileFromTop(cfg, extra) {
   const p = { id: newProfileId(), name: '', verified: false, verifiedAt: 0, note: '', createdAt: Date.now() };
-  for (const k of PROFILE_FIELDS) p[k] = cfg[k] || (k === 'branch' ? 'main' : '');
+  for (const k of PROFILE_FIELDS) p[k] = cfg[k] || PROFILE_FIELD_DEFAULT[k] || '';
   if (cfg._tokenEnc) p._tokenEnc = cfg._tokenEnc;
   else if (cfg._tokenPlain) p._tokenPlain = cfg._tokenPlain;
   return Object.assign(p, extra || {});
@@ -206,6 +221,39 @@ function migrate(cfg) {
     }
     cfg.platform = normalizePlatform(cfg.platform);
     cfg.version = 7;
+  }
+  if (v < 8) {
+    /**
+     * 链接规则 / 自定义域名从「一份全局设置」改成「每份配置自己的」。
+     *
+     * 存量配置得补一次，否则切配置时表单读不到值、一保存又把规则冲成默认。
+     * 补法是「原来那份全局规则是谁的，就还给谁」，但只在该规则确实适用于
+     * 它的平台时才给 —— jsdelivr 是 GitHub 专属、cnb_raw / cnb_jsdmirror 是
+     * CNB 专属，硬塞过去会生成一条根本打不开的链接。不适用的留 'auto'，
+     * 让「自动」按平台自己挑（见 CPLinks.autoRuleOf）。
+     */
+    const wantRule = cfg.linkRule || 'auto';
+    const wantDomain = cfg.customDomain || '';
+    for (const p of cfg.profiles || []) {
+      if (p.linkRule === undefined) {
+        // ruleFits 认 'auto'（它在两个平台的列表里都在），所以不用单独判断
+        p.linkRule = CPLinks.ruleFits(wantRule, normalizePlatform(p.platform)) ? wantRule : 'auto';
+      }
+      if (p.customDomain === undefined) p.customDomain = wantDomain;
+    }
+    /**
+     * 顶层是「当前生效那份」的镜像，必须跟着它对齐。
+     * 不对齐就出大问题：比如老的全局规则是 jsdelivr（GitHub 专属）、生效配置却是 CNB，
+     * 那份配置只能拿 'auto'，可顶层还留着 jsdelivr —— 生成链接时读的是顶层，
+     * 于是给 CNB 仓库拼出一条 jsdelivr 链接；而且下次保存任何设置时，
+     * _syncActive() 又会把顶层这个 jsdelivr 写回 CNB 那份配置里，越描越黑。
+     */
+    const act = (cfg.profiles || []).find((p) => p.id === cfg.activeProfileId) || (cfg.profiles || [])[0];
+    if (act) {
+      cfg.linkRule = act.linkRule || 'auto';
+      cfg.customDomain = act.customDomain || '';
+    }
+    cfg.version = 8;
   }
   if (!Array.isArray(cfg.profiles)) cfg.profiles = [];
   // 保证永远至少有一个 profile：切换平台 / 新建配置都要有落点
@@ -363,13 +411,13 @@ class Store {
   _syncActive() {
     const p = this.activeProfile();
     if (!p) return;
-    for (const k of PROFILE_FIELDS) p[k] = this.data[k] || (k === 'branch' ? 'main' : '');
+    for (const k of PROFILE_FIELDS) p[k] = this.data[k] || PROFILE_FIELD_DEFAULT[k] || '';
     copyToken(this.data, p);
   }
 
   /** 把 profile 的连接字段 + token 镜像到顶层（顶层才是全 app 读的那份） */
   _mirrorFrom(p) {
-    for (const k of PROFILE_FIELDS) this.data[k] = p[k] || (k === 'branch' ? 'main' : '');
+    for (const k of PROFILE_FIELDS) this.data[k] = p[k] || PROFILE_FIELD_DEFAULT[k] || '';
     copyToken(p, this.data);
     this.data.activeProfileId = p.id;
   }
@@ -508,7 +556,7 @@ class Store {
     if (Object.keys(conn).length) Object.assign(p, conn);
     // 改的是当前生效的那个：连接字段要立刻镜像回顶层
     if (p.id === this.data.activeProfileId && Object.keys(conn).length) {
-      for (const k of PROFILE_FIELDS) this.data[k] = p[k] || (k === 'branch' ? 'main' : '');
+      for (const k of PROFILE_FIELDS) this.data[k] = p[k] || PROFILE_FIELD_DEFAULT[k] || '';
     }
     this._write();
     return this.get();
@@ -557,7 +605,12 @@ class Store {
    *
    * 只导出「换台电脑也能立刻用上」的东西：
    *   - 各份归档配置的仓库信息 **+ Token**（明文，导入端会用本机的 DPAPI 重新加密落盘）
-   *   - 一份全局的「文件链接」配置（链接规则 / 自定义域名 / 链接格式 / 预览代理）
+   *     **+ 各自的链接规则 / 自定义域名**（这两项跟着配置走，见 PROFILE_FIELDS）
+   *   - 一份全局的「文件链接」设置（链接格式 / 预览代理）
+   *
+   * `settings` 里仍然留着 linkRule / customDomain：一是给旧版本的本程序读，
+   * 二是给别的工具当参考。真正生效的是每份配置里那份 —— 只导出全局的那一个，
+   * 用户攒了一堆 GitHub / CNB 配置就会被压成同一条规则（这一版修的就是这个）。
    *
    * 故意不导出本地路径：换台电脑后 D:\xxx 往往根本不存在，写进去只会让导入端
    * 指向一个不存在的目录。导入端拿到 localDir='' 之后会引导用户为本机重新绑定目录。
@@ -568,9 +621,10 @@ class Store {
     const cfg = this.data;
     return {
       kind: 'Quick-FileDispatch',
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       settings: {
+        // 当前生效那份的镜像，留给旧导入端当兜底
         linkRule: cfg.linkRule || 'auto',
         customDomain: cfg.customDomain || '',
         linkFormat: cfg.linkFormat || 'markdown',
@@ -585,6 +639,9 @@ class Store {
           repo: p.repo || '',
           branch: p.branch || 'main',
           apiBase: p.apiBase || '',
+          // 每份配置自己的链接规则 / 自定义域名，别丢
+          linkRule: p.linkRule || 'auto',
+          customDomain: p.customDomain || '',
           // Token 一起带走：不带上，换台机器等于要用户从头再配一遍
           token: this._decryptToken(p) || ''
         };
@@ -600,6 +657,7 @@ class Store {
    * - 一律分配新 id，避免和本机已有配置撞车；
    * - 一律标记为「未验证」：换台机器后本地目录还没绑，必须由用户补目录后重新验证；
    * - Token 跟着配置一起进来，用本机 DPAPI 重新加密落盘；
+   * - 链接规则 / 自定义域名按每份配置各自还原（老文件里只有全局那一份，就拿它兜底）；
    * - 本地路径**不导入**：换台电脑路径多半不存在，交给渲染层引导用户重新绑定；
    * - 同平台 + 同 owner/repo 的视为重复，默认跳过（除非同一文件里出现两次）。
    *
@@ -614,6 +672,7 @@ class Store {
     this.data.profiles = this.data.profiles || [];
     const added = [];
     const skipped = [];
+    const st0 = (payload && payload.settings) || {};
 
     const keyOf = (p) => [normalizePlatform(p.platform), (p.owner || '').toLowerCase(), (p.repo || '').toLowerCase()].join('|');
     const seen = new Set(this.data.profiles.map(keyOf));
@@ -631,6 +690,9 @@ class Store {
         // 本地路径绝不从文件里带过来 —— 换台机器它多半不存在，
         // 由渲染层在导入后引导用户为本机重新绑定（见 settings.js renderAvailability）
         localDir: '',
+        // 每份配置自己的链接规则；version 2 及更早的文件里没有这一项，回落到全局 settings
+        linkRule: String(raw.linkRule || st0.linkRule || 'auto'),
+        customDomain: String(raw.customDomain !== undefined ? raw.customDomain : st0.customDomain || ''),
         verified: false,
         verifiedAt: 0,
         createdAt: Date.now(),
@@ -658,9 +720,13 @@ class Store {
     const st = payload && payload.settings;
     let settingsApplied = false;
     if (st && typeof st === 'object') {
+      /**
+       * 只恢复「真·全局」的那两项（链接格式 / 预览代理）。
+       * 链接规则和自定义域名现在跟着配置走，上面已经按每份配置还原过了 ——
+       * 这里再往顶层写一遍，等于用文件里那份配置的规则覆盖掉本机当前生效配置的规则，
+       * 用户明明只是导进来几份备份，自己正在用的规则却被改了。
+       */
       const patch = {};
-      if (st.linkRule) patch.linkRule = String(st.linkRule);
-      if (typeof st.customDomain === 'string') patch.customDomain = st.customDomain;
       if (st.linkFormat) patch.linkFormat = String(st.linkFormat);
       if (typeof st.proxyUrl === 'string') patch.proxyUrl = st.proxyUrl;
       if (Object.keys(patch).length) {

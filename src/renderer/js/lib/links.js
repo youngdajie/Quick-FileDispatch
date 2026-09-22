@@ -12,7 +12,7 @@
     {
       id: 'auto',
       name: '自动（跟随平台默认）',
-      desc: 'GitHub 用 raw.githubusercontent.com，CNB 用 cnb.cool/-/git/raw',
+      desc: 'GitHub 走 jsDelivr CDN，CNB 走 CNB 国内 CDN（JSDMirror）',
       platforms: ['github', 'cnb']
     },
     {
@@ -142,11 +142,26 @@
     return base + '/' + p;
   }
 
-  /** 平台默认直链（也是「自定义」没填域名时的兜底） */
+  /**
+   * 平台默认直链（也是「自定义」没填域名时的兜底）。
+   * 注意跟「自动」区分开：自动走的是下面的 CDN 默认（GitHub → jsDelivr，
+   * CNB → 国内 CDN），这里只是最朴素的官方地址，留作兜底。
+   */
   function defaultRawUrl(platform, owner, repo, branch, p) {
     return platform === 'cnb'
       ? 'https://cnb.cool/' + owner + '/' + repo + '/-/git/raw/' + branch + '/' + p
       : 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/' + branch + '/' + p;
+  }
+
+  /** 「自动」在各平台对应哪条规则：GitHub 用 jsDelivr，CNB 用国内 CDN */
+  function autoRuleOf(platform) {
+    return platform === 'cnb' ? 'cnb_jsdmirror' : 'jsdelivr';
+  }
+
+  /** 这条规则能不能用在某个平台上（迁移 / 表单回填时判断用） */
+  function ruleFits(ruleId, platform) {
+    const r = LINK_RULES.find((x) => x.id === ruleId);
+    return !!r && r.platforms.indexOf(platform === 'cnb' ? 'cnb' : 'github') >= 0;
   }
 
   /** 生成图片直链 */
@@ -156,7 +171,7 @@
     const repo = cfg.repo || '';
     const branch = cfg.branch || 'main';
     const p = encodePath(relPath);
-    const rule = cfg.linkRule === 'auto' || !cfg.linkRule ? (platform === 'cnb' ? 'cnb_raw' : 'github_raw') : cfg.linkRule;
+    const rule = !cfg.linkRule || cfg.linkRule === 'auto' ? autoRuleOf(platform) : cfg.linkRule;
 
     switch (rule) {
       case 'jsdelivr':
@@ -240,6 +255,8 @@
     buildUrl,
     buildProxyUrl,
     normalizeBaseUrl,
+    autoRuleOf,
+    ruleFits,
     formatLink,
     formatBytes,
     extOf,
