@@ -17,9 +17,12 @@ import {
   friendlyError
 } from '../lib/dom.js';
 import { fileIcon, isImageName } from '../lib/fileicons.js';
+import { previewText } from '../lib/textview.js';
 import state from '../lib/state.js';
 
 const CPLinks = window.CPLinks;
+/** 后缀算不算「能当文本看」——和主进程云端的判断用的是同一份（UMD 共享） */
+const CPHL = window.CPHighlight;
 const PAGE = 120;
 
 const svg = (d, w) =>
@@ -96,6 +99,12 @@ function isImg(it) {
   return isImageName(it.name || '');
 }
 
+/** 能不能当文本预览 / 编辑（HTML、JS、CSS、JSON、md、各种配置……） */
+function isText(it) {
+  if (!it || it.type === 'dir' || isImg(it)) return false;
+  return !!(CPHL && CPHL.isTextName(it.name || it.path || ''));
+}
+
 function absLocalPath(rel) {
   const root = (state.cfg && state.cfg.localDir) || '';
   if (!root) return '';
@@ -123,6 +132,28 @@ function thumbSrc(it) {
 
 function linkOf(it) {
   return CPLinks.buildUrl(state.cfg, it.path);
+}
+
+/**
+ * 双击 / 菜单「预览」的统一入口：
+ * 图片还是老样子走图片查看器，文本文件才进代码预览器（可编辑、可保存）。
+ */
+function openPreview(it) {
+  if (!it) return;
+  if (isImg(it)) {
+    previewImage(thumbSrc(it), it.path, linkOf(it));
+    return;
+  }
+  previewText({
+    name: it.name || String(it.path).split('/').pop(),
+    path: it.path,
+    source: view.source,
+    link: linkOf(it),
+    onSaved: () => {
+      load();
+      window.dispatchEvent(new CustomEvent('cloudpic:changed'));
+    }
+  });
 }
 
 function dirOf(p) {
@@ -316,7 +347,12 @@ function menuForItem(it) {
   }
   return [
     { label: '复制链接', icon: ICONS.copy, hint: currentFormatName(), onClick: () => copyLinkOf(it) },
-    { label: '预览', icon: ICONS.eye, disabled: !isImg(it), onClick: () => previewImage(thumbSrc(it), it.path) },
+    {
+      label: isText(it) ? '预览 / 编辑' : '预览',
+      icon: ICONS.eye,
+      disabled: !isImg(it) && !isText(it),
+      onClick: () => openPreview(it)
+    },
     { label: '复制仓库内路径', icon: ICONS.path, onClick: () => copyPaths([it.path]) },
     { sep: true },
     { label: '重命名 / 移动', icon: ICONS.rename, onClick: () => openRenameDialog([it]) },
@@ -1571,7 +1607,7 @@ function bind() {
     const it = findItem(tile.dataset.path);
     if (!it) return;
     if (it.type === 'dir') navigate(it.path);
-    else if (isImg(it)) previewImage(thumbSrc(it), it.path);
+    else if (isImg(it) || isText(it)) openPreview(it);
     else window.cloudpic.shell.openExternal(linkOf(it));
   });
 

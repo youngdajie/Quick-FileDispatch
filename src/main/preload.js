@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('cloudpic', {
     replace: (payload) => invoke('cloud:replace', payload),
     /** 云端检测器：比对本地 HEAD 与云端 HEAD，判断谁新谁旧 */
     detect: () => invoke('cloud:detect'),
+    /** 文本预览：把文件当字符串读出来（本地读盘 / 云端 raw），带二进制与体积拦截 */
+    readText: (payload) => invoke('cloud:readText', payload),
     /** 检测结论为「云端旧、本地新」时，把本地提交推上去 */
     pushLocal: () => invoke('cloud:pushLocal'),
     /** 检测结论为「云端新、本地旧」时，把云端拉下来 */

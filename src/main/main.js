@@ -21,6 +21,9 @@ const cnb = require('./cnb');
 const local = require('./local');
 const fonts = require('./fonts');
 const CPLinks = require('../renderer/js/lib/links.js');
+// 文本预览的着色器住在渲染层，但「这个后缀算不算文本」这件事两边必须用同一份判断，
+// 否则会出现「菜单能点、打开却说不是文本」的错位。UMD 形式两种环境都能 require。
+const CPHighlight = require('../renderer/js/lib/highlight.js');
 
 const IS_DEV = process.argv.includes('--dev') || !app.isPackaged;
 const SELFTEST = process.argv.includes('--selftest');
@@ -198,6 +201,79 @@ const MIME_BY_EXT = {
 
 function mimeOf(name) {
   return MIME_BY_EXT[CPLinks.extOf(name)] || 'application/octet-stream';
+}
+
+/** 文本预览能接受的最大体积。再大就不是「看一眼」，是编辑器该干的活了 */
+const TEXT_READ_MAX = 2 * 1024 * 1024;
+
+/**
+ * 把一段字节当文本解开。
+ *
+ * 四件事必须在这里做完，不能丢给渲染层：
+ *  1. 二进制要在读完前就认出来 —— 一张 2 MB 的图当文本塞进 textarea 会直接卡死界面；
+ *  2. 换行统一成 \n 再交出去 —— textarea 的 value 本身就会把 \r\n 归一成 \n，
+ *     不在这里记下原始换行符，保存时会把整个文件改成 LF，Git 里就是满屏 diff；
+ *  3. BOM 记录在案，保存时原样写回；
+ *  4. **不是 UTF-8 的老文件不能当乱码扔出去。** 中文 Windows 上「记事本存过的」
+ *     HTML / CSS / bat / ini 大量是 GBK（ANSI）。按 UTF-8 硬解就是满屏乱码 ——
+ *     而这跟换行符没关系：同样是 CRLF，UTF-8 的没事、GBK 的就花了，很容易
+ *     被误判成「CRLF 的文件预览乱码」。这里严格按 UTF-8 解一次，失败再退 GB18030。
+ *
+ * 非 UTF-8 解出来的文字**只给看，不给改**：TextEncoder 只会编 UTF-8，
+ * 改回去会把整份文件从 GBK 变成 UTF-8，一次「改个错别字」就能让 Git 里出现全文件重写。
+ */
+function decodeText(buf) {
+  if (buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff))) {
+    return { ok: false, reason: 'utf16' };
+  }
+  let bom = false;
+  let body = buf;
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    bom = true;
+    body = buf.slice(3);
+  }
+  if (body.slice(0, 8192).indexOf(0) >= 0) return { ok: false, reason: 'binary' };
+
+  let decoded = null;
+  let encoding = 'utf-8';
+  try {
+    // fatal:true —— 一遇到非法字节就抛，用作「这是不是合法 UTF-8」的判据。
+    // 不用非严格的（那种会把坏字节换成 U+FFFD），否则 GBK 文件也会「解成功」。
+    decoded = new TextDecoder('utf-8', { fatal: true }).decode(body);
+  } catch (e) {
+    decoded = null;
+  }
+  if (decoded == null) {
+    const gbk = tryDecodeNoLoss(body, 'gb18030');
+    if (gbk != null) {
+      decoded = gbk;
+      encoding = 'gb18030';
+    } else {
+      // 既不是 UTF-8 也不是 GB18030（多半是 Latin-1 那一类单字节编码）。
+      // 退回非严格 UTF-8：坏字节显示成替换符，至少完好部分还看得见。
+      decoded = new TextDecoder('utf-8').decode(body);
+      encoding = 'unknown';
+    }
+  }
+
+  const crlf = /\r\n/.test(decoded);
+  return {
+    ok: true,
+    text: decoded.replace(/\r\n?/g, '\n'),
+    bom,
+    eol: crlf ? 'crlf' : 'lf',
+    encoding
+  };
+}
+
+/** 按指定编码解一次，解出替换符就认为「不对」（返回 null 让调用方再试别的） */
+function tryDecodeNoLoss(buf, enc) {
+  try {
+    const t = new TextDecoder(enc).decode(buf);
+    return t.indexOf('\uFFFD') >= 0 ? null : t;
+  } catch (e) {
+    return null;
+  }
 }
 
 /** 上传后把云端变更同步回本地仓库 */
@@ -471,6 +547,24 @@ function runSelfTest() {
               verified: ps.filter(function(p){ return p.verified; }).length,
               activeId: (cfg && cfg.activeProfileId) || '',
               activeRow: document.querySelectorAll('#profileList .pf-row.active').length,
+              // 配置行的几何：卡片有没有铺满、目录行和状态卡片是不是真的分两层。
+              // 光看截图判断不了几个像素的差别，把数字打出来。
+              rowGeom: (function(){
+                var r = rows[0];
+                if (!r) return null;
+                var box = function(el){
+                  if (!el) return null;
+                  var x = el.getBoundingClientRect();
+                  return { l: Math.round(x.left), r: Math.round(x.right), w: Math.round(x.width), h: Math.round(x.height) };
+                };
+                return {
+                  row: box(r),
+                  main: box(r.querySelector('.pf-main')),
+                  meta: box(r.querySelector('.pf-meta')),
+                  dirLine: box(r.querySelector('.pf-dirline')),
+                  ops: box(r.querySelector('.pf-ops'))
+                };
+              })(),
               labels: ps.map(function(p){ return p.label + '@' + p.platform + (p.verified ? '✓' : '·'); })
             };
           })(),
@@ -813,6 +907,19 @@ function runSelfTest() {
      * 沿用 --fstest 的 failed[] 约定，断言失败进 errors。
      */
     if (process.argv.includes('--uitest')) {
+      // 给窗口要一次焦点。自检通常是从后台命令拉起来的，窗口没有焦点时
+      // CSS 的 `:focus` 不生效 —— 而「输入框聚焦后长什么样」正是要测的东西之一，
+      // 没有焦点这条路径就等于没测（2.8.0 的编辑态空白就是这么漏过去的）。
+      try {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+          wc.focus();
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      } catch (e) {
+        /* 拿不到焦点不影响其它断言，后面的日志里会把 hasFocus 记下来 */
+      }
       try {
         const mockLocalDir = path.join(projectRoot(), '.demo', 'local-repo');
         const out = await wc.executeJavaScript(`(async () => {
@@ -1020,6 +1127,24 @@ function runSelfTest() {
             });
             if (!(after && after.verified)) failed.push('验证并归档后 profile 没被标记为已验证');
             if (!document.querySelector('#profileList .pf-row.active')) failed.push('归档列表里没有高亮当前生效项');
+
+            // 配置行的版式：目录单独一行，状态 / 日期 / 链接规则装在下面一个小卡片里。
+            // 「四样信息挤在一条线上谁都看不清」是用户提过的，别让谁改回去。
+            {
+              const row = document.querySelector('#profileList .pf-row');
+              const box = row && row.querySelector('.pf-meta');
+              const dirLine = row && row.querySelector('.pf-dirline');
+              if (!row) failed.push('归档列表没有渲染任何配置行');
+              else if (!box) failed.push('配置行里没有状态卡片（.pf-meta）');
+              else if (!dirLine) failed.push('配置行里没有目录那一行（.pf-dirline）');
+              else if (Math.abs(box.getBoundingClientRect().top - dirLine.getBoundingClientRect().top) < 4) {
+                failed.push('目录和状态卡片挤在同一行（应该分两层）');
+              } else {
+                const cs = getComputedStyle(box);
+                if (cs.borderTopWidth === '0px') failed.push('状态卡片没有边框，看不出层次');
+                if (!box.querySelector('.pf-rule')) failed.push('状态卡片里没有链接规则');
+              }
+            }
           }
 
           // —— 4. 强制绑定：本地目录为空时不允许归档
@@ -1834,6 +1959,162 @@ function runSelfTest() {
             }
           }
 
+          // —— 文本预览 / 编辑：读得到、有着色、能改、能存回去，换行符不被打乱
+          {
+            const TV = 'tv-probe.js';
+            // 注意：这段代码本身是「模板字符串里的一段源码」，反斜杠要写两个，
+            // 否则外面的模板串会先把 \\n 变成真换行，注入进去就是语法错误。
+            const TV_LF = 'const a = 1; // 中文注释\\nfunction f(x) { return "s" + x; }\\n';
+            const TV_CRLF = TV_LF.replace(/\\n/g, '\\r\\n');
+            const TV_NEXT = TV_LF.replace('const a = 1;', 'const a = 42;');
+            const BIG = 'tv-big.txt';
+            const enc = function (s) { return new TextEncoder().encode(s); };
+            let focused = false;
+
+            // 故意写成 CRLF：保存时不还原的话，Git 里就是整个文件的重写
+            await window.cloudpic.fs.localWrite({ path: TV, data: enc(TV_CRLF) });
+            const r1 = await window.cloudpic.cloud.readText({ path: TV, source: 'local' });
+            eq(r1.ok, true, 'readText 读本地文本');
+            eq(r1.text, TV_LF, 'readText 把 CRLF 归一成 LF 再交出来');
+            eq(r1.eol, 'crlf', 'readText 记住了原始换行符');
+
+            // GBK（中文 Windows 记事本存的「ANSI」）：不能当乱码扔出来。
+            // 「CRLF 文件预览乱码」的锅其实在编码，不在换行符 —— 这条断言把它钉住。
+            const gbkHex =
+              'd6d0cec4b1e0c2ebb2e2cad40d0a' +
+              'd5e2cac7d2bbb8f62047424b20cec4b1be2c20bbbbd0d0b7fbbacdbfd5b8f1a1a30d0a' +
+              'bde1ceb20d0a';
+            const gbkBytes = [];
+            for (let k = 0; k < gbkHex.length; k += 2) gbkBytes.push(parseInt(gbkHex.slice(k, k + 2), 16));
+            await window.cloudpic.fs.localWrite({ path: 'tv-probe-gbk.txt', data: new Uint8Array(gbkBytes) });
+            const rG = await window.cloudpic.cloud.readText({ path: 'tv-probe-gbk.txt', source: 'local' });
+            eq(rG.ok, true, 'GBK 文件能读出来（既不是乱码也不是二进制）');
+            eq(rG.text, '中文编码测试\\n这是一个 GBK 文本, 换行符和空格。\\n结尾\\n', 'GBK 内容解对了');
+            eq(rG.encoding, 'gb18030', '识别出这是 GBK');
+            eq(rG.eol, 'crlf', 'GBK 文件里的 CRLF 也认对了');
+            eq(rG.editable, false, '非 UTF-8 的文件不给编辑（改写回去等于换掉整个文件的编码）');
+            await window.cloudpic.fs.localDelete({ paths: ['tv-probe-gbk.txt'] });
+
+            // 二进制必须被按下去 —— 一张图塞进 textarea 会直接卡住界面
+            const r2 = await window.cloudpic.cloud.readText({ path: 'demo-files/deep-blue.png', source: 'local' });
+            eq(r2.ok, false, '图片当文本读会被拦下');
+            eq(r2.reason, 'binary', '拦截原因标成 binary');
+
+            await window.cloudpic.fs.localWrite({ path: BIG, data: new Uint8Array(2 * 1024 * 1024 + 16).fill(97) });
+            const r3 = await window.cloudpic.cloud.readText({ path: BIG, source: 'local' });
+            eq(r3.ok, false, '超过 2 MB 的文件不预览');
+            eq(r3.reason, 'tooLarge', '超限原因标成 tooLarge');
+
+            // —— UI：双击文本文件应该打开代码预览
+            document.querySelector('.nav-item[data-page="manage"]').click();
+            await sleep(1400);
+            const segL = document.querySelector('#sourceSeg button[data-source="local"]');
+            if (segL && !segL.classList.contains('active')) {
+              segL.click();
+              await sleep(1400);
+            }
+            const rootNode = document.querySelector('#mgRootNode');
+            if (rootNode) {
+              rootNode.click();
+              await sleep(1400);
+            }
+
+            const tiles = Array.from(document.querySelectorAll('#mgGrid .tile'));
+            const tile = tiles.filter(function (t) { return t.dataset.path === TV; })[0];
+            if (!tile) {
+              failed.push('文件管理页没列出 ' + TV + '（共 ' + tiles.length + ' 项）');
+            } else {
+              tile.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+              await sleep(1100);
+              const box = document.querySelector('#modalWrap .modal.code');
+              if (!box) {
+                failed.push('双击文本文件没有打开代码预览');
+              } else {
+                const code = box.querySelector('.tv-code');
+                eq(!!code, true, '预览里有代码层');
+                eq(code ? code.textContent : '', TV_LF, '预览内容与文件一致');
+                eq(box.querySelectorAll('.tv-code .hl-kw').length > 0, true, '预览里有关键字着色');
+                eq(box.querySelectorAll('.tv-code .hl-str').length > 0, true, '预览里有字符串着色');
+                eq(!!box.querySelector('.mh-open'), true, '标题栏有「浏览器打开」按钮');
+                eq(((box.querySelector('.tv-lang') || {}).textContent) || '', 'JavaScript', '标题栏标出语言');
+
+                const editBtn = box.querySelector('.mh-edit');
+                if (!editBtn) {
+                  failed.push('预览里没有「编辑」按钮');
+                } else {
+                  editBtn.click();
+                  await sleep(450);
+                  const ta = box.querySelector('.tv-ta');
+                  const pre = box.querySelector('.tv-pre');
+                  eq(!!ta, true, '编辑态出现输入层');
+                  eq(ta ? ta.value : '', TV_LF, '输入层内容与文件一致');
+                  // 「看得见的东西」全在背后那层高亮里（输入层的文字是透明的），
+                  // 所以两件事必须查：① 高亮层在编辑态仍有内容；② 输入层没有底色 ——
+                  // 全局的 textarea:focus 会给它糊上不透明底，正好把高亮层盖死，
+                  // 界面上就是「一进编辑一片空白」。
+                  // （这段注解里不能写反引号：整块代码是模板字符串里的源码，
+                  //   多一个反引号就把外层模板提前截断了。）
+                  const code2 = box.querySelector('.tv-code');
+                  eq(code2 ? code2.textContent.length > 0 : false, true, '编辑态高亮层仍有内容');
+                  if (ta) {
+                    const bgc = getComputedStyle(ta).backgroundColor;
+                    const fgc = getComputedStyle(ta).color;
+                    const clear = (v) => v === 'rgba(0, 0, 0, 0)' || v === 'transparent';
+                    eq(clear(bgc), true, '输入层背景透明（实际 ' + bgc + '，不透明就会盖住高亮层）');
+                    eq(clear(fgc), true, '输入层文字透明（实际 ' + fgc + '）');
+                    eq(getComputedStyle(ta).boxShadow, 'none', '输入层没有聚焦光晕');
+                  }
+                  focused = document.activeElement === ta && document.hasFocus();
+                  // 两层必须严丝合缝：错开一点，打字的位置和颜色就对不上
+                  if (ta && pre) {
+                    const ga = pre.getBoundingClientRect();
+                    const gb = ta.getBoundingClientRect();
+                    eq(Math.round(ga.left) === Math.round(gb.left) && Math.round(ga.top) === Math.round(gb.top),
+                      true, '着色层与输入层原点重合');
+                    const cs = getComputedStyle(ta);
+                    const ps = getComputedStyle(pre);
+                    eq(cs.fontSize + '/' + cs.lineHeight + '/' + cs.paddingLeft + '/' + cs.tabSize,
+                      ps.fontSize + '/' + ps.lineHeight + '/' + ps.paddingLeft + '/' + ps.tabSize,
+                      '两层字体度量一致');
+                  }
+                  ta.value = TV_NEXT;
+                  ta.dispatchEvent(new Event('input', { bubbles: true }));
+                  await sleep(300);
+                  eq(!!box.querySelector('.tv-dirty'), true, '改动后出现「未保存」标记');
+                  const saveBtn = box.querySelector('.tv-foot .btn-primary');
+                  eq(saveBtn ? saveBtn.textContent : '', '保存', '底栏主按钮是保存');
+                  if (saveBtn) saveBtn.click();
+                  await sleep(1600);
+
+                  const r4 = await window.cloudpic.cloud.readText({ path: TV, source: 'local' });
+                  eq(r4.text, TV_NEXT, '保存后文件内容已更新');
+                  eq(r4.eol, 'crlf', '保存后换行符仍是 CRLF（没被改成 LF）');
+                  eq(!!box.querySelector('.tv-dirty'), false, '保存后「未保存」标记消失');
+
+                  const back = box.querySelector('.tv-foot .btn-ghost');
+                  if (back) back.click();
+                  await sleep(450);
+                  eq(!!box.querySelector('.tv-ta'), false, '取消编辑后回到只读');
+                  const closeBtn = box.querySelector('.tv-foot .btn-primary');
+                  if (closeBtn) closeBtn.click();
+                  await sleep(450);
+                  eq(document.querySelector('#modalWrap').hidden, true, '关闭后弹层收起');
+                }
+              }
+            }
+
+            await window.cloudpic.fs.localDelete({ paths: [TV, BIG] });
+            log.push({
+              step: 'text-preview',
+              eol: r1.eol,
+              binary: r2.reason,
+              big: r3.reason,
+              gbk: rG.encoding + '/' + (rG.editable ? 'editable' : 'readonly'),
+              lang: 'JavaScript',
+              focused: focused
+            });
+          }
+
           // —— 收尾：删掉测试造出来的配置，只留指向假 API 的那份，保证下次跑还准
           await window.__state.activateProfile(baseProf.id);
           await sleep(1200);
@@ -1986,6 +2267,280 @@ function runSelfTest() {
         errors.push('shot icons/list failed: ' + e.message);
       }
 
+      // 文本预览 / 编辑器：只读态、编辑态，以及浅色主题下的配色
+      // （截图用的样例文件临时写进本地仓库，拍完就删，不留痕迹）
+      try {
+        // 编辑态靠「透明输入层 + 背后高亮层」叠出来，而 `:focus` 相关的样式
+        // 只在窗口真有焦点时才生效 —— 不主动要一次焦点，拍出来的就是假象。
+        try {
+          mainWindow.show();
+          mainWindow.focus();
+          wc.focus();
+          await new Promise((r) => setTimeout(r, 500));
+        } catch (e2) {
+          /* ignore */
+        }
+        const tvDemo = [
+          '/** 语法着色演示：关键字、字符串、数字、注释、模板串、函数名 */',
+          "import { readFile } from 'node:fs/promises';",
+          '',
+          'const RETRY = 3;',
+          'const LABEL = `重试 ${RETRY} 次后放弃`;',
+          '',
+          'export async function loadConfig(path, { strict = true } = {}) {',
+          "  // 严格模式下一旦读不动就直接抛，别让调用方拿着半个对象继续跑",
+          '  const raw = await readFile(path, \'utf8\');',
+          '  if (/^\\s*$/.test(raw)) return Object.create(null);',
+          '  const data = JSON.parse(raw);',
+          '  if (strict && data.version !== 2) {',
+          "    throw new Error('配置版本不匹配：' + data.version);",
+          '  }',
+          '  return { ...data, loadedAt: Date.now() };',
+          '}',
+          ''
+        ].join('\n');
+        await wc.executeJavaScript(
+          `(async function(){
+             await window.cloudpic.fs.localWrite({
+               path: 'demo-files/tv-demo.js',
+               data: new TextEncoder().encode(${JSON.stringify(tvDemo)})
+             });
+             return true;
+           })()`
+        );
+        await wc.executeJavaScript(`(function(){ var b = document.getElementById('btnMgRefresh'); if (b) b.click(); })()`);
+        await new Promise((r) => setTimeout(r, 1800));
+
+        const tvOpen = await wc.executeJavaScript(
+          `(async function(){
+             var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+             for (var i = 0; i < 50; i++) {
+               var t = document.querySelector('#mgGrid .tile[data-path="demo-files/tv-demo.js"]');
+               if (t) { t.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })); return true; }
+               await sleep(150);
+             }
+             return false;
+           })()`
+        );
+        await new Promise((r) => setTimeout(r, 1900));
+        let imgTv = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'text-preview-view.png'), imgTv.toPNG());
+        console.log('SHOT text-preview-view open=' + tvOpen);
+
+        await wc.executeJavaScript(
+          `(function(){ var b = document.querySelector('#modalWrap .modal.code .mh-edit'); if (b) b.click(); })()`
+        );
+        await new Promise((r) => setTimeout(r, 1000));
+        imgTv = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'text-preview-edit.png'), imgTv.toPNG());
+        console.log('SHOT text-preview-edit');
+
+        // 浅色主题下再看一眼（着色记号在两种底色上是两套取值）。
+        // 停在编辑态拍一张 —— 「浅色 + 聚焦」正是当初看不见内容的那一组，
+        // 只拍只读态是发现不了的。看完切回深色。
+        await wc.executeJavaScript(`document.getElementById('btnTheme').click();`);
+        await new Promise((r) => setTimeout(r, 1300));
+        await wc.executeJavaScript(
+          `(function(){
+             var t = document.querySelector('#modalWrap .modal.code .tv-ta');
+             if (t) t.focus();
+           })()`
+        );
+        await new Promise((r) => setTimeout(r, 500));
+        imgTv = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'text-preview-light-edit.png'), imgTv.toPNG());
+        console.log('SHOT text-preview-light-edit theme=' +
+          (await wc.executeJavaScript(`document.documentElement.dataset.theme`)) +
+          ' bg=' + (await wc.executeJavaScript(
+            `(function(){ var t = document.querySelector('#modalWrap .modal.code .tv-ta');
+               return t ? getComputedStyle(t).backgroundColor : 'no-ta'; })()`
+          )));
+
+        await wc.executeJavaScript(
+          `(function(){ var b = document.querySelector('#modalWrap .modal.code .tv-foot .btn-ghost'); if (b) b.click(); })()`
+        );
+        await new Promise((r) => setTimeout(r, 700));
+        imgTv = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'text-preview-light.png'), imgTv.toPNG());
+        console.log('SHOT text-preview-light');
+
+        await wc.executeJavaScript(`document.getElementById('btnTheme').click();`);
+        await new Promise((r) => setTimeout(r, 1000));
+        await wc.executeJavaScript(
+          `(function(){ var b = document.querySelector('#modalWrap .modal.code .tv-foot .btn-primary'); if (b) b.click(); })()`
+        );
+        await new Promise((r) => setTimeout(r, 700));
+        await wc.executeJavaScript(
+          `window.cloudpic.fs.localDelete({ paths: ['demo-files/tv-demo.js'] }).then(function(){
+             var b = document.getElementById('btnMgRefresh'); if (b) b.click();
+           })`
+        );
+        await new Promise((r) => setTimeout(r, 1400));
+      } catch (e) {
+        errors.push('shot text-preview failed: ' + e.message);
+      }
+
+      // HTML / CSS 着色 + CRLF 文件显示。
+      // 这三张图是长期盯着的：HTML/CSS 与 CRLF 各自出过「不染色 / 乱码」的问题，
+      // 光靠单元测试（字面量是 LF）测不到真实读写链路上的差异。
+      try {
+        const tvMore = [
+          {
+            shot: 'text-preview-html',
+            path: 'demo-files/tv-html.html',
+            lines: [
+              '<!doctype html>',
+              '<html lang="zh-CN">',
+              '<head>',
+              '  <meta charset="utf-8" />',
+              '  <title>站点首页</title>',
+              '  <link rel="stylesheet" href="./tv-style.css" />',
+              '</head>',
+              '<body class="page">',
+              '  <!-- 顶栏：品牌 + 导航 -->',
+              '  <header id="top">',
+              '    <h1>快捷文件分发服务</h1>',
+              '    <nav><a href="/docs">文档</a></nav>',
+              '  </header>',
+              '  <script>const CFG = { retry: 3 };</script>',
+              '</body>',
+              '</html>'
+            ]
+          },
+          {
+            shot: 'text-preview-css',
+            path: 'demo-files/tv-style.css',
+            lines: [
+              '/* 站点样式：主题变量与栅格 */',
+              ':root { --accent: #1296db; --gap: 12px; }',
+              '',
+              '.page { max-width: 1080px; margin: 0 auto; }',
+              '.page > header { display: flex; gap: var(--gap); }',
+              '@media (max-width: 720px) {',
+              '  .page > header { flex-direction: column; }',
+              '}'
+            ]
+          },
+          {
+            shot: 'text-preview-crlf',
+            path: 'demo-files/tv-crlf.txt',
+            lines: [
+              '这是 Windows 记事本风格的文本文件（CRLF 换行）。',
+              '第二行有符号和中文混排：来源 / 说明 / 备注。',
+              '第三行结束。'
+            ]
+          },
+          {
+            // 真 GBK 字节（中文 Windows 的「记事本 ANSI」就是这个）。
+            // 内容：中文编码测试 / 这是一个 GBK 文本, 换行符和空格。/ 结尾
+            // 同样是 CRLF —— 用来证明「乱码」的锅不在换行符，在编码。
+            shot: 'text-preview-gbk',
+            path: 'demo-files/tv-gbk.txt',
+            gbkHex:
+              'd6d0cec4b1e0c2ebb2e2cad40d0a' +
+              'd5e2cac7d2bbb8f62047424b20cec4b1be2c20bbbbd0d0b7fbbacdbfd5b8f1a1a30d0a' +
+              'bde1ceb20d0a'
+          }
+        ];
+        for (const f of tvMore) {
+          // 统一按 CRLF 写盘：decodeText 会把它归一成 \n 再交给渲染层，
+          // 保存时再还原回去 —— 这条链路上任何一处漏归一都会在这里露出来
+          let bytes;
+          if (f.gbkHex) {
+            bytes = [];
+            for (let k = 0; k < f.gbkHex.length; k += 2) bytes.push(parseInt(f.gbkHex.slice(k, k + 2), 16));
+          } else {
+            bytes = Array.from(new TextEncoder().encode(f.lines.join('\r\n') + '\r\n'));
+          }
+          await wc.executeJavaScript(
+            `(async function(){
+               await window.cloudpic.fs.localWrite({
+                 path: ${JSON.stringify(f.path)},
+                 data: new Uint8Array(${JSON.stringify(bytes)})
+               });
+               return true;
+             })()`
+          );
+        }
+        await wc.executeJavaScript(`(function(){ var b = document.getElementById('btnMgRefresh'); if (b) b.click(); })()`);
+        await new Promise((r) => setTimeout(r, 1900));
+
+        for (const f of tvMore) {
+          const opened = await wc.executeJavaScript(
+            `(async function(){
+               var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+               for (var i = 0; i < 50; i++) {
+                 var t = document.querySelector('#mgGrid .tile[data-path=${JSON.stringify(f.path)}]');
+                 if (t) { t.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })); return true; }
+                 await sleep(150);
+               }
+               return false;
+             })()`
+          );
+          await new Promise((r) => setTimeout(r, 1700));
+          const imgMore = await wc.capturePage();
+          fs.writeFileSync(path.join(dir, f.shot + '.png'), imgMore.toPNG());
+          // 把「到底有没有着色」落到数字上：记号数 > 0 才算染色了，
+          // 只看截图容易被「一片同色」蒙过去
+          const info = await wc.executeJavaScript(
+            `(function(){
+               var root = document.querySelector('#modalWrap .modal.code');
+               if (!root) return { open: false };
+               var code = root.querySelector('.tv-code');
+               var ta = root.querySelector('.tv-ta');
+               return {
+                 open: true,
+                 lang: (root.querySelector('.tv-lang') || {}).textContent || '',
+                 enc: (root.querySelector('.tv-enc') || {}).textContent || '',
+                 marks: code ? code.querySelectorAll('span[class^="hl-"]').length : -1,
+                 cr: code ? (code.textContent.match(/\\r/g) || []).length : -1,
+                 head: code ? code.textContent.slice(0, 40) : '',
+                 taLen: ta ? ta.value.length : -1,
+                 hint: (root.querySelector('.tv-foot .tv-hint') || {}).textContent || ''
+               };
+             })()`
+          );
+          console.log('SHOT ' + f.shot + ' open=' + opened + ' ' + JSON.stringify(info));
+          await wc.executeJavaScript(
+            `(function(){ var b = document.querySelector('#modalWrap .modal.code .tv-foot .btn-primary'); if (b) b.click(); })()`
+          );
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        await wc.executeJavaScript(
+          `window.cloudpic.fs.localDelete({
+             paths: ['demo-files/tv-html.html', 'demo-files/tv-style.css', 'demo-files/tv-crlf.txt', 'demo-files/tv-gbk.txt']
+           }).then(function(){ var b = document.getElementById('btnMgRefresh'); if (b) b.click(); })`
+        );
+        await new Promise((r) => setTimeout(r, 1400));
+      } catch (e) {
+        errors.push('shot text-preview-html/css/crlf failed: ' + e.message);
+      }
+
+      // 图片预览：确认标题栏加了「浏览器打开」之后版式没走样
+      try {
+        const imgOpen = await wc.executeJavaScript(
+          `(async function(){
+             var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+             for (var i = 0; i < 50; i++) {
+               var t = document.querySelector('#mgGrid .tile[data-path="demo-files/deep-blue.png"]');
+               if (t) { t.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })); return true; }
+               await sleep(150);
+             }
+             return false;
+           })()`
+        );
+        await new Promise((r) => setTimeout(r, 1600));
+        const imgIv = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'image-preview.png'), imgIv.toPNG());
+        console.log('SHOT image-preview open=' + imgOpen);
+        await wc.executeJavaScript(
+          `(function(){ var b = document.querySelector('#modalWrap .modal-foot .btn-primary'); if (b) b.click(); })()`
+        );
+        await new Promise((r) => setTimeout(r, 600));
+      } catch (e) {
+        errors.push('shot image-preview failed: ' + e.message);
+      }
+
       // 打开「重命名 / 移动」弹层，验证云端改文件的入口
       try {
         const opened = await wc.executeJavaScript(
@@ -2077,18 +2632,27 @@ function runSelfTest() {
         await wc.executeJavaScript(`document.querySelector('.nav-item[data-page="settings"]').click();`);
         await new Promise((r) => setTimeout(r, 1400));
 
-        // 临时造一份 CNB 配置，让归档列表同时有「已归档」和「待验证」两种状态可看
+        // 临时造两份 CNB 配置，让归档列表同时有「已归档」和「待验证」两种状态可看。
+        // 目录一律给**真实长度的中文路径** —— 配置行的版式毛病（内容被挤到换行、
+        // 行高参差）只有长目录才暴露得出来，短路径永远看着都挺好。
         const madeTmp = await wc.executeJavaScript(
           `(async function(){
              var before = (window.__state.cfg.profiles||[]).map(function(p){ return p.id; });
              await window.__state.newProfile({ platform: 'cnb' });
              await window.__state.patch({
-               platform: 'cnb', owner: 'yangjie-site', repo: 'cdn-files',
-               localDir: 'D:/web/cdn-files', token: 'cnb_fake_token_0001'
+               platform: 'cnb', owner: 'youngdajie', repo: 'test.yangjie.site',
+               localDir: 'C:/Users/43487/DeskBox/我的桌面/test.yangjie.site',
+               linkRule: 'cnb_jsdmirror', token: 'cnb_fake_token_0001'
+             });
+             await window.__state.newProfile({ platform: 'cnb' });
+             await window.__state.patch({
+               platform: 'cnb', owner: 'youngdajie', repo: 'wallpaper-collection',
+               localDir: 'C:/Users/43487/DeskBox/我的桌面/项目文件/wallpaper-collection',
+               linkRule: 'cnb_jsdmirror', token: 'cnb_fake_token_0002'
              });
              var after = (window.__state.cfg.profiles||[]);
-             var add = after.filter(function(p){ return before.indexOf(p.id) < 0; })[0];
-             return add ? add.id : '';
+             var add = after.filter(function(p){ return before.indexOf(p.id) < 0; });
+             return add.map(function(p){ return p.id; }).join(',');
            })()`
         );
         await new Promise((r) => setTimeout(r, 1400));
@@ -2097,6 +2661,45 @@ function runSelfTest() {
         const imgProf = await wc.capturePage();
         fs.writeFileSync(path.join(dir, 'settings-profiles.png'), imgProf.toPNG());
         console.log('SHOT settings-profiles -> ' + madeTmp);
+
+        // 顺便把首行的几何打出来：卡片有没有铺满、目录行和状态卡片是不是真的分两层。
+        // 几个像素的差别截图上看不出来，得看数字。
+        console.log('SHOT settings-profiles-geom ' + (await wc.executeJavaScript(
+          `(function(){
+             var box = function(el){
+               if (!el) return null;
+               var x = el.getBoundingClientRect();
+               return [Math.round(x.left), Math.round(x.right), Math.round(x.width), Math.round(x.height)];
+             };
+             var r = document.querySelector('#profileList .pf-row');
+             if (!r) return 'no-row';
+             return JSON.stringify({
+               row: box(r),
+               main: box(r.querySelector('.pf-main')),
+               meta: box(r.querySelector('.pf-meta')),
+               dirLine: box(r.querySelector('.pf-dirline')),
+               ops: box(r.querySelector('.pf-ops')),
+               metaBg: getComputedStyle(r.querySelector('.pf-meta')).backgroundColor,
+               dotTop: r.querySelector('.pf-dot').getBoundingClientRect().top - r.getBoundingClientRect().top
+             });
+           })()`
+        )));
+
+        // 配置行特写：三行分层（仓库 / 目录 / 状态卡片）到底站住没有，
+        // 整面截图看不清，放大再看一眼
+        await shotZoom('settings-profiles-zoom.png', '#profileList', 1.9);
+
+        // 浅色主题下再看一眼：卡片的底色与描边是另一套取值，得确认还分得出层次
+        await wc.executeJavaScript(`document.getElementById('btnTheme').click();`);
+        await new Promise((r) => setTimeout(r, 1300));
+        await wc.executeJavaScript(`document.getElementById('profileList').scrollIntoView({ block: 'center' });`);
+        await new Promise((r) => setTimeout(r, 700));
+        const imgProfL = await wc.capturePage();
+        fs.writeFileSync(path.join(dir, 'settings-profiles-light.png'), imgProfL.toPNG());
+        console.log('SHOT settings-profiles-light theme=' +
+          (await wc.executeJavaScript(`document.documentElement.dataset.theme`)));
+        await wc.executeJavaScript(`document.getElementById('btnTheme').click();`);
+        await new Promise((r) => setTimeout(r, 1000));
 
         // 归档配置下拉展开的样子：看「新建」那条是不是被一条细线分出来的，
         // 而不是靠往列表里塞一行 ──────（那种假分隔线在配置名里很突兀）
@@ -2174,10 +2777,13 @@ function runSelfTest() {
         await wc.executeJavaScript(`document.getElementById('wmSwatch').click();`);
         await new Promise((r) => setTimeout(r, 400));
 
-        // 收尾：删掉临时配置并切回基准配置
+        // 收尾：删掉临时配置并切回基准配置（可能是好几份，逐个删）
         if (madeTmp) {
           await wc.executeJavaScript(`(async function(){
-            await window.__state.removeProfile(${JSON.stringify(madeTmp)});
+            var ids = ${JSON.stringify(madeTmp)}.split(',').filter(Boolean);
+            for (var k = 0; k < ids.length; k++) {
+              try { await window.__state.removeProfile(ids[k]); } catch (e) { /* 已经不在了就算了 */ }
+            }
             var base = (window.__state.cfg.profiles||[]).filter(function(p){ return p.verified; })[0];
             if (base) await window.__state.activateProfile(base.id);
           })()`);
@@ -2954,6 +3560,50 @@ function registerIpc() {
   });
 
   // ---- 云端替换：把某个已存在的路径换成一份新内容（保持路径不变）
+  // ---- 文本预览：把文件内容当字符串读出来（本地直接读盘，云端走 readRaw）
+  ipcMain.handle('cloud:readText', async (e, payload) => {
+    const p = payload || {};
+    const rel = CPLinks.normalizePath(p.path || '');
+    if (!rel) throw new Error('缺少目标路径');
+    const cfg = cfgRaw();
+    const source = p.source === 'local' ? 'local' : 'remote';
+
+    let buf;
+    if (source === 'local') {
+      if (!cfg.localDir || !local.exists(cfg.localDir)) throw new Error('尚未配置本地目录');
+      const abs = local.safeJoin(cfg.localDir, rel);
+      if (!fs.existsSync(abs)) throw new Error('文件不存在：' + rel);
+      const st = fs.statSync(abs);
+      if (st.isDirectory()) throw new Error('这是一个目录，不是文件');
+      if (st.size > TEXT_READ_MAX) {
+        return { ok: false, reason: 'tooLarge', size: st.size, limit: TEXT_READ_MAX };
+      }
+      buf = fs.readFileSync(abs);
+    } else {
+      // 云端会整份拉下来，所以先按后缀挡一道：不认识的类型不浪费这一次网络往返
+      if (!CPHighlight.isTextName(rel)) return { ok: false, reason: 'binary', size: 0 };
+      buf = await buildClient().readRaw(rel);
+      if (buf.length > TEXT_READ_MAX) {
+        return { ok: false, reason: 'tooLarge', size: buf.length, limit: TEXT_READ_MAX };
+      }
+    }
+
+    const dec = decodeText(buf);
+    if (!dec.ok) return { ok: false, reason: dec.reason, size: buf.length };
+    return {
+      ok: true,
+      path: rel,
+      source,
+      size: buf.length,
+      text: dec.text,
+      bom: dec.bom,
+      eol: dec.eol,
+      // 不是 UTF-8 的文件只给看：改写回去会改变整个文件的编码
+      encoding: dec.encoding,
+      editable: dec.encoding === 'utf-8'
+    };
+  });
+
   ipcMain.handle('cloud:replace', async (e, payload) => {
     const p = payload || {};
     const rel = CPLinks.normalizePath(p.path || '');

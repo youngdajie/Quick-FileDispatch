@@ -208,12 +208,17 @@ function profileRow(p) {
   const ruleText = ruleId === 'auto'
     ? '链接：自动（' + (platOf(p.platform) === 'cnb' ? 'CNB 国内 CDN' : 'jsDelivr CDN') + '）'
     : '链接：' + ((rule && rule.name) || ruleId);
-  bits.push('<span class="pf-sub" title="' + escapeHtml(ruleText) + '">' + escapeHtml(ruleText) + '</span>');
+  // 单独一个类：这一条要独占行尾（margin-left:auto），不能跟着目录一起换行
+  const ruleHtml =
+    '<span class="pf-rule" title="' + escapeHtml(ruleText) + '">' + escapeHtml(ruleText) + '</span>';
 
   const dir = p.localDir
     ? '<span class="pf-dir" title="' + escapeHtml(p.localDir) + '">📁 ' + escapeHtml(p.localDir) + '</span>'
     : '<span class="pf-dir bad">未绑定本地目录</span>';
 
+  // 三行：第一行「平台 + 仓库」，第二行目录，第三行状态/日期/链接规则。
+  // 状态那一坨单独放进 .pf-meta 小卡片里 —— 目录、状态、日期、链接挤在一条线上时
+  // 谁都看不清，分层之后一眼能扫。
   return (
     '<div class="pf-row' + (p.isActive ? ' active' : '') + '" data-id="' + escapeHtml(p.id) + '">' +
     '<span class="pf-dot" aria-hidden="true"></span>' +
@@ -223,7 +228,8 @@ function profileRow(p) {
     '<span class="pf-name">' + escapeHtml(repoPath) + '</span>' +
     (p.name ? '<span class="pf-alias">' + escapeHtml(p.name) + '</span>' : '') +
     '</div>' +
-    '<div class="pf-line2">' + dir + '<span class="pf-sep">·</span>' + bits.join('') + '</div>' +
+    '<div class="pf-dirline">' + dir + '</div>' +
+    '<div class="pf-meta">' + bits.join('') + ruleHtml + '</div>' +
     '</div>' +
     '<div class="pf-ops">' +
     (p.isActive

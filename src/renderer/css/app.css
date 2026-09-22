@@ -66,6 +66,24 @@
   /* 平台标识色：仓库模块左侧竖条 + 归档徽标用它，一眼看出在编辑哪个平台 */
   --plat-github: #4e9bea;
   --plat-cnb: #f76945;
+
+  /* 文本预览 / 编辑器专属 */
+  --code-bg: #070b12;
+  --code-gutter: #0b1119;
+  --hl-cmt: #63778f;
+  --hl-str: #8fce8a;
+  --hl-num: #d7a15f;
+  --hl-kw: #c58fe8;
+  --hl-tp: #e3c46b;
+  --hl-fn: #63aef5;
+  --hl-prop: #e0857c;
+  --hl-tag: #e06c75;
+  --hl-var: #d9e3f0;
+  --hl-op: #8b9db4;
+  --hl-builtin: #56c8d8;
+  --hl-esc: #56c8d8;
+  --hl-reg: #56c8d8;
+  --hl-head: #63aef5;
 }
 
 /* ============================================================
@@ -118,6 +136,26 @@ html[data-theme="light"] {
 
   --plat-github: #2f7fd6;
   --plat-cnb: #e0522c;
+
+  /* 文本预览：浅色下用接近白纸的底，深色记号色换成能在白底上看清的深色版本。
+     关键是「关键字红、字符串深蓝」这套在两种底色下都要能一眼分辨，
+     所以这里有别于深色主题的另一套取值，而不是简单取反。 */
+  --code-bg: #fbfcfe;
+  --code-gutter: #f1f5fa;
+  --hl-cmt: #7a8a9e;
+  --hl-str: #0a6b4f;
+  --hl-num: #b4590c;
+  --hl-kw: #a3238c;
+  --hl-tp: #8a5a00;
+  --hl-fn: #1d5fb5;
+  --hl-prop: #b3352f;
+  --hl-tag: #b3352f;
+  --hl-var: #16202e;
+  --hl-op: #5b6b80;
+  --hl-builtin: #0e7186;
+  --hl-esc: #0e7186;
+  --hl-reg: #0e7186;
+  --hl-head: #1d5fb5;
 }
 
 * { box-sizing: border-box; }
@@ -533,7 +571,7 @@ select.csel-native {
 
 .pf-row {
   display: flex; align-items: center; gap: 11px;
-  padding: 9px 11px; cursor: pointer;
+  padding: 8px 11px; cursor: pointer;
   border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
   background: var(--panel-2);
   transition: border-color 0.15s, background 0.15s;
@@ -548,11 +586,25 @@ select.csel-native {
 }
 .pf-row.active .pf-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
-.pf-main { flex: 1; min-width: 0; }
+/* 一份配置 = 三行固定结构：①平台 + 仓库 ②本地目录 ③状态 / 日期 / 链接规则。
+   第③行单独装进 .pf-meta 小卡片 —— 目录、状态、日期、链接挤在一条线上时，
+   四样信息互相压着谁都看不清；分层之后各归各位，一眼能扫。
+   每一行都必须**单行不换行**：路径长的配置一旦把内容挤到下一行，
+   整个列表的行高就会参差不齐（踩过）。 */
+.pf-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .pf-line1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pf-line2 {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  margin-top: 3px; font-size: 11px; color: var(--muted);
+.pf-dirline { display: flex; align-items: center; min-width: 0; }
+
+/* 状态卡片：比行底（--panel-2）差一档，边框用 --border 而不是 --border-soft。
+   行本身已经是 --border-soft 的框，里面的卡片再用同一档就等于没框 ——
+   实测卡片确实是铺满整行的，但肉眼根本看不出边界，白做了。
+   注意别用 --panel-3 —— 那是行的 hover 底色，鼠标一上去卡片就糊进背景里了。 */
+.pf-meta {
+  display: flex; align-items: center; gap: 7px;
+  min-width: 0; overflow: hidden;
+  padding: 3px 9px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
 }
 
 .pf-platform {
@@ -563,29 +615,45 @@ select.csel-native {
 .pf-platform.pf-cnb { color: var(--cnb); border-color: color-mix(in srgb, var(--cnb) 32%, transparent); }
 
 .pf-name {
+  flex: 0 1 auto; min-width: 0;
   font-size: 12.5px; font-family: var(--mono); color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.pf-alias { flex: 0 0 auto; font-size: 11px; color: var(--accent-hi); }
+.pf-alias {
+  flex: 0 1 auto; min-width: 0;
+  font-size: 11px; color: var(--accent-hi);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .pf-dir {
+  /* 独占一行，只有路径比自己这一行的宽度还长时才会截断 */
+  flex: 0 1 auto; min-width: 0;
   font-family: var(--mono);
-  max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.pf-dir.bad { color: var(--warn); }
-.pf-sep { opacity: 0.45; }
+.pf-dir.bad { color: var(--warn); flex: 0 0 auto; }
 
 .pf-badge {
   flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 4px;
   border: 1px solid var(--border); color: var(--text-dim);
+  white-space: nowrap;
 }
 .pf-badge.ok { color: var(--ok); border-color: rgba(51, 189, 144, 0.32); background: rgba(51, 189, 144, 0.1); }
 .pf-badge.warn { color: var(--warn); border-color: rgba(221, 162, 63, 0.3); background: rgba(221, 162, 63, 0.1); }
 .pf-badge.danger { color: var(--danger); border-color: rgba(239, 85, 96, 0.3); background: var(--danger-soft); }
-.pf-sub { font-size: 11px; }
+.pf-sub { flex: 0 0 auto; font-size: 11px; white-space: nowrap; }
+
+/* 链接规则靠卡片行尾站：左边那串「徽标 + 日期」长短不一，用它兜住不齐的宽度，
+   同时把「这几份配置各用什么 CDN」在右侧排成一条竖线，一眼能比。
+   真的窄到放不下时，宁可让它自己省略号收尾，也别让卡片直接裁掉半行字。 */
+.pf-rule {
+  flex: 0 1 auto; min-width: 0; margin-left: auto; padding-left: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .pf-ops {
-  display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  flex: 0 0 auto; min-width: 136px;
   opacity: 0.5; transition: opacity 0.14s;
 }
 .pf-row:hover .pf-ops, .pf-row.active .pf-ops { opacity: 1; }
@@ -1354,7 +1422,19 @@ select.csel-native {
   animation: modalIn 0.22s var(--ease);
 }
 @keyframes modalIn { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: none; } }
-.modal-head { padding: 15px 19px 11px; border-bottom: 1px solid var(--border-soft); font-size: 14px; font-weight: 700; }
+.modal-head { padding: 15px 19px 11px; border-bottom: 1px solid var(--border-soft); font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.mh-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; overflow: hidden; }
+.mh-actions { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.mh-btn {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2);
+  color: var(--text-dim); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, transform .1s;
+}
+.mh-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--accent-line); }
+.mh-btn:active { transform: translateY(1px); }
+.mh-btn svg { flex-shrink: 0; }
+.mh-btn[hidden] { display: none; }
 .modal-body { padding: 15px 19px; overflow-y: auto; font-size: 13px; color: var(--text-dim); line-height: 1.8; }
 .modal-foot { padding: 12px 19px 15px; display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid var(--border-soft); }
 .modal.wide { max-width: 900px; }
@@ -1948,3 +2028,133 @@ html[data-theme="dark"] .card { background: rgba(14, 22, 34, 0.88); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .cmp-meta .cmp-hint { margin-left: auto; color: #66798f; }
+
+/* ============================================================
+   文本预览 / 编辑器
+   布局要点：高亮层（pre）与输入层（textarea）上下叠放，
+   两层的字体、行高、内边距、制表宽必须逐项一致 —— 差 1px 就会看到
+   打字的位置和颜色错开一行，这是这类编辑器唯一的死穴。
+   ============================================================ */
+
+.modal.code { max-width: 1080px; width: min(1080px, 94vw); height: min(760px, 86vh); }
+/* .modal 本身是 flex 列，正文必须 flex:1 才撑得满 —— 少了这一句，
+   pre 会按内容高度无限长，然后被 .modal-body 的 overflow 裁掉，滚不动 */
+.modal.code .modal-body { flex: 1; min-height: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+
+.tv-body { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--code-bg); }
+
+/* 两层共用的排版：改这里就等于同时改了两层。
+   选择器必须带上 .modal.code —— 下面那条全局的 `textarea:focus`（特异性 0,1,1）
+   会压过单个类名（0,1,0），给输入框糊上一层不透明底色，正好把背后的高亮层盖死。
+   这是「编辑时一片空白」的真正原因，别把前缀去掉。 */
+.code-font {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  tab-size: 2;
+}
+.modal.code .tv-pre,
+.modal.code .tv-ta {
+  margin: 0;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  tab-size: 2;
+}
+
+/* 只读态：pre 自己滚 */
+.modal.code .tv-pre {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  white-space: pre;
+  color: var(--text);
+  background: transparent;
+}
+.modal.code .tv-pre code { font: inherit; color: inherit; }
+
+/* 编辑态：pre 铺满但只负责显示颜色，滚动由 textarea 驱动 */
+.modal.code .tv-pane { position: relative; flex: 1; min-height: 0; }
+.modal.code .tv-pane .tv-pre {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.modal.code .tv-ta {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  resize: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--accent-hi);
+  overflow: auto;
+  white-space: pre;
+  outline: none;
+}
+/* 聚焦态必须逐项重申一遍：文本在输入层里是透明的，看得见的永远是背后那层高亮，
+   所以输入层任何时候都不能有底色 / 描边 / 阴影。 */
+.modal.code .tv-ta:hover,
+.modal.code .tv-ta:focus,
+.modal.code .tv-ta:active {
+  background: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+.modal.code .tv-ta::selection { background: rgba(78, 155, 234, 0.28); }
+
+/* 读取中 / 被拦下的提示 */
+.tv-msg {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 30px; text-align: center; color: var(--text-dim);
+}
+.tv-msg.blocked { color: var(--muted); }
+.tv-msg-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.tv-msg-sub { max-width: 460px; font-size: 12.5px; line-height: 1.8; }
+.tv-spin {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: tvSpin .7s linear infinite;
+}
+@keyframes tvSpin { to { transform: rotate(360deg); } }
+
+.tv-foot { align-items: center; }
+.tv-hint { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.tv-spacer { flex: 1; }
+
+.tv-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-lang {
+  flex-shrink: 0; padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
+  color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line);
+}
+.tv-dirty {
+  flex-shrink: 0; padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  color: var(--warn); background: rgba(221, 162, 63, 0.12); border: 1px solid rgba(221, 162, 63, 0.3);
+}
+/* 非 UTF-8（GBK 之类）：能看，改不了 —— 得让人一眼知道为什么 */
+.tv-enc {
+  flex-shrink: 0; padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  color: var(--warn); background: rgba(221, 162, 63, 0.12); border: 1px solid rgba(221, 162, 63, 0.3);
+}
+
+/* 语法着色记号（颜色全部来自 --hl-*，两套主题各自定义） */
+.hl-cmt { color: var(--hl-cmt); font-style: italic; }
+.hl-str { color: var(--hl-str); }
+.hl-num { color: var(--hl-num); }
+.hl-kw { color: var(--hl-kw); }
+.hl-tp { color: var(--hl-tp); }
+.hl-fn { color: var(--hl-fn); }
+.hl-prop { color: var(--hl-prop); }
+.hl-tag { color: var(--hl-tag); }
+.hl-var { color: var(--hl-var); }
+.hl-op { color: var(--hl-op); }
+.hl-builtin { color: var(--hl-builtin); }
+.hl-esc { color: var(--hl-esc); }
+.hl-reg { color: var(--hl-reg); }
+.hl-head { color: var(--hl-head); font-weight: 700; }

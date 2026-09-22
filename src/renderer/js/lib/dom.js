@@ -61,6 +61,18 @@ export const warn = (m) => toast(m, 'warn');
 
 /* ---------------------------------------------------------------- Modal */
 
+/**
+ * 通用弹层。
+ *
+ * opts:
+ *   title      标题（字符串）
+ *   wide       图片预览那样的宽版
+ *   className  额外挂到 .modal 上的类名（文本编辑器用 'code' 撑大并换布局）
+ *   actions    标题右侧的小按钮 [{ icon, label, title, className, onClick }]
+ *              文本预览的「在浏览器打开」就走这里 —— 放标题栏才符合直觉，
+ *              沉到底栏会和「保存 / 关闭」混在一起变成一排同权重的按钮
+ *   html/node/text/buttons/onClose/dismissable 同以前
+ */
 export function modal(opts) {
   const o = opts || {};
   const wrap = $('#modalWrap');
@@ -68,10 +80,36 @@ export function modal(opts) {
   wrap.innerHTML = '';
 
   const box = document.createElement('div');
-  box.className = 'modal' + (o.wide ? ' wide' : '');
+  box.className = 'modal' + (o.wide ? ' wide' : '') + (o.className ? ' ' + o.className : '');
   const head = document.createElement('div');
   head.className = 'modal-head';
-  head.textContent = o.title || '';
+
+  const title = document.createElement('span');
+  title.className = 'mh-title';
+  title.textContent = o.title || '';
+  head.appendChild(title);
+
+  if (Array.isArray(o.actions) && o.actions.length) {
+    const acts = document.createElement('div');
+    acts.className = 'mh-actions';
+    o.actions.forEach((a) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mh-btn' + (a.className ? ' ' + a.className : '');
+      if (a.title) btn.title = a.title;
+      if (a.icon) {
+        btn.innerHTML = a.icon + (a.label ? '<span>' + escapeHtml(a.label) + '</span>' : '');
+      } else {
+        btn.textContent = a.label || '';
+      }
+      btn.onclick = () => {
+        if (a.onClick) a.onClick(btn);
+      };
+      acts.appendChild(btn);
+    });
+    head.appendChild(acts);
+  }
+
   const body = document.createElement('div');
   body.className = 'modal-body';
   if (o.html) body.innerHTML = o.html;
@@ -107,7 +145,7 @@ export function modal(opts) {
   wrap.onclick = (e) => {
     if (e.target === wrap && o.dismissable !== false) close();
   };
-  return { close, body, box };
+  return { close, body, box, head, foot: $('.modal-foot', box) };
 }
 
 export function confirmDialog(title, message, confirmLabel) {
@@ -139,11 +177,30 @@ export function confirmDialog(title, message, confirmLabel) {
   });
 }
 
-export function previewImage(src, name) {
+/**
+ * 图片预览。
+ * link 给了就在标题栏挂一个「浏览器打开」—— 和文本预览保持同一套位置与图标，
+ * 不然同一个页面上两种预览框的按钮一个在右上、一个没有，用起来要重新找。
+ */
+export function previewImage(src, name, link) {
   modal({
     title: name || '预览',
     wide: true,
     html: `<img src="${escapeHtml(src)}" alt="" />`,
+    actions: link
+      ? [
+          {
+            icon:
+              '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
+              'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+              '<path d="M13.5 4H20v6.5"/><path d="M20 4l-8.6 8.6"/>' +
+              '<path d="M18.5 14v5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>',
+            label: '浏览器打开',
+            title: '用系统默认浏览器打开这个文件',
+            onClick: () => window.cloudpic.shell.openExternal(link)
+          }
+        ]
+      : [],
     buttons: [{ label: '关闭', primary: true }]
   });
 }
