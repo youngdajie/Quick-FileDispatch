@@ -74,6 +74,14 @@ $:
               BODY="${CNB_TAG_MESSAGE:-$CNB_BRANCH}"
             fi
 
+            # Go 版目前是骨架（云端功能还没接通），标成预发布，也别占「最新版」——
+            # Releases 页的「最新」要留给功能完整的 Electron 版 v2.8.0。
+            # 哪天 Go 版能正常传文件了，把这两个标志翻回来。
+            case "$CNB_BRANCH" in
+              *-go) PRERELEASE=true;  LATEST=false ;;
+              *)    PRERELEASE=false; LATEST=true  ;;
+            esac
+
             # 字段名以 OpenAPI 的 openapi.PostReleaseForm 为准：
             # 是 draft / prerelease，不是 is_draft / is_prerelease
             #（官方 issue 里那份示例写成 is_xxx，会被服务端静默忽略）
@@ -82,8 +90,11 @@ $:
               --arg body "$BODY" \
               --arg tag  "$CNB_BRANCH" \
               --arg sha  "$CNB_BRANCH_SHA" \
-              '{name:$name, body:$body, draft:false, prerelease:false,
-                make_latest:"true", tag_name:$tag, target_commitish:$sha}')
+              --arg pre  "$PRERELEASE" \
+              --arg latest "$LATEST" \
+              '{name:$name, body:$body, draft:false,
+                prerelease:($pre=="true"), make_latest:$latest,
+                tag_name:$tag, target_commitish:$sha}')
 
             URL="${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/releases"
             CODE=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST "$URL" \

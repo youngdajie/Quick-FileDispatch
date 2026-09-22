@@ -47,7 +47,7 @@ import (
 )
 
 // version 跟随 package.json 的版本号；Go 版正式发版后再独立走版本。
-const version = "2.8.0-go.demo1"
+const version = "2.8.0-go"
 
 // appName 必须与 package.json 的 name 保持一致：Electron 的 userData 目录是
 // 「appData + 应用名」，两边对不上就会各自读一份配置，看起来像「配置丢了」。

@@ -6,6 +6,7 @@ release/
 dist-app/
 dist/
 dist-win/
+dist-go/
 
 # 界面截图（自检生成）
 .shots/

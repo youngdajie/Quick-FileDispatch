@@ -16,9 +16,14 @@
 
 ---
 
+> **这条分支（`go`）是主线：Go 版。**
+> 从 2.8.0 起，这个项目全面转向 **Go + WebView2**，不再更新 Electron 版。
+> Electron 版定格在 **v2.8.0**（`main` 分支），功能完整，日常用请继续用它；
+> Go 版正在重写，目前是**骨架**——界面完整，云端能力还没接通。
+
 ## 它是什么
 
-一个基于 **Electron** 的 Windows 桌面应用，把 GitHub / CNB 的免费代码仓库当**文件仓库**用。
+一个 Windows 桌面应用，把 GitHub / CNB 的免费代码仓库当**文件仓库**用。
 
 把文件丢进去，它替你压好、提交上去，再给你一条能直接用的链接——图片在本地用多核 CPU 压缩，其他文件原样上传。仓库装得下的东西都能从这里分发。
 
@@ -64,9 +69,14 @@
 
 ## 快速开始
 
-### 1. 下载安装
+### 1. 下载
 
-到 [Releases](https://cnb.cool/youngdajie/Quick-FileDispatch/-/releases) 下载最新的 `QuickFileDispatch-Setup-x.x.x.exe`，双击安装。
+到 [Releases](https://cnb.cool/youngdajie/Quick-FileDispatch/-/releases) 按需要挑一个：
+
+| 版本 | 给谁 | 形态 |
+| --- | --- | --- |
+| **v2.8.0**（Electron 版） | 日常用，功能完整 | `QuickFileDispatch-Setup-2.8.0.exe`，NSIS 安装包（106 MB） |
+| **2.8.0-go**（Go 版） | 尝鲜、跟踪重写进度 | 单个 exe（约 15 MB），免安装，**目前是骨架，还传不了文件** |
 
 - 系统要求：Windows 10 / 11（x64）
 - 建议装好 [Git](https://git-scm.com/)：本地同步要用它，没装也能浏览云端，只是慢一些
@@ -84,21 +94,22 @@
 
 ### 4. 从源码跑
 
+Go 版（这条分支）：
+
 ```bash
-npm install
-npm run dev       # 开发模式
-npm run dist      # 打包 NSIS 安装包到 dist/
+go build -o qfd-go.exe .    # Go 1.24+，零第三方依赖
+./qfd-go.exe                # 起一个 127.0.0.1 本地服务，并打开应用窗口
+./qfd-go.exe --check        # 自检：逐通道探针 + 本地文件越界测试
 ```
 
-> 国内网络若遇 Electron 二进制下载缓慢：
-> `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install`
+Electron 版的源码在 `main` 分支（`npm install && npm run dev`），定格于 2.8.0。
 
 ## 技术栈
 
-- **运行时**：Electron 44（Chromium + Node）
-- **界面**：原生 ES Module + 手写 CSS，没有前端框架；主进程与渲染进程之间只有一层显式 IPC
+- **外壳**：Go，只用标准库（零第三方依赖）；渲染层用 `go:embed` 整个编进 exe
+- **界面**：原生 ES Module + 手写 CSS，没有前端框架 —— 与 Electron 版是**同一份渲染层代码**，通过一个 `window.cloudpic` 接缝接到本机 127.0.0.1 服务上（过渡期窗口用 Edge 应用模式，正式版换 WebView2 原生窗口）
 - **压缩**：Web Worker 线程池 + OffscreenCanvas；AVIF 编码器来自 [jSquash](https://github.com/jamsinclair/jSquash)（Apache-2.0，见 `src/renderer/vendor/avif/`）
 - **Git**：调用本机 `git` 命令行（克隆、比对、提交、推送），不打包 libgit2
 - **平台接口**：GitHub REST v3 + Git Data API；CNB Open API + 本地 Git 提交
 - **凭据**：Token 经 Windows DPAPI 加密后落盘
-- **打包**：electron-builder → NSIS
+- **打包**：`go build` 出一个 exe 就完事，没有安装器；Electron 版那条路（electron-builder → NSIS）随 2.8.0 定格，不再使用
