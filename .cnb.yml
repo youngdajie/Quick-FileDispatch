@@ -19,6 +19,15 @@
 # 第 4 步一推，这里就自动跑起来。
 #
 # 注：标签一旦推上去就删不掉了（服务端 hook 会拒），要重跑流水线只能改配置再推新标签。
+#
+# 关于存储 —— 2026-09-23 实测，别再凭感觉估：
+#   对象存储用量 = Git LFS 对象 + Release 附件，同一份安装包被算了**两份**。
+#   拿所有版本的文件大小求和，正好等于用量页面上的数字（差 3.9 KB 元数据）。
+#   附件那一份由最后那个「清理旧版本」stage 每发一版回收一次，只留最新一版。
+#   LFS 那一份**回收不掉**：对象按 OID 存在服务端，只要还有 ref（标签）指向
+#   含该指针文件的提交，它就得留着；而标签删不掉（见上一条）。所以 LFS 会按
+#   一版约 106 MB 单向增长。免费额度 100 GiB，眼下远够用 —— 但别再往仓库里
+#   塞第二份大文件（例如顺手把 unpacked 目录也提交了）。
 
 $:
   tag_push:
@@ -76,3 +85,40 @@ $:
           settings:
             attachments:
               - "./installers/*.exe"
+
+        # 清理历次版本的安装包，只留这一版。
+        #
+        # 为什么非清不可：同一份安装包在对象存储里存了两份 —— 一份是 Git LFS 的对象，
+        # 一份是 Release 附件（attachments 插件是重新上传，不是引用 LFS 对象）。
+        # 实测两者字节数完全相等，用量页面把两份加在一起算。附件这份是可以回收的，
+        # 不清就会一版一版堆下去（2026-09-23 清掉了 6 个旧版本、约 330 MiB）。
+        #
+        # 必须排在「挂安装包」之后：先把当前版本的附件挂上，再挑出要保留的那一版来删。
+        # 判断依据用 is_latest 而不是写死 tag 名，重复跑是幂等的。
+        #
+        # 清理失败不能让发版变红，所以脚本哪里出错都走 exit 0。
+        - name: 清理旧版本
+          script: |
+            URL="${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/releases"
+            curl -sS "$URL?pageSize=100" \
+              -H "Authorization: Bearer ${CNB_TOKEN}" \
+              -H "Accept: application/vnd.cnb.api+json" \
+              -o /tmp/list.json || { echo "拉版本列表失败，跳过清理"; exit 0; }
+
+            # 注意：这个接口返回的是**裸数组**，不是 {data:[...]}。
+            # cnb CLI 打印出来的 data: 那层信封是它自己加的，照它写 jq 会报
+            # "Cannot index array with string \"data\""。
+            KEEP=$(jq -r '.[] | select(.is_latest == true) | .tag_name' /tmp/list.json)
+            if [ -z "$KEEP" ]; then
+              echo "没找到 latest 版本，为安全起见不删任何东西"; exit 0
+            fi
+            echo "保留：${KEEP}"
+
+            jq -r '.[] | select(.is_latest != true) | "\(.id)\t\(.tag_name)"' /tmp/list.json |
+            while IFS="$(printf '\t')" read -r RID TAG; do
+              CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$URL/$RID" \
+                -H "Authorization: Bearer ${CNB_TOKEN}" \
+                -H "Accept: application/vnd.cnb.api+json")
+              echo "删除旧版本 $TAG -> HTTP $CODE"
+            done
+            exit 0
