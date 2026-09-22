@@ -9,6 +9,9 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+// 异步文件 API：主进程里做递归遍历/删除时只能用这个，
+// 同步版本（statSync/readdirSync）会把主线程卡住，连带所有 IPC 一起停摆。
+const fsp = fs.promises;
 
 const { Store, migrateLegacyUserData } = require('./store');
 const { startServer, allowRoot } = require('./server');
@@ -118,6 +121,62 @@ function cnbConn() {
   };
 }
 
+/* ------------------------------------------------- 仓库数据缓存 / 并发去重
+ *
+ * 为什么需要这层：切一份配置会连着触发 2~3 次界面重画，而每次重画都要问一遍
+ * 「Git 在不在、本地目录干不干净」，一次 git:status 实测要起 6 个 git 进程、
+ * 200ms 以上；云端那一轮还会递归统计整个仓库（最多 60 次接口请求）。
+ * 配置一多、又来回点几份配置时，这些活会叠在一起，界面就变成「点了没反应」。
+ *
+ * 所以按「仓库身份」做三件事：短缓存、同一件事只跑一个、写完立刻作废。
+ */
+const GIT_STATUS_TTL = 2500;
+const REPO_STATS_TTL = 30000;
+// 检测是只读的，但 CNB 那份要跑一次 git fetch（走网络）。来回点几份配置时
+// 每点一次都重算没意义，留 1.5 秒；任何写操作都会立刻作废它。
+const DETECT_TTL = 1500;
+
+const repoCache = new Map(); // key -> { at, data }
+const repoInflight = new Map(); // key -> Promise
+let gitVersionCache; // Git 版本一个会话里不会变，只探一次
+
+/** 当前仓库的身份串：换仓库 / 换分支 / 换本地目录都会变，缓存自然失效 */
+function repoKey() {
+  const cfg = cfgRaw();
+  return [cfg.platform || 'github', cfg.owner || '', cfg.repo || '', cfg.branch || 'main', cfg.localDir || ''].join('|');
+}
+
+/**
+ * 带缓存的仓库查询。
+ *
+ * @param {string} key  缓存键
+ * @param {number} ttl  毫秒；<=0 表示不缓存结果、只做并发去重（用于「必须现算」的检测）
+ * @param {Function} fn 真正干活的函数
+ */
+function cachedRepo(key, ttl, fn) {
+  if (ttl > 0) {
+    const hit = repoCache.get(key);
+    if (hit && Date.now() - hit.at < ttl) return Promise.resolve(hit.data);
+  }
+  // 同一件事已经在跑就跟着它 —— 连点配置时不会叠出第二份 git / 接口请求
+  const flying = repoInflight.get(key);
+  if (flying) return flying;
+  const p = Promise.resolve()
+    .then(fn)
+    .then((data) => {
+      if (ttl > 0) repoCache.set(key, { at: Date.now(), data });
+      return data;
+    })
+    .finally(() => repoInflight.delete(key));
+  repoInflight.set(key, p);
+  return p;
+}
+
+/** 仓库内容变了（上传 / 删除 / 改名 / 替换 / 推送 / 拉取 / 克隆）—— 缓存立刻作废 */
+function invalidateRepoCache() {
+  repoCache.clear();
+}
+
 /** 文件上限提示文案，跟着平台走 */
 function fileTooBigMsg(platform, size) {
   return platform === 'cnb'
@@ -143,6 +202,8 @@ function mimeOf(name) {
 
 /** 上传后把云端变更同步回本地仓库 */
 async function syncLocal(reason) {
+  // 能走到这里说明云端刚被写过，仓库统计数据立刻作废，别让界面继续显示旧数字
+  invalidateRepoCache();
   const cfg = cfgRaw();
   const dir = cfg.localDir;
   if (!dir || !cfg.sync || cfg.sync.autoPull === false) return { skipped: true, message: '未启用自动同步' };
@@ -2732,7 +2793,7 @@ function registerIpc() {
     const localReady = !!(cfg.localDir && local.exists(cfg.localDir) && (await git.isRepo(cfg.localDir)));
 
     if (p.source === 'local' && localReady) {
-      const items = local.listDir(cfg.localDir, dirRel);
+      const items = await local.listDir(cfg.localDir, dirRel);
       return { source: 'local', dir: dirRel, items, localReady };
     }
     const client = buildClient();
@@ -2745,7 +2806,7 @@ function registerIpc() {
     const cfg = cfgRaw();
     const localReady = !!(cfg.localDir && local.exists(cfg.localDir) && (await git.isRepo(cfg.localDir)));
     if (p.source === 'local' && localReady) {
-      return { source: 'local', tree: local.tree(cfg.localDir, '', 0, 2) };
+      return { source: 'local', tree: await local.tree(cfg.localDir, '', 0, 2) };
     }
     // 远程模式：只列出一级目录（逐层点开时再请求），避免一次拉爆接口
     const client = buildClient();
@@ -2760,11 +2821,17 @@ function registerIpc() {
     const p = payload || {};
     const cfg = cfgRaw();
     if (p.source === 'local' && cfg.localDir && local.exists(cfg.localDir)) {
-      return Object.assign({ source: 'local' }, local.countDir(cfg.localDir));
+      const dir = cfg.localDir;
+      return cachedRepo('stats|local|' + repoKey(), REPO_STATS_TTL, async () =>
+        Object.assign({ source: 'local' }, await local.countDir(dir))
+      );
     }
-    const client = buildClient();
-    const r = await client.countFiles('');
-    return Object.assign({ source: 'remote' }, r);
+    // 远程统计要递归调接口（最多 60 次请求），切配置时最容易被反复触发 —— 必须缓存
+    return cachedRepo('stats|remote|' + repoKey(), REPO_STATS_TTL, async () => {
+      const client = buildClient();
+      const r = await client.countFiles('');
+      return Object.assign({ source: 'remote' }, r);
+    });
   });
 
   ipcMain.handle('cloud:upload', async (e, payload) => {
@@ -2891,6 +2958,7 @@ function registerIpc() {
     if (fs.existsSync(absTo) && !(payload && payload.overwrite)) throw new Error('目标位置已存在同名文件：' + to);
     local.ensureDir(path.dirname(absTo));
     fs.renameSync(absFrom, absTo);
+    invalidateRepoCache();
     return { ok: true, from, to };
   });
 
@@ -2905,26 +2973,33 @@ function registerIpc() {
     if (!buf.length) throw new Error('替换的内容为空');
     local.ensureDir(path.dirname(abs));
     fs.writeFileSync(abs, buf);
+    invalidateRepoCache();
     return { ok: true, path: rel, size: buf.length };
   });
 
   // ---- 本地目录：删除文件
-  ipcMain.handle('fs:localDelete', (e, payload) => {
+  ipcMain.handle('fs:localDelete', async (e, payload) => {
     const cfg = cfgRaw();
     if (!cfg.localDir || !local.exists(cfg.localDir)) throw new Error('尚未配置本地目录');
     const paths = (Array.isArray(payload && payload.paths) ? payload.paths : []).map(CPLinks.normalizePath).filter(Boolean);
-    const results = paths.map((rel) => {
+    // 逐条异步删：删的可能是整个文件夹（几千张图），同步删会把主进程连同界面一起卡住
+    const results = [];
+    for (const rel of paths) {
       try {
         const abs = local.safeJoin(cfg.localDir, rel);
-        if (!fs.existsSync(abs)) return { path: rel, ok: false, error: '文件不存在' };
-        const st = fs.statSync(abs);
-        if (st.isDirectory()) fs.rmSync(abs, { recursive: true, force: true });
-        else fs.unlinkSync(abs);
-        return { path: rel, ok: true, error: null };
+        if (!fs.existsSync(abs)) {
+          results.push({ path: rel, ok: false, error: '文件不存在' });
+          continue;
+        }
+        const st = await fsp.stat(abs);
+        if (st.isDirectory()) await fsp.rm(abs, { recursive: true, force: true });
+        else await fsp.unlink(abs);
+        results.push({ path: rel, ok: true, error: null });
       } catch (err) {
-        return { path: rel, ok: false, error: err.message };
+        results.push({ path: rel, ok: false, error: err.message });
       }
-    });
+    }
+    invalidateRepoCache();
     return { ok: results.some((r) => r.ok), results };
   });
 
@@ -2935,7 +3010,7 @@ function registerIpc() {
     if (!dir || !local.exists(dir)) throw new Error('尚未配置本地目录');
     if (!(await git.isRepo(dir))) throw new Error('本地目录不是 Git 仓库，无法推送');
     if (!cfg.owner || !cfg.repo) throw new Error('请先配置仓库信息');
-    return git.commitAndPush({
+    const r = await git.commitAndPush({
       platform: cfg.platform,
       owner: cfg.owner,
       repo: cfg.repo,
@@ -2944,19 +3019,28 @@ function registerIpc() {
       dir,
       message: (payload && payload.message) || cfg.commitMessage || 'chore: 通过 JIE 分发服务更新'
     });
+    // 推完「还有没有未推送的改动」就变了，缓存里的旧结论必须作废
+    invalidateRepoCache();
+    return r;
   });
 
-  ipcMain.handle('git:version', async () => ({ version: await git.version() }));
+  ipcMain.handle('git:version', async () => {
+    if (gitVersionCache === undefined) gitVersionCache = await git.version();
+    return { version: gitVersionCache };
+  });
 
   ipcMain.handle('git:status', async () => {
     const cfg = cfgRaw();
     const dir = cfg.localDir;
     if (!dir || !local.exists(dir)) return { configured: false, isRepo: false };
-    const isRepo = await git.isRepo(dir);
-    if (!isRepo) return { configured: true, isRepo: false, dir };
-    const st = await git.status(dir);
-    const sum = await git.repoSummary(dir);
-    return Object.assign({ configured: true, isRepo: true, dir }, st, sum || {});
+    // 界面上每次重画都要问一遍，但同一个仓库几百毫秒内问三次没意义 —— 合并掉
+    return cachedRepo('git-status|' + repoKey(), GIT_STATUS_TTL, async () => {
+      const isRepo = await git.isRepo(dir);
+      if (!isRepo) return { configured: true, isRepo: false, dir };
+      const st = await git.status(dir);
+      const sum = await git.repoSummary(dir);
+      return Object.assign({ configured: true, isRepo: true, dir }, st, sum || {});
+    });
   });
 
   ipcMain.handle('git:clone', async (e, payload) => {
@@ -2975,6 +3059,7 @@ function registerIpc() {
     if (r.ok) {
       store.patch({ localDir: dir });
       allowRoot(dir);
+      invalidateRepoCache(); // 本地目录换了，旧的 git / 统计结论作废
     }
     return r;
   });
@@ -2994,7 +3079,10 @@ function registerIpc() {
    * 只读不写：任何「拉/推」都由渲染层拿到结论后再显式触发，
    * 免得进个页面就悄悄改了仓库。
    */
-  ipcMain.handle('cloud:detect', async () => {
+  ipcMain.handle('cloud:detect', () => cachedRepo('detect|' + repoKey(), DETECT_TTL, detectCloud));
+
+  /** 检测器的实际逻辑；同一份配置同时只跑一个（去重见 cachedRepo），免得连点配置时叠出多次 git fetch */
+  async function detectCloud() {
     const cfg = cfgRaw();
     const branch = cfg.branch || 'main';
     const out = {
@@ -3117,7 +3205,7 @@ function registerIpc() {
     out.relation = cmp.ahead && cmp.behind ? 'diverged' : cmp.ahead ? 'local-ahead' : cmp.behind ? 'local-behind' : 'same';
     out.ok = true;
     return out;
-  });
+  }
 
   /** 检测器给出「云端旧、本地新」结论后，用户点「推送到云端」走这里 */
   ipcMain.handle('cloud:pushLocal', async () => {

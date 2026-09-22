@@ -17,6 +17,7 @@
  */
 
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 const { app } = require('electron');
 
@@ -28,9 +29,15 @@ function tmpRoot() {
   return path.join(app.getPath('userData'), 'cnb-work');
 }
 
-function removeDir(dir) {
+/**
+ * 删掉临时工作区。
+ * 用异步删：临时克隆出来的是整个仓库，可能几千个文件，同步删会把主进程卡住，
+ * 而这一步只是收尾清理，没必要拦住界面。
+ */
+async function removeDir(dir) {
   try {
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    if (!fs.existsSync(dir)) return;
+    await fsp.rm(dir, { recursive: true, force: true, maxRetries: 3 });
   } catch (e) {
     /* 删不掉就算了，下次启动可以再清 —— 别因为清理失败让主流程报错 */
   }
@@ -78,7 +85,7 @@ async function withWorkspace(conn, fn) {
   try {
     return { used: 'temp', dir: tmp, result: await fn(tmp), message: '已通过临时克隆提交' };
   } finally {
-    removeDir(tmp);
+    await removeDir(tmp);
   }
 }
 
