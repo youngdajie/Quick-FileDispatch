@@ -18,8 +18,8 @@
 
 > **这条分支（`go`）是主线：Go 版。**
 > 从 2.8.0 起，这个项目全面转向 **Go + WebView2**，不再更新 Electron 版。
-> Electron 版定格在 **v2.8.0**（`main` 分支），功能完整，日常用请继续用它；
-> Go 版正在重写，目前是**骨架**——界面完整，云端能力还没接通。
+> Electron 版定格在 **v2.8.0**，仍可从 Releases 下载，源码在 git 历史（v2.8.0 标签）里；
+> 当前版本 **2.8.1-go** 功能完整，日常使用请用它。
 
 ## 它是什么
 
@@ -75,8 +75,8 @@
 
 | 版本 | 给谁 | 形态 |
 | --- | --- | --- |
-| **v2.8.0**（Electron 版） | 日常用，功能完整 | `QuickFileDispatch-Setup-2.8.0.exe`，NSIS 安装包（106 MB） |
-| **2.8.0-go**（Go 版） | 尝鲜、跟踪重写进度 | 单个 exe（约 15 MB），免安装，**目前是骨架，还传不了文件** |
+| **2.8.1-go**（Go 版，当前） | 日常用 | NSIS 安装包（约 7 MB）或免安装单 exe（约 15 MB） |
+| **v2.8.0**（Electron 版，定格） | 备用 | `QuickFileDispatch-Setup-2.8.0.exe`，NSIS 安装包（106 MB） |
 
 - 系统要求：Windows 10 / 11（x64）
 - 建议装好 [Git](https://git-scm.com/)：本地同步要用它，没装也能浏览云端，只是慢一些
@@ -100,16 +100,18 @@ Go 版（这条分支）：
 go build -o qfd-go.exe .    # Go 1.24+，零第三方依赖
 ./qfd-go.exe                # 起一个 127.0.0.1 本地服务，并打开应用窗口
 ./qfd-go.exe --check        # 自检：逐通道探针 + 本地文件越界测试
+bash tools/installer/build.sh   # 出 NSIS 安装包（需要 NSIS 与 rcedit）
 ```
 
-Electron 版的源码在 `main` 分支（`npm install && npm run dev`），定格于 2.8.0。
+Electron 版的源码定格在 v2.8.0 标签的 git 历史里。
 
 ## 技术栈
 
 - **外壳**：Go，只用标准库（零第三方依赖）；渲染层用 `go:embed` 整个编进 exe
-- **界面**：原生 ES Module + 手写 CSS，没有前端框架 —— 与 Electron 版是**同一份渲染层代码**，通过一个 `window.cloudpic` 接缝接到本机 127.0.0.1 服务上（过渡期窗口用 Edge 应用模式，正式版换 WebView2 原生窗口）
+- **窗口**：WebView2 原生窗口（`internal/wvhost`，纯 syscall 驱动 COM，零依赖）——无边框 + 渲染层自绘标题栏，`-H=windowsgui` 双击不弹控制台
+- **界面**：原生 ES Module + 手写 CSS，没有前端框架 —— 与 Electron 版是**同一份渲染层代码**，通过一个 `window.cloudpic` 接缝接到本机 127.0.0.1 服务上
 - **压缩**：Web Worker 线程池 + OffscreenCanvas；AVIF 编码器来自 [jSquash](https://github.com/jamsinclair/jSquash)（Apache-2.0，见 `src/renderer/vendor/avif/`）
 - **Git**：调用本机 `git` 命令行（克隆、比对、提交、推送），不打包 libgit2
 - **平台接口**：GitHub REST v3 + Git Data API；CNB Open API + 本地 Git 提交
 - **凭据**：Token 经 Windows DPAPI 加密后落盘
-- **打包**：`go build` 出一个 exe 就完事，没有安装器；Electron 版那条路（electron-builder → NSIS）随 2.8.0 定格，不再使用
+- **打包**：`tools/installer/build.sh` 一条龙 —— `go build`（windowsgui）→ rcedit 注入图标与版本信息 → NSIS 安装包（约 7 MB）
