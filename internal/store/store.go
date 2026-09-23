@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dpapi"
 )
 
 // 与 Electron 版 store.js 的 DEFAULT_CONFIG 逐字段对应，改一处必须改两处。
@@ -90,15 +92,26 @@ type Store struct {
 	mu   sync.Mutex
 	file string
 	data map[string]any
+	// vault 负责 Token 的加解密。为 nil 时**不碰** Token 真值
+	// （自检里可以用临时配置跑，不惊动本机的加密材料）。
+	vault *dpapi.Vault
+	// onTokenFail 是「Token 解不开」时的回调，只用于打日志。
+	// 解不开不是错误 —— 换了用户 / 重装系统都会这样，
+	// 界面该显示「没有 Token」，但排查时需要知道原因。
+	onTokenFail func(error)
 }
 
-func New(file string) *Store {
-	s := &Store{file: file}
+// New 打开一份配置。vault 可以为 nil（此时不读写 Token 真值）。
+func New(file string, vault *dpapi.Vault) *Store {
+	s := &Store{file: file, vault: vault}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data = s.read()
 	return s
 }
+
+// SetTokenFailHook 装一个「Token 解不开」的回调，用于打印原因。
+func (s *Store) SetTokenFailHook(fn func(error)) { s.onTokenFail = fn }
 
 func (s *Store) File() string { return s.file }
 
@@ -125,7 +138,7 @@ func (s *Store) read() map[string]any {
 		fmt.Fprintf(os.Stderr, "配置解析失败，按默认值走（文件未改动）：%s\n", err)
 		return Defaults()
 	}
-	return merge(Defaults(), parsed)
+	return migrate(merge(Defaults(), parsed))
 }
 
 // write 先写临时文件再改名，避免中途断电留下半截 JSON。
@@ -158,9 +171,9 @@ func (s *Store) view() map[string]any {
 		out = map[string]any{}
 	}
 
-	hasToken := hasAnyToken(s.data)
-	out["hasToken"] = hasToken
-	out["tokenMask"] = maskPlaceholder(hasToken)
+	token := s.decryptToken(s.data)
+	out["hasToken"] = token != ""
+	out["tokenMask"] = maskToken(token)
 	delete(out, "_tokenEnc")
 	delete(out, "_tokenPlain")
 
@@ -176,9 +189,9 @@ func (s *Store) view() map[string]any {
 		if cp == nil {
 			continue
 		}
-		ph := hasAnyToken(p)
-		cp["hasToken"] = ph
-		cp["tokenMask"] = maskPlaceholder(ph)
+		t := s.decryptToken(p)
+		cp["hasToken"] = t != ""
+		cp["tokenMask"] = maskToken(t)
 		id, _ := p["id"].(string)
 		cp["isActive"] = id != "" && id == activeID
 		cp["label"] = profileLabel(p)
@@ -192,6 +205,28 @@ func (s *Store) view() map[string]any {
 	return out
 }
 
+// maskToken 脱敏：首尾各留 4 位，中间补星。
+//
+// 留首尾是有用的 —— 用户手里往往有好几个 Token，
+// 全打星的话「现在用的是哪一个」根本看不出来。
+func maskToken(t string) string {
+	if t == "" {
+		return ""
+	}
+	if len(t) <= 8 {
+		return "********"
+	}
+	stars := t[4 : len(t)-4]
+	if len(stars) > 12 {
+		stars = stars[:12]
+	}
+	masked := ""
+	for range stars {
+		masked += "*"
+	}
+	return t[:4] + masked + t[len(t)-4:]
+}
+
 // Patch 深度合并一组改动并落盘。
 func (s *Store) Patch(patch map[string]any) (map[string]any, error) {
 	if patch == nil {
@@ -200,18 +235,22 @@ func (s *Store) Patch(patch map[string]any) (map[string]any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Token 单独处理：留空 / 全是 * 都表示「不改」，跟 Electron 版一致，
-	// 免得设置页里那个被掩码填充的输入框一保存就把真 Token 冲成 ****
+	// Token 单独处理：留空 / 全是 * 都表示「不改」——
+	// 设置页那个输入框里填的是掩码，一保存如果当真值写进去，
+	// 用户的 Token 就变成了 ****
 	if tok, ok := patch["token"]; ok {
 		delete(patch, "token")
-		if t, isStr := tok.(string); isStr && t != "" && strings.Trim(t, "*") != "" {
-			// 待办：这里应该走 DPAPI 加密后写 _tokenEnc。
-			// 在加密落地之前先不落盘，宁可让用户重填，也不要明文躺在磁盘上。
-			return nil, errors.New("Token 落盘加密还没实现（待接 DPAPI），本次未写入")
+		if t, isStr := tok.(string); isStr && t != "" && !isAllStars(t) {
+			if err := s.encryptInto(s.data, t); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	s.data = merge(s.data, patch)
+	// 顶层是「当前生效那份」的镜像，改完要同步回去，
+	// 否则切走再切回来会看到旧值
+	s.syncActiveLocked()
 	if err := s.write(); err != nil {
 		return nil, err
 	}
@@ -219,14 +258,30 @@ func (s *Store) Patch(patch map[string]any) (map[string]any, error) {
 }
 
 // Reset 恢复默认设置并落盘（对应设置页的「恢复默认设置」）。
+//
+// 这是全程序唯一一个「一次调用就全毁」的操作：profiles、Token、链接规则
+// 一起没。真跑之前先把旧文件备份到 config.json.reset-bak.json ——
+// 「恢复默认」防不住手滑，留一份后路防得住。
 func (s *Store) Reset() (map[string]any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data = Defaults()
+	if raw, err := os.ReadFile(s.file); err == nil {
+		_ = os.WriteFile(s.file+".reset-bak.json", raw, 0o644)
+	}
+	s.data = migrate(Defaults())
 	if err := s.write(); err != nil {
 		return nil, err
 	}
 	return s.view(), nil
+}
+
+// Raw 取配置的原始结构（含 Token 加密字段），只给主进程内部用。
+// 对外一律走 Get / view —— 那是剥掉 Token 的版本。
+func (s *Store) Raw() map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out, _ := deepCopy(s.data).(map[string]any)
+	return out
 }
 
 /* ------------------------------------------------------------ 小工具 */
@@ -266,6 +321,59 @@ func deepCopy(v any) any {
 	}
 }
 
+/* ------------------------------------------------------------ 取值小工具
+ *
+ * 配置是从 JSON 解出来的，所有数字都是 float64、所有字段都可能不存在。
+ * 这一组函数统一处理「取不到 / 类型不对 / 空值」三种情况，
+ * 免得每个调用点都写一遍类型断言 —— 那正是「某个开关自己变回默认了」
+ * 这类 bug 的温床（一处漏了零值判断，默认值就被静默写进去）。
+ */
+
+// str 取字符串，取不到给空串。
+func str(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+// defStr 取字符串，空值回落到 def。
+func defStr(v any, def string) string {
+	if s, ok := v.(string); ok && s != "" {
+		return s
+	}
+	return def
+}
+
+// defOr 取任意值，nil 时回落到 def。
+func defOr(v, def any) any {
+	if v == nil {
+		return def
+	}
+	return v
+}
+
+// numOf 取数字。JSON 里解出来是 float64，但手改过的配置也可能是别的类型。
+func numOf(v any) int64 {
+	switch t := v.(type) {
+	case float64:
+		return int64(t)
+	case float32:
+		return int64(t)
+	case int:
+		return int64(t)
+	case int64:
+		return t
+	}
+	return 0
+}
+
+// nonEmpty 判断字符串字段有没有填。
+func nonEmpty(v any) bool {
+	s, ok := v.(string)
+	return ok && s != ""
+}
+
+// hasAnyToken 只回答「有没有」，不解密 —— 给不需要真值的地方用
+// （比如判断要不要提示用户去填 Token）。
 func hasAnyToken(m map[string]any) bool {
 	for _, k := range []string{"_tokenEnc", "_tokenPlain", "token"} {
 		if v, ok := m[k].(string); ok && v != "" {
@@ -273,15 +381,6 @@ func hasAnyToken(m map[string]any) bool {
 		}
 	}
 	return false
-}
-
-// maskPlaceholder：还不解密 Token，所以只能给个占位掩码。
-// 待 DPAPI 接上之后换成真正的首尾各留几位的脱敏。
-func maskPlaceholder(has bool) string {
-	if has {
-		return "****"
-	}
-	return ""
 }
 
 func profileLabel(p map[string]any) string {

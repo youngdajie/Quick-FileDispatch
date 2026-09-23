@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -32,17 +33,25 @@ type handler struct {
 	reg    *ipc.Registry
 	static fs.FS
 	bridge []byte
-	// localRoot 返回当前配置里绑定的本地目录，用来给 /__local 划边界。
-	// 传函数而不是字符串：切配置之后要立刻生效，不能缓存。
-	localRoot func() string
-	files     http.Handler
+	// allows 判断某个绝对路径能不能被 /__local 读出来。
+	// 传函数而不是字符串：切配置 / 绑新目录之后要立刻生效，不能缓存。
+	allows func(abs string) bool
+	// remote 抓远程仓库里的文件字节（私有仓库预览要用：Token 只留在后端）。
+	// 为 nil 时 /__remote 直接 503 —— 那时还没配好仓库，属正常状态。
+	remote func(rel string) ([]byte, string, error)
+	files  http.Handler
 
 	// 未实现的通道只提醒一次，否则界面上点几下就是满屏重复日志
 	notified sync.Map
 }
 
 // New 组装路由。
-func New(reg *ipc.Registry, static fs.FS, bridge []byte, localRoot func() string) http.Handler {
+//
+// allows 决定 /__local 能读哪些路径；remote 给 /__remote 提供内容。
+// 两个都不能为 nil —— 前者是安全边界，后者缺失会让私有仓库的缩略图全部 404。
+func New(reg *ipc.Registry, static fs.FS, bridge []byte,
+	allows func(string) bool,
+	remote func(rel string) ([]byte, string, error)) http.Handler {
 	// Go 自带的 MIME 表认不出 avif / wasm，不补的话浏览器会按
 	// application/octet-stream 处理，wasm 直接不给实例化
 	_ = mime.AddExtensionType(".avif", "image/avif")
@@ -50,17 +59,19 @@ func New(reg *ipc.Registry, static fs.FS, bridge []byte, localRoot func() string
 	_ = mime.AddExtensionType(".webp", "image/webp")
 
 	h := &handler{
-		reg:       reg,
-		static:    static,
-		bridge:    bridge,
-		localRoot: localRoot,
-		files:     http.FileServerFS(static),
+		reg:    reg,
+		static: static,
+		bridge: bridge,
+		allows: allows,
+		remote: remote,
+		files:  http.FileServerFS(static),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ipc", h.ipc)
 	mux.HandleFunc("/bridge.js", h.bridgeJS)
 	mux.HandleFunc("/__local", h.localFile)
+	mux.HandleFunc("/__remote", h.remoteFile)
 	mux.HandleFunc("/", h.front)
 	return mux
 }
@@ -173,8 +184,7 @@ func (h *handler) writeJSON(w http.ResponseWriter, v any) {
 // 这个服务监听在 127.0.0.1 上，本机任何程序都能访问，
 // 不设边界的话它就变成了一个「读任意路径」的接口。
 func (h *handler) localFile(w http.ResponseWriter, r *http.Request) {
-	root := h.localRoot()
-	if root == "" {
+	if h.allows == nil {
 		http.Error(w, "还没有绑定本地目录", http.StatusForbidden)
 		return
 	}
@@ -184,8 +194,8 @@ func (h *handler) localFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clean := filepath.Clean(filepath.FromSlash(p))
-	if !filepath.IsAbs(clean) || !within(root, clean) {
-		http.Error(w, "越界了：只能读当前本地目录里的文件", http.StatusForbidden)
+	if !filepath.IsAbs(clean) || !h.allows(clean) {
+		http.Error(w, "越界了：只能读已放行的目录里的文件", http.StatusForbidden)
 		return
 	}
 	f, err := os.Open(clean)
@@ -201,6 +211,57 @@ func (h *handler) localFile(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeContent(w, r, filepath.Base(clean), st.ModTime(), f)
+}
+
+/* ------------------------------------------------------------ 远程文件代理 */
+
+// remoteFile 对应渲染层的 cloudpic.remoteUrl(相对路径) → /__remote?p=...
+//
+// 为什么不能让浏览器直接去取 raw 地址：私有仓库的直链带了签名会过期，
+// 而带 Token 请求又不能把 Token 交给渲染层。所以由后端代取一次，
+// Token 从头到尾不出进程 —— 这也是「预览代理」这件事唯一安全的做法。
+//
+// 带 ETag：列表里同一张图会被反复请求（滚动、切页、刷新），
+// 没有 ETag 就要每次都真的去云端拉一遍。
+func (h *handler) remoteFile(w http.ResponseWriter, r *http.Request) {
+	if h.remote == nil {
+		http.Error(w, "云端还没配置好", http.StatusServiceUnavailable)
+		return
+	}
+	p := r.URL.Query().Get("p")
+	if p == "" {
+		http.Error(w, "缺 p 参数", http.StatusBadRequest)
+		return
+	}
+	etag := `"` + hashLite(p) + `"`
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	body, contentType, err := h.remote(p)
+	if err != nil {
+		http.Error(w, "取不到远程文件："+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.Header().Set("ETag", etag)
+	// 60 秒：文件可能被替换过，缓存太久会一直显示旧图
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Write(body)
+}
+
+// hashLite 是个非加密的短哈希，只用来给 ETag 当指纹。
+// 用 djb2 而不是 sha256：这里要的不是防碰撞，只是「同一个路径同一个值」。
+func hashLite(s string) string {
+	var h uint32 = 5381
+	for i := 0; i < len(s); i++ {
+		h = ((h << 5) + h + uint32(s[i])) & 0xFFFFFFFF
+	}
+	return strconv.FormatUint(uint64(h), 36)
 }
 
 // within 判断 child 是不是在 root 底下（含 root 自身）。

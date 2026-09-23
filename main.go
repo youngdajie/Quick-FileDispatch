@@ -41,6 +41,7 @@ import (
 	"strings"
 	"time"
 
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dpapi"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/ipc"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/webui"
@@ -74,7 +75,15 @@ func run(headless, check, dev bool, port int, profile string) error {
 	if err != nil {
 		return err
 	}
-	st := store.New(filepath.Join(cfgDir, "config.json"))
+	// Token 的加密材料挂在配置目录里（Local State 与 config.json 同级）。
+	// --profile 指向临时目录时，这一整套也跟着走，不会碰本机的真实加密材料。
+	vault := dpapi.New(cfgDir)
+	st := store.New(filepath.Join(cfgDir, "config.json"), vault)
+	// 解不开老 Token 时打一句原因：这种情况界面只显示「没有 Token」，
+	// 不打日志的话完全查不出是「换了用户」还是「我们的代码解错了」
+	st.SetTokenFailHook(func(err error) {
+		fmt.Fprintf(os.Stderr, "[token] 解不开已存的 Token（多半是换过 Windows 用户或重装过系统）：%v\n", err)
+	})
 
 	static := renderer
 	if dev {
@@ -85,9 +94,17 @@ func run(headless, check, dev bool, port int, profile string) error {
 		Store:     st,
 		Version:   version,
 		ConfigDir: cfgDir,
+		TmpRoot:   filepath.Join(cfgDir, "cnb-work"),
 	}
 	reg := ipc.New()
 	ipc.Register(reg, env)
+
+	// 两个闭包捕获的是 env 这个指针变量，调用时才取值 ——
+	// 所以哪怕这里 env 还没用完也不影响（切仓库后读到的也是最新配置）
+	handler := webui.New(reg, static, bridgeJS,
+		func(abs string) bool { return env.AllowsLocal(abs) },
+		func(rel string) ([]byte, string, error) { return env.FetchRemote(rel) },
+	)
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
@@ -96,7 +113,7 @@ func run(headless, check, dev bool, port int, profile string) error {
 	base := "http://" + ln.Addr().String()
 
 	srv := &http.Server{
-		Handler: webui.New(reg, static, bridgeJS, st.LocalDir),
+		Handler: handler,
 		// 上传大文件时写超时要给够，否则一次几 MB 的图片就会被掐断
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second,
@@ -372,18 +389,47 @@ func selfCheck(base string) error {
 			}
 			return "写入后再读，值对得上", nil
 		}},
-		{"未实现的通道会明确报错", func() (string, error) {
+		// 这条以前是「未实现的通道会明确报错」，探的是 cloud:list 还没写。
+		// 通道全实现之后它就没意义了（cloud:list 现在会因为没配仓库而报别的错），
+		// 留着会变成一条永远失败的假警报。
+		// 换成下面两条更有用的：验证「缺配置」和「配置不可用」都是**人看得懂的中文**，
+		// 而不是 Go 的堆栈腔调。
+		{"没配仓库时云端通道给得出人话", func() (string, error) {
 			ok, out, err := post("cloud:list", `{}`)
 			if err != nil {
 				return "", err
 			}
 			if ok {
-				return "", fmt.Errorf("cloud:list 居然成功了，本该是「未实现」")
+				return "", fmt.Errorf("没配仓库竟然返回成功了：%s", out)
 			}
-			if !strings.Contains(out, "未实现") {
-				return "", fmt.Errorf("错误信息里没有「未实现」字样：%s", out)
+			// 引导用户去哪儿改，比一句「请求失败」有用得多
+			if !strings.Contains(out, "设置") {
+				return "", fmt.Errorf("错误里没说该去哪改：%s", out)
 			}
 			return out, nil
+		}},
+		{"云端通道不会再报「未实现」", func() (string, error) {
+			// 防止有人把某个通道的实现删掉却没发现：
+			// 一旦退回「未实现」，这条就会红
+			for _, ch := range []string{
+				"cloud:list", "cloud:tree", "cloud:stats", "cloud:upload",
+				"cloud:delete", "cloud:move", "cloud:replace", "cloud:readText",
+				"cloud:detect", "cloud:pushLocal", "cloud:verify",
+				"profile:new", "profile:check", "git:clone", "git:pull", "git:commit",
+				"fs:localRename", "fs:localWrite", "fs:localDelete",
+			} {
+				ok, out, err := post(ch, `{}`)
+				if err != nil {
+					return "", fmt.Errorf("%s 传输失败：%w", ch, err)
+				}
+				if ok {
+					continue
+				}
+				if strings.Contains(out, "未实现") {
+					return "", fmt.Errorf("%s 退回成「未实现」了：%s", ch, out)
+				}
+			}
+			return "19 个通道都在，没有退回未实现", nil
 		}},
 		{"名字写错的通道要报「未知通道」", func() (string, error) {
 			ok, out, err := post("no:such", "null")

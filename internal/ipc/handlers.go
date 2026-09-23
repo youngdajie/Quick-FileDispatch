@@ -9,7 +9,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/cloud"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dialog"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/winfont"
@@ -21,7 +24,80 @@ type Env struct {
 	Store     *store.Store
 	Version   string
 	ConfigDir string
-	Verbose   bool
+	// TmpRoot 是 CNB 写入时临时克隆仓库的地方（挂在配置目录下，随配置一起走）。
+	// 不放系统临时目录是因为：克隆出来的整个仓库可能有上千个文件，
+	// 放系统临时目录容易留下没人认领的垃圾，而放在配置目录下用户一眼能看到。
+	TmpRoot string
+	Verbose bool
+
+	cache *repoCache
+	roots *rootGuard
+}
+
+// rootGuard 是 /__local 允许访问的根目录白名单。
+type rootGuard struct {
+	mu    sync.Mutex
+	roots map[string]bool
+}
+
+func (g *rootGuard) allow(dir string) {
+	if dir == "" || g == nil {
+		return
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.roots[strings.ToLower(filepath.Clean(abs))] = true
+}
+
+// Allows 判断某个绝对路径在不在白名单里。
+func (g *rootGuard) Allows(abs string) bool {
+	if g == nil {
+		return false
+	}
+	target := strings.ToLower(filepath.Clean(abs))
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for root := range g.roots {
+		if target == root || strings.HasPrefix(target, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsLocal 给 /__local 做边界判断。
+func (e *Env) AllowsLocal(abs string) bool {
+	if e.roots == nil {
+		return false
+	}
+	return e.roots.Allows(abs)
+}
+
+// allowRoot 把本地目录加进 /__local 的白名单。
+func (e *Env) allowRoot(dir string) {
+	if e.roots != nil {
+		e.roots.allow(dir)
+	}
+}
+
+// repoKey 是仓库的身份串：换仓库 / 换分支 / 换本地目录都会变，
+// 拿它当缓存键，配置一改缓存自然失效（对齐 main.js 的 repoKey()）。
+func (e *Env) repoKey() string {
+	cfg := e.Store.Raw()
+	get := func(k, def string) string {
+		if v, ok := cfg[k].(string); ok && v != "" {
+			return v
+		}
+		return def
+	}
+	return strings.Join([]string{
+		cloud.NormalizePlatform(get("platform", "github")),
+		get("owner", ""), get("repo", ""), get("branch", "main"), get("localDir", ""),
+	}, "|")
 }
 
 // Register 把这一版实现的通道挂上去。
@@ -29,6 +105,22 @@ type Env struct {
 // 通道名逐字对照 src/main/preload.js 与 main.js 里的 ipcMain.handle，
 // 别自己改名 —— 渲染层是按名字调的，改一个字母就是「点了没反应」。
 func Register(r *Registry, env *Env) {
+	if env.cache == nil {
+		env.cache = newRepoCache()
+	}
+	if env.roots == nil {
+		env.roots = &rootGuard{roots: map[string]bool{}}
+	}
+	// 配置里已经绑了本地目录的话，启动时就得放行 ——
+	// 否则刷新一次界面，本地图片预览会先 403 一次（要等下一次 config:set 才恢复）
+	if dir := env.Store.LocalDir(); dir != "" {
+		env.allowRoot(dir)
+	}
+	// 临时目录也要放行：CNB 写入通道克隆出来的工作区在里面
+	if env.TmpRoot != "" {
+		env.allowRoot(env.TmpRoot)
+	}
+
 	/* ---------------------------------------------------------- 应用信息 */
 
 	r.Handle("app:info", func(json.RawMessage) (any, error) {
@@ -71,7 +163,16 @@ func Register(r *Registry, env *Env) {
 		if err != nil {
 			return nil, err
 		}
-		return env.Store.Patch(patch)
+		out, err := env.Store.Patch(patch)
+		if err != nil {
+			return nil, err
+		}
+		// 换了本地目录就要立刻放行它，否则新目录里的图片预览全是 403
+		if dir, ok := out["localDir"].(string); ok && dir != "" {
+			env.allowRoot(dir)
+		}
+		env.cache.Invalidate()
+		return out, nil
 	})
 
 	r.Handle("config:reset", func(json.RawMessage) (any, error) {
@@ -145,9 +246,251 @@ func Register(r *Registry, env *Env) {
 	//   configured / isRepo / dir / dirty / changes / branch / head / remote
 	// 远端地址里的 Token 由 internal/git 剥掉，别在界面上明文露出来。
 	r.Handle("git:status", func(json.RawMessage) (any, error) {
-		cfg := env.Store.Get()
+		cfg := env.Store.Raw()
 		dir, _ := cfg["localDir"].(string)
-		return git.StatusCached(context.Background(), repoKey(cfg), dir), nil
+		return git.StatusCached(context.Background(), env.repoKey(), dir), nil
+	})
+
+	/* ---------------------------------------------------------- 归档配置 */
+
+	r.Handle("profile:new", func(payload json.RawMessage) (any, error) {
+		patch, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		out, err := env.Store.NewProfile(patch)
+		if err != nil {
+			return nil, err
+		}
+		if dir, ok := out["localDir"].(string); ok && dir != "" {
+			env.allowRoot(dir)
+		}
+		env.cache.Invalidate()
+		return out, nil
+	})
+
+	r.Handle("profile:activate", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		out, err := env.Store.ActivateProfile(strOf(obj["id"]))
+		if err != nil {
+			return nil, err
+		}
+		if dir, ok := out["localDir"].(string); ok && dir != "" {
+			env.allowRoot(dir)
+		}
+		env.cache.Invalidate()
+		return out, nil
+	})
+
+	r.Handle("profile:update", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		patch, _ := obj["patch"].(map[string]any)
+		out, err := env.Store.UpdateProfile(strOf(obj["id"]), patch)
+		if err != nil {
+			return nil, err
+		}
+		if dir, ok := out["localDir"].(string); ok && dir != "" {
+			env.allowRoot(dir)
+		}
+		env.cache.Invalidate()
+		return out, nil
+	})
+
+	r.Handle("profile:delete", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		out, err := env.Store.DeleteProfile(strOf(obj["id"]))
+		if err != nil {
+			return nil, err
+		}
+		if dir, ok := out["localDir"].(string); ok && dir != "" {
+			env.allowRoot(dir)
+		}
+		env.cache.Invalidate()
+		return out, nil
+	})
+
+	r.Handle("profile:verify", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		info, _ := obj["info"].(map[string]any)
+		return env.Store.VerifyProfile(strOf(obj["id"]), info)
+	})
+
+	r.Handle("profile:check", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.profileCheck(obj)
+	})
+
+	r.Handle("profile:export", func(json.RawMessage) (any, error) {
+		return env.profileExport()
+	})
+
+	r.Handle("profile:import", func(json.RawMessage) (any, error) {
+		return env.profileImport()
+	})
+
+	/* ---------------------------------------------------------- 对话框 */
+
+	// 选文件夹。取消返回 null（渲染层判的是 null，不是报错）。
+	r.Handle("dialog:chooseDir", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		dir, err := dialog.ChooseDir(strOf(obj["title"]), strOf(obj["defaultPath"]))
+		if err != nil {
+			return nil, err
+		}
+		if dir == "" {
+			return nil, nil
+		}
+		return dir, nil
+	})
+
+	/* ---------------------------------------------------------- 云端 */
+
+	r.Handle("cloud:verify", func(json.RawMessage) (any, error) { return env.cloudVerify() })
+
+	r.Handle("cloud:list", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.cloudList(obj)
+	})
+
+	r.Handle("cloud:tree", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.cloudTree(obj)
+	})
+
+	r.Handle("cloud:stats", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.cloudStats(obj)
+	})
+
+	r.Handle("cloud:upload", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.cloudUpload(obj)
+	})
+
+	r.Handle("cloud:delete", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.cloudDelete(obj)
+	})
+
+	r.Handle("cloud:move", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.cloudMove(obj)
+	})
+
+	r.Handle("cloud:replace", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.cloudReplace(obj)
+	})
+
+	r.Handle("cloud:readText", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.cloudReadText(obj)
+	})
+
+	// 检测结论带 1.5 秒缓存：它要跑一次 git fetch（走网络），
+	// 来回点几份配置时每点一次都重算没意义
+	r.Handle("cloud:detect", func(json.RawMessage) (any, error) {
+		return env.cache.Cached("detect|"+env.repoKey(), detectTTL, func() (any, error) {
+			return env.detectCloud()
+		})
+	})
+
+	r.Handle("cloud:pushLocal", func(json.RawMessage) (any, error) { return env.cloudPushLocal() })
+
+	/* ---------------------------------------------------------- Git */
+
+	r.Handle("git:clone", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.gitClone(obj)
+	})
+
+	r.Handle("git:pull", func(json.RawMessage) (any, error) { return env.gitPull() })
+
+	r.Handle("git:commit", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.gitCommit(obj)
+	})
+
+	/* ---------------------------------------------------------- 本地文件 */
+
+	r.Handle("fs:exportText", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.fsExportText(obj)
+	})
+
+	r.Handle("fs:localRename", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.fsLocalRename(obj)
+	})
+
+	r.Handle("fs:localWrite", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.fsLocalWrite(obj)
+	})
+
+	r.Handle("fs:localDelete", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.fsLocalDelete(obj)
 	})
 }
 
