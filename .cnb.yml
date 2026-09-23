@@ -6,16 +6,16 @@
 #   invalid_scope），所以本地建不了版本、也改不了仓库信息。
 #   而 tag_push 属于「可信事件」，流水线里的 CNB_TOKEN 天生带这个权限。
 #
-# 本仓库自 2.8.1 起是 **Go 单线**：只有一个版本的形态（*-go 标签），
-# exe 十几 MB，不进仓库、不用 LFS，打完 tag 作者自己从网页传安装包。
-# Electron 版定格在 v2.8.0（标签仍在），下面「清理旧版本」里那条
-# 「只清同一条线」的判断就是给它上的保险 —— 无论如何别删到 v* 线。
+# 本仓库自 3.0.0 起标签**不带任何后缀**（2.8.1~2.9.0 的 -go 过渡期结束）：
+# 只有一个版本的形态，exe 十几 MB，不进仓库、不用 LFS，打完 tag 作者自己
+# 从网页传安装包。Electron 版定格在 v2.8.0（标签仍在）——它是要长期保留的
+# 唯一历史版本，下面「清理旧版本」里「v* 一律保留」就是给它上的保险。
 #
 # 发一个新版本的动作清单：
 #   1. main.go 升 const version，tools/installer/build.sh 出安装包自测
 #   2. 版本说明写到 docs/releases/<tag>.md（Release 页的正文就是它）
 #   3. git commit && git push
-#   4. git tag -a X.Y.Z-go -m "..." && git push origin refs/tags/X.Y.Z-go
+#   4. git tag -a X.Y.Z -m "..." && git push origin refs/tags/X.Y.Z
 #      —— 流水线只把版本页建出来，附件留给作者在网页上手工传
 #   5. 网页上传安装包后，顺手删掉上传到仓库里的临时文件（如果有）
 #
@@ -74,13 +74,17 @@ $:
             fi
             echo "创建版本失败（HTTP $CODE）"; exit 1
 
-        # 清理 go 线历次版本，只留当前这一版。
+        # 清理旧版本，只留「当前这一版 + v* 开头的 Electron 线」。
         #
         # 为什么非清不可：Release 附件存在对象存储里，一版一版堆下去白占额度
         #（2026-09-23 清掉了 6 个旧版本、约 330 MiB）。
         #
-        # **只清 go 线（*-go）**，这是这个 stage 最要紧的一条规则：
-        # v2.8.0（Electron）的安装包要长期可下载，任何情况下都不能删。
+        # 保留规则（3.0.0 起，定死的口径）：
+        #   - 当前刚发的这一版 —— 刚发就被删等于白发；
+        #   - v* 开头的 —— Electron 线（v2.8.0）的安装包要长期可下载，
+        #     任何情况下都不能删；v* 一律保留也是防呆，就算哪天 Electron
+        #     线复活也不会被误删。
+        #   - 其余全删：*-go 过渡版（2.8.1-go / 2.9.0-go）、将来的旧 3.x。
         #
         # 清理失败不能让发版变红，所以脚本哪里出错都走 exit 0。
         - name: 清理旧版本
@@ -88,8 +92,7 @@ $:
             # 标签名拿不到就什么都不删 —— 判断依据全靠它，空值会把旧版误删
             if [ -z "$CNB_BRANCH" ]; then echo "拿不到 CNB_BRANCH，为安全起见不删任何东西"; exit 0; fi
             case "$CNB_BRANCH" in
-              *-go) ;;
-              *) echo "非 go 线标签（${CNB_BRANCH}），不清理"; exit 0 ;;
+              v*) echo "Electron 线标签（${CNB_BRANCH}），不清理"; exit 0 ;;
             esac
 
             URL="${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/releases"
@@ -103,14 +106,13 @@ $:
             # "Cannot index array with string \"data\""。
             #
             # jq 只负责把「id + 标签名」拆成两列 —— 这个写法在 v2.8.0 发版时跑通过。
-            # 挑哪条线、留哪一版都在 shell 里判断，免得往 jq 里塞它版本不支持的函数。
+            # 留哪删哪的判断全在 shell 里，免得往 jq 里塞它版本不支持的函数。
             jq -r '.[] | "\(.id)\t\(.tag_name)"' /tmp/list.json |
             while IFS="$(printf '\t')" read -r RID TAG; do
               [ -z "$RID" ] && continue
               [ "$TAG" = "$CNB_BRANCH" ] && { echo "保留当前版本 ${TAG}"; continue; }
               case "$TAG" in
-                *-go) ;;
-                *) echo "保留 Electron 线：${TAG}"; continue ;;
+                v*) echo "保留 Electron 线：${TAG}"; continue ;;
               esac
 
               CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$URL/$RID" \
