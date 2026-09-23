@@ -80,11 +80,22 @@ func Defaults() map[string]any {
 			"strategy": "pull",
 		},
 		"ui": map[string]any{
-			"theme":    "dark",
+			"theme":    defaultTheme(),
 			"font":     "",
 			"pageSize": 60,
 		},
 	}
+}
+
+// defaultTheme 出厂默认主题：跟 Windows 的应用模式走（3.0.0 起的新功能）。
+// 只在两种时刻生效：配置文件不存在（第一次启动）、设置页点「恢复默认」。
+// 已有配置的用户永远不受影响 —— read() 的深度合并只补缺失字段，
+// ui.theme 在就原样保留；用户在设置里选过的主题不会被启动探测覆盖。
+func defaultTheme() string {
+	if appsUseLightTheme() {
+		return "light"
+	}
+	return "dark"
 }
 
 // Store 是配置文件的读写句柄。并发访问由 mu 保护：渲染层可能同时打多个接口。
