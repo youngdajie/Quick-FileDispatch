@@ -31,8 +31,27 @@ type Env struct {
 	TmpRoot string
 	Verbose bool
 
+	// OnBackground 是「窗口底色要换了」的钩子：换主题时缩放带露出来的
+	// 那圈颜色必须跟着页面走。由 main 注入 wvhost.SetBackground；为 nil
+	// 时（--headless / --check）跳过。
+	OnBackground func(color uint32)
+
 	cache *repoCache
 	roots *rootGuard
+}
+
+// 窗口缩放带的底色，与渲染层两套主题的页面底色一致（A<<24|R<<16|G<<8|B）。
+const (
+	BgDark  uint32 = 0xFF0A1018 // #0a1018，Electron 版 backgroundColor 同款
+	BgLight uint32 = 0xFFF7F9FC // #f7f9fc，浅色主题的页面底色
+)
+
+// themeBackground 按配置里的 ui.theme 算窗口底色；没写就是深色（默认主题）。
+func themeBackground(theme string) uint32 {
+	if theme == "light" {
+		return BgLight
+	}
+	return BgDark
 }
 
 // rootGuard 是 /__local 允许访问的根目录白名单。
@@ -172,6 +191,13 @@ func Register(r *Registry, env *Env) {
 		if dir, ok := out["localDir"].(string); ok && dir != "" {
 			env.allowRoot(dir)
 		}
+		// 换了主题就把窗口底色一起换掉：左右下三边留的缩放带露的就是这块
+		if env.OnBackground != nil {
+			if ui, ok := out["ui"].(map[string]any); ok {
+				theme, _ := ui["theme"].(string)
+				env.OnBackground(themeBackground(theme))
+			}
+		}
 		env.cache.Invalidate()
 		return out, nil
 	})
@@ -238,8 +264,22 @@ func Register(r *Registry, env *Env) {
 	})
 	// 标题栏拖动：渲染层的 -webkit-app-region 是 Electron 专属，WebView2 里
 	// 由 bridge.js 在 mousedown 时调这条，宿主触发系统原生拖动
+	// （新运行时走 IsNonClientRegionSupportEnabled 原生接管，这条是兜底）
 	r.Handle("win:drag", func(json.RawMessage) (any, error) {
 		wvhost.BeginDrag()
+		return true, nil
+	})
+	// 边缘缩放：bridge.js 在窗口边缘的隐形缩放条上 mousedown 时调这条，
+	// payload 是方向字符串。宿主在 UI 线程轮询光标自己缩放（wvhost.ResizeEdge），
+	// HTTP 协程只负责把方向投过去，不碰窗口。
+	r.Handle("win:resizeEdge", func(p json.RawMessage) (any, error) {
+		var dir string
+		if err := json.Unmarshal(p, &dir); err != nil {
+			return nil, fmt.Errorf("win:resizeEdge 需要 string 方向，收到：%s", string(p))
+		}
+		if !wvhost.ResizeEdge(dir) {
+			return nil, fmt.Errorf("不是合法的缩放方向：%q（left/right/top/bottom + 四角）", dir)
+		}
 		return true, nil
 	})
 	r.Handle("ui:setBackground", func(json.RawMessage) (any, error) { return true, nil })

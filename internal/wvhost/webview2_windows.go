@@ -178,6 +178,23 @@ func onControllerReady(ctrl unsafe.Pointer, url string, bg uint32) {
 	// 设成 Electron 版那个深色底（#0a1018），深色主题下启动不闪白。
 	vcall(ctrl, 27, uintptr(bg))
 
+	// ICoreWebView2::get_Settings [槽 3]
+	// → QI ICoreWebView2Settings9
+	// → put_IsNonClientRegionSupportEnabled [槽 38]（VARIANT_TRUE = 0xFFFF）
+	//
+	// 打开后渲染层现成的 -webkit-app-region: drag（Electron 的拖动机制，
+	// app.css 的 .topbar 上就写着）由 WebView2 原生接管：拖动、双击最大化
+	// 都走系统非客户区路径。不能靠 bridge.js 的 mousedown 垫片自己发
+	// WM_NCLBUTTONDOWN —— 按下时浏览器进程握着鼠标捕获，宿主的拖动循环
+	// 启动了也收不到移动，实测窗口纹丝不动（2026-09-23）。
+	if settings := vcallOut(wv.core, 3); settings != nil {
+		if s9 := comQI(settings, &iidSettings9); s9 != nil {
+			vcall(s9, 38, uintptr(0xFFFF))
+		} else {
+			fmt.Fprintln(os.Stderr, "[wvhost] 运行时没有 ICoreWebView2Settings9（太旧），标题栏拖动退回 bridge.js 垫片")
+		}
+	}
+
 	// 先铺满再导航，避免内容从左上角一小块展开
 	fitToBounds(ctrl)
 
@@ -188,13 +205,29 @@ func onControllerReady(ctrl unsafe.Pointer, url string, bg uint32) {
 	// 窗口已在 Run 里先行显示（见那里的注释），这里不再重复 show
 }
 
-// fitToBounds 让控制器覆盖窗口的整个客户区。
+// fitToBounds 让控制器铺满整个客户区。
+//
+// 2.9.0 早期版本曾在左、右、下三边留一条「缩放带」不盖：WebView2 的子
+// 窗口会把鼠标命中测试全部吃掉，留带子宿主才能收到 WM_NCHITTEST 走原生
+// 缩放（Tauri 同款思路）。但带子露出来的只能是纯色底，页面边缘的星野/
+// 点阵画不进去，深浅主题下都看得出一条段落缝（杰哥原话「明显的段落感」）。
+// 现改为页面铺满 + 渲染层边缘隐形缩放条（bridge.js）调 win:resizeEdge，
+// 宿主轮询光标自己缩放（resize_windows.go），观感与 Electron 版一致。
 func fitToBounds(ctrl unsafe.Pointer) {
 	r := clientRect(gHwnd.Load())
 	// put_Bounds(RECT) [槽 6]。x64 ABI：大于 8 字节的结构体按**引用**传
 	// （调用方复制一份、传指针）—— 不是 System V 那种「16 字节拆两个寄存器」，
 	// 想当然拆开传会直接访问违例。
 	vcall(ctrl, 6, uintptr(unsafe.Pointer(&r)))
+}
+
+// SetBackground 运行中改控制器底色（Controller2::put_DefaultBackgroundColor [槽 27]）。
+// 主题切换时由 ipc 的 OnBackground 钩子调过来：页面还没画出来的一瞬露的就是它。
+// 控制器还没就绪时静默忽略 —— 启动路径用的是 Options.Background。
+func SetBackground(color uint32) {
+	if wv.ctrl != nil {
+		vcall(wv.ctrl, 27, uintptr(color))
+	}
 }
 
 // closeWebView 关控制器。在 WM_DESTROY 里调用（已在 UI 线程）。

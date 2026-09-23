@@ -97,6 +97,15 @@ func Run(o Options) error {
 	}
 	gHwnd.Store(hwnd)
 
+	// 强制重算一遍边框：创建期的 WM_NCCALCSIZE 结果 DWM 不会立刻采纳，
+	// 首帧仍按标准框合成。SWP_FRAMECHANGED 让它按我们窗口过程的
+	// NCCALCSIZE（全客户区）重新走一遍，首开就没有原生框。
+	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0,
+		swpFrameChanged|swpNoMove|swpNoSize|swpNoZOrder|swpNoActivate)
+
+	// 四角圆角：DWM 合成期裁剪，抗锯齿、最大化自动变方角。
+	applyRoundedCorners(hwnd)
+
 	// 先显示窗口再创建 WebView2。官方样例就是这个顺序：DWM 要等窗口首次
 	// 显示才会建重定向表面，藏在后台就创建合成链，控制器虽然建得起来，
 	// 但画面永远上不了屏（窗口一直白屏）。
@@ -120,6 +129,22 @@ func Run(o Options) error {
 		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
 	return nil
+}
+
+// applyRoundedCorners 给窗口四角加系统圆角：
+// DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE=33, DWMWCP_ROUND=2)。
+// 裁剪发生在 DWM 合成期 —— 抗锯齿、宿主代码零参与、最大化自动变方角。
+// 半径由系统定死（约 8px），API 没有精确半径参数，也没有 6px 这一档。
+// 这是 Win11 起的属性：Win10 的 dwmapi 会拒绝（E_INVALIDARG），失败即
+// 没有圆角，静默跳过就行。
+func applyRoundedCorners(hwnd uintptr) {
+	const (
+		dwmwaWindowCornerPreference = 33
+		dwmcpRound                  = 2
+	)
+	pref := uint32(dwmcpRound)
+	procDwmSetWindowAttr.Call(hwnd, dwmwaWindowCornerPreference,
+		uintptr(unsafe.Pointer(&pref)), unsafe.Sizeof(pref))
 }
 
 /* ------------------------------------------------------------ 给 IPC 用的窗口操作 */
@@ -167,7 +192,12 @@ func IsMaximized() bool {
 
 // BeginDrag 由标题栏 mousedown 触发：骗系统「鼠标按在标题栏上」，
 // 进入原生的拖动 / 双击最大化循环。渲染层自己没法拖无边框窗口
-// （-webkit-app-region 是 Electron 专属），这条通道就是它的替身。
+// （-webkit-app-region 是 Electron 专属）……本来是这么设计的，
+// 实测证明这条路靠不住：按下时浏览器进程握着鼠标捕获，宿主的拖动
+// 循环收不到鼠标移动，窗口纹丝不动 —— 正常拖动已改由 WebView2 的
+// IsNonClientRegionSupportEnabled 原生接管（见 webview2_windows.go）。
+// 这里留着当老运行时的兜底：lParam 必须带真实光标坐标，传 0 的话
+// 移动循环拿 (0,0) 当锚点，行为不可预期。
 func BeginDrag() {
 	h := gHwnd.Load()
 	if h == 0 {
@@ -176,6 +206,18 @@ func BeginDrag() {
 	if z, _, _ := procIsZoomed.Call(h); z != 0 {
 		return // 最大化状态下不拖（Electron 的「拖下还原」体验先不做）
 	}
+	var pt point
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+	lp := uintptr(uint16(pt.x)) | uintptr(uint16(pt.y))<<16 // MAKELPARAM
 	procReleaseCapture.Call()
-	procSendMessageW.Call(h, wmNcLButtonDown, htCaption, 0)
+	procSendMessageW.Call(h, wmNcLButtonDown, htCaption, lp)
 }
+
+// ResizeEdge 曾以这个名字存在过两次，都没成：
+//   - 2.9.0-go 当天加、当天删：从 HTTP 协程 SendMessage(WM_NCLBUTTONDOWN)
+//     进系统缩放循环，按下时浏览器进程握着鼠标捕获，循环收不到鼠标移动 ——
+//     拖动能用是因为新运行时走了 IsNonClientRegionSupportEnabled 的原生接管，
+//     不是这条路的功劳。
+//   - 现在的 win:resizeEdge 只借了这个名字：投递方向到 UI 线程后轮询
+//     GetCursorPos / GetAsyncKeyState 自己缩放，不进系统循环也不碰捕获，
+//     实现在 resize_windows.go。

@@ -34,6 +34,11 @@ var (
 	// ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 	iidCtrlDone = guid{0x6c4819f3, 0xc9b7, 0x4260,
 		[8]byte{0x81, 0x27, 0xc9, 0xf5, 0xbd, 0xe7, 0xf6, 0x8c}}
+
+	// ICoreWebView2Settings9（IsNonClientRegionSupportEnabled 所在的接口）
+	// IID 抄自 WebView2.h（SDK 1.0.3124）
+	iidSettings9 = guid{0x0528a73b, 0xe92d, 0x49f4,
+		[8]byte{0x92, 0x7a, 0xe5, 0x47, 0xdd, 0xda, 0xa3, 0x7d}}
 )
 
 /* ------------------------------------------------------------ 虚表调用 */
@@ -67,6 +72,21 @@ func comAddRef(obj unsafe.Pointer) {
 	if obj != nil {
 		vcall(obj, 1)
 	}
+}
+
+// comQI 向对象要另一个接口（IUnknown::QueryInterface [槽 0]）。
+// QI 成功返回的指针本身就带一个引用（COM 惯例），直接用；
+// 本项目所有接口都活到进程结束、从不 Release，所以没有对应的 Release。
+func comQI(obj unsafe.Pointer, iid *guid) unsafe.Pointer {
+	if obj == nil {
+		return nil
+	}
+	var out unsafe.Pointer
+	hr := vcall(obj, 0, uintptr(unsafe.Pointer(iid)), uintptr(unsafe.Pointer(&out)))
+	if hr != sOK {
+		return nil
+	}
+	return out
 }
 
 // vcallStr 调一个「接收字符串出参」的方法：出参是 LPWSTR*，调用方负责释放。

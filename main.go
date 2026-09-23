@@ -37,7 +37,7 @@ import (
 )
 
 // Go 版独立走版本号（2.8.1 起不再跟随 Electron 时代的 package.json）。
-const version = "2.8.1-go"
+const version = "2.9.0-go"
 
 // appName 沿用 Electron 时代定下的 userData 目录名（appData + 应用名）：
 // 两边对不上就会各自读一份配置，看起来像「配置丢了」——老用户升级到 Go 版
@@ -96,6 +96,8 @@ func run(headless, check, dev bool, port int, profile string, debugPort int) err
 		Version:   version,
 		ConfigDir: cfgDir,
 		TmpRoot:   filepath.Join(cfgDir, "cnb-work"),
+		// 主题切换时窗口底色跟着换（页面没铺满前露出的一瞬就是它）
+		OnBackground: wvhost.SetBackground,
 	}
 	reg := ipc.New()
 	ipc.Register(reg, env)
@@ -147,7 +149,20 @@ func run(headless, check, dev bool, port int, profile string, debugPort int) err
 		select {} // 一直跑着，等人来打接口
 	}
 
-	return openAppWindow(base, cfgDir, debugPort)
+	return openAppWindow(base, cfgDir, debugPort, initialBackground(st))
+}
+
+// initialBackground 按配置里的主题算窗口底色：页面加载前露出的一瞬就是
+// 它（Controller 的 DefaultBackgroundColor），深浅两套主题各有一个底色，
+// 避免深色主题启动闪白。
+func initialBackground(st *store.Store) uint32 {
+	cfg := st.Get()
+	if ui, ok := cfg["ui"].(map[string]any); ok {
+		if t, _ := ui["theme"].(string); t == "light" {
+			return ipc.BgLight
+		}
+	}
+	return ipc.BgDark
 }
 
 // configDir 决定配置放哪。
@@ -178,7 +193,7 @@ func configDir(profile string) (string, error) {
 // WebView2 的浏览器数据目录（缓存 / Cookie / GPU 缓存）与配置目录分开：
 // 配置在 Roaming（要跟着用户备份），浏览器缓存是典型的 Local 数据，
 // 而且它自带 EBWebView 目录结构，塞进 Roaming 只会污染配置目录。
-func openAppWindow(base, cfgDir string, debugPort int) error {
+func openAppWindow(base, cfgDir string, debugPort int, bg uint32) error {
 	local := os.Getenv("LOCALAPPDATA")
 	if local == "" {
 		local = cfgDir
@@ -200,8 +215,9 @@ func openAppWindow(base, cfgDir string, debugPort int) error {
 		Height:      880,
 		MinWidth:    1080,
 		MinHeight:   680,
-		// A<<24|R<<16|G<<8|B，即 Electron 版的 backgroundColor '#0a1018'
-		Background: 0xFF0A1018,
+		// A<<24|R<<16|G<<8|B：页面加载前的底色，
+		// 按配置里的主题挑（深色 #0a1018 / 浅色 #f7f9fc）
+		Background: bg,
 	})
 }
 

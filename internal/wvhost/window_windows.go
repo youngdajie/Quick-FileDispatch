@@ -1,21 +1,25 @@
 //go:build windows
 
-// Win32 窗口：无边框（去掉标题栏、保留四边可拖拽调宽窄的细边框）、
-// 自带单实例锁、按显示器 DPI 缩放最小尺寸。
+// Win32 窗口：无边框（页面铺满整个窗口）、自带单实例锁、按显示器 DPI 缩放最小尺寸。
 //
 // 无边框的配方（Windows 经典款）：
-//   - 样式保留 WS_OVERLAPPEDWINDOW —— 缩放边框、贴边分屏、任务栏动画全靠它；
+//   - 样式保留 WS_OVERLAPPEDWINDOW —— 贴边分屏、任务栏动画全靠它；
 //   - WM_NCCALCSIZE 直接返回 0、客户区 = 整个窗口矩形（不缩！）——
 //     非客户区一个像素都不留，DWM 就没地方画标题栏和系统边框（2.8.0-go
 //     曾经「客户区往里缩一圈边框厚度」，结果那一圈被 DWM 画成了原生白框）；
-//   - 代价是系统认为窗口没有可缩放的边了 —— WM_NCHITTEST 里自己补：
-//     光标落在窗口边缘一圈（8 逻辑像素）时返回对应的 HT* 缩放代号；
 //   - 最大化时窗口矩形比屏幕大一圈边框，这时反而要往里缩一圈，
 //     否则四边的内容被裁掉。
 //
-// 渲染层的窗口拖动（Electron 靠 -webkit-app-region）WebView2 不支持，
-// 由 bridge.js 在标题栏 mousedown 时调 win:drag 通道，
-// 这里用 ReleaseCapture + WM_NCLBUTTONDOWN(HTCAPTION) 触发系统原生拖动。
+// 边缘缩放不走非客户区命中测试：WebView2 的子窗口把命中测试全部吃掉，
+// 页面铺满时宿主的 WM_NCHITTEST 根本轮不到。2.9.0 早期在三边留一圈
+// 「缩放带」让宿主接（Tauri 思路），能缩，但带子露的是纯色底、页面边缘
+// 的星野画不进去，看着像一条段落缝，被杰哥打回。现在由渲染层在边缘铺
+// 隐形缩放条，mousedown 时调 win:resizeEdge，宿主轮询光标自己缩放
+// （resize_windows.go）。
+//
+// 标题栏拖动：新运行时由 WebView2 的 IsNonClientRegionSupportEnabled
+// 原生接管 -webkit-app-region；bridge.js 的 win:drag（WM_NCLBUTTONDOWN
+// 那套）只给老运行时兜底。
 package wvhost
 
 import (
@@ -47,12 +51,17 @@ var (
 	procGetDpiForWindow    = user32.NewProc("GetDpiForWindow")
 	procSetProcessDpiAware = user32.NewProc("SetProcessDpiAwarenessContext")
 	procSetWindowPos       = user32.NewProc("SetWindowPos")
+	procGetCursorPos       = user32.NewProc("GetCursorPos")
 	procReleaseCapture     = user32.NewProc("ReleaseCapture")
 	procCreateMutexW       = syscall.NewLazyDLL("kernel32.dll").NewProc("CreateMutexW")
 	procFindWindowW        = user32.NewProc("FindWindowW")
 	procCreateIconFromRes  = user32.NewProc("CreateIconFromResourceEx")
 	procLoadCursorW        = user32.NewProc("LoadCursorW")
 	procGetLastError       = syscall.NewLazyDLL("kernel32.dll").NewProc("GetLastError")
+
+	dwmapi = syscall.NewLazyDLL("dwmapi.dll")
+
+	procDwmSetWindowAttr = dwmapi.NewProc("DwmSetWindowAttribute")
 )
 
 const (
@@ -70,6 +79,7 @@ const (
 	wmGetMinMaxInfo = 0x0024
 	wmNcCalcSize    = 0x0083
 	wmNcHitTest     = 0x0084
+	wmNcActivate    = 0x0086
 	wmDpiChanged    = 0x02E0
 	wmNcLButtonDown = 0x00A1
 
@@ -85,11 +95,14 @@ const (
 	htBottomLeft  = 16
 	htBottomRight = 17
 
-	swpNoZOrder    = 0x0004
-	swpNoActivate  = 0x0010
-	smCxFrame      = 32
-	smCyFrame      = 33
-	smCxPaddedBord = 92
+	swpNoSize       = 0x0001
+	swpNoMove       = 0x0002
+	swpNoZOrder     = 0x0004
+	swpNoActivate   = 0x0010
+	swpFrameChanged = 0x0020
+	smCxFrame       = 32
+	smCyFrame       = 33
+	smCxPaddedBord  = 92
 
 	// DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2：窗口跟着显示器走，
 	// 拖到高分屏上文字不发虚。SetProcessDpiAwarenessContext 的参数是个伪句柄。
@@ -190,7 +203,7 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 		if w != 0 {
 			// 客户区 = 整个窗口矩形。不调 DefWindowProc（它会把标题栏那一条
 			// 划走），Windows 就没有任何非客户区可画 —— 原生标题栏彻底消失。
-			// 2.8.0-go 在这里「往里缩一圈边框厚度」，那圈留下的非客户区
+			// 2.8.1-go 在这里「往里缩一圈边框厚度」，那圈留下的非客户区
 			// 恰好被 DWM 画成了用户看到的原生白框，别再改回去。
 			p := (*nccalcsizeParams)(l)
 			if z, _, _ := procIsZoomed.Call(hwnd); z != 0 {
@@ -205,29 +218,37 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 			}
 			return 0
 		}
+		// wParam=FALSE 也必须接住：CreateWindowExW 创建期发的是这一档，
+		// 漏掉就落进 DefWindowProc，客户区存成「带框」的 —— 首帧就带着
+		// 原生标题栏，要等最小化/还原触发重算才消失（2.8.1-go 实测）。
+		// 返回 0 的语义就是「客户区 = lParam 指的那个窗口矩形」。
+		return 0
+
+	case wmNcActivate:
+		// lParam 传 -1：告诉 DefWindowProc「别重画非客户区」。
+		// 窗口首次激活时它默认要重画一次原生框，正好盖在自绘标题栏上；
+		// 我们根本没有非客户区，这次重画纯属捣乱。
+		r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(m), w, ^uintptr(0))
+		return r
 
 	case wmNcHitTest:
-		// 客户区铺满整个窗口后，系统眼里没有「可缩放的边」，
-		// 这里自己补：光标落在边缘 8 逻辑像素内就返回对应方向的缩放代号，
-		// 系统照常显示缩放光标、照常拖边。
-		// 标题栏区域不返回 HTCAPTION —— 拖动走渲染层 win:drag → BeginDrag。
+		// 页面铺满后，边缘命中测试基本都被 WebView2 子窗口吃掉，轮不到
+		// 本窗口 —— 缩放改由页面缩放条 + win:resizeEdge 负责（resize_windows.go）。
+		// 这份命中测试留着兜底：万一哪条系统路径直接问到本窗口，边缘照常回
+		// 缩放代号，行为不至于倒退。最大化状态下不缩放。
 		if z, _, _ := procIsZoomed.Call(hwnd); z != 0 {
-			return htClient // 最大化状态下不缩放
+			return htClient
 		}
 		lu := uintptr(l)
-		x := int32(int16(lu & 0xFFFF))        // 屏幕坐标，LOWORD 有符号
+		x := int32(int16(lu & 0xFFFF))         // 屏幕坐标，LOWORD 有符号
 		y := int32(int16((lu >> 16) & 0xFFFF)) // HIWORD 有符号
 		r := windowRect(hwnd)
-		b := int32(8) * int32(dpiOf(hwnd)) / 96
-		left := x < r.left+b
-		right := x >= r.right-b
-		top := y < r.top+b
-		bottom := y >= r.bottom-b
+		bx := frameThickness(true)
+		by := frameThickness(false)
+		left := x < r.left+bx
+		right := x >= r.right-bx
+		bottom := y >= r.bottom-by
 		switch {
-		case left && top:
-			return htTopLeft
-		case right && top:
-			return htTopRight
 		case left && bottom:
 			return htBottomLeft
 		case right && bottom:
@@ -236,8 +257,6 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 			return htLeft
 		case right:
 			return htRight
-		case top:
-			return htTop
 		case bottom:
 			return htBottom
 		}
@@ -264,6 +283,15 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 			uintptr(r.left), uintptr(r.top),
 			uintptr(r.right-r.left), uintptr(r.bottom-r.top),
 			swpNoZOrder|swpNoActivate)
+		return 0
+
+	case wmAppResize:
+		// 页面缩放条发来的「开始缩放」（win:resizeEdge → PostMessage 到这）。
+		// 内联跑轮询循环，一次只允许一个：拖动中途迟到的第二条直接丢弃。
+		if resizeActive.CompareAndSwap(0, 1) {
+			runResizeLoop(hwnd, w)
+			resizeActive.Store(0)
+		}
 		return 0
 
 	case wmClose:

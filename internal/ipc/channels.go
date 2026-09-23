@@ -79,6 +79,10 @@ var known = []string{
 	// Go 壳专属：Electron 靠 CSS 的 -webkit-app-region 拖无边框窗口，
 	// WebView2 没有这东西，bridge.js 在标题栏 mousedown 时改调这条
 	"win:drag",
+	// Go 壳专属：边缘缩放。页面铺满后宿主收不到边缘的命中测试
+	//（WebView2 子窗口全吃掉），bridge.js 在边缘隐形缩放条 mousedown 时
+	// 调这条，宿主在 UI 线程轮询光标自己缩放（internal/wvhost/resize_windows.go）
+	"win:resizeEdge",
 }
 
 // clientSide 是「不用后端也能算实现」的通道：剪贴板走浏览器的

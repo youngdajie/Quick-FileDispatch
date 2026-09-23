@@ -238,4 +238,96 @@
     if (t.closest('button, .repo-chip, .win-controls, input, select, textarea, a, [contenteditable]')) return;
     invoke('win:drag').catch(function () { /* 拖不动就算了 */ });
   }, true);
+
+  /* ------------------------------------------------ 边缘缩放条（Go 壳专属） */
+
+  /**
+   * 无边框窗口的边缘缩放。
+   *
+   * Electron 的 frame:false 自带原生缩放边；WebView2 的子窗口会把鼠标
+   * 命中测试全部吃掉，页面铺满时宿主收不到边缘的 WM_NCHITTEST。宿主侧
+   * 曾在三边留一条「缩放带」不盖：能缩，但带子露的是纯色底，页面边缘的
+   * 星野/点阵画不进去，看得出一条段落缝（被杰哥打回）。现在页面铺满，
+   * 由这里在窗口四边 + 四角放几条隐形缩放条：按下时把方向告诉宿主
+   * （win:resizeEdge），宿主在 UI 线程轮询光标位置自己改窗口矩形，松手
+   * 由宿主用 GetAsyncKeyState 判断 —— 页面只负责「从哪个方向开始缩」，
+   * 拖动过程一个字节都不用发。
+   */
+  function installResizeStrips() {
+    if (document.querySelector('.qfd-resize-strip')) return; // 防重复注入
+    var zones = [
+      { dir: 'left',        css: 'left:0;top:0;width:6px;height:100%;cursor:ew-resize;' },
+      { dir: 'right',       css: 'right:0;top:0;width:6px;height:100%;cursor:ew-resize;' },
+      { dir: 'top',         css: 'left:0;top:0;width:100%;height:4px;cursor:ns-resize;' },
+      { dir: 'bottom',      css: 'left:0;bottom:0;width:100%;height:6px;cursor:ns-resize;' },
+      { dir: 'topleft',     css: 'left:0;top:0;width:12px;height:12px;cursor:nwse-resize;' },
+      { dir: 'topright',    css: 'right:0;top:0;width:12px;height:12px;cursor:nesw-resize;' },
+      { dir: 'bottomleft',  css: 'left:0;bottom:0;width:12px;height:12px;cursor:nesw-resize;' },
+      { dir: 'bottomright', css: 'right:0;bottom:0;width:12px;height:12px;cursor:nwse-resize;' }
+    ];
+    zones.forEach(function (z) {
+      var el = document.createElement('div');
+      el.className = 'qfd-resize-strip';
+      el.style.cssText =
+        'position:fixed;z-index:2147483000;pointer-events:auto;touch-action:none;' +
+        'user-select:none;-webkit-user-select:none;' + z.css;
+      el.addEventListener('pointerdown', function (e) {
+        if (e.button !== 0) return;
+        e.preventDefault(); // 别让选中/拖拽等默认行为抢戏，缩放由宿主接管
+        invoke('win:resizeEdge', z.dir).catch(function () {});
+      });
+      document.body.appendChild(el);
+    });
+    installNoDragPads();
+    // 最大化时没有可缩放的边，把条子和垫片一起藏起来（宿主侧另有 IsZoomed 兜底）
+    var lastMax = null;
+    setInterval(function () {
+      invoke('win:isMaximized').then(function (v) {
+        if (v !== lastMax) {
+          lastMax = v;
+          document.querySelectorAll('.qfd-resize-strip').forEach(function (el) {
+            el.style.display = v ? 'none' : '';
+          });
+        }
+        if (!v && !document.querySelector('.qfd-no-drag-pad')) {
+          installNoDragPads(); // 渲染层若重建过 topbar，垫片要跟着补回来
+        }
+      }).catch(function () {});
+    }, 500);
+  }
+
+  /**
+   * 把缩放条占用的区域从「可拖动区」里抠出来。
+   *
+   * WebView2 的原生非客户区接管（IsNonClientRegionSupportEnabled）按预先
+   * 算好的 drag 区域在浏览器进程里拦鼠标：落点只要在 drag 区内，事件根本
+   * 不进 DOM —— 缩放条哪怕 z-index 顶格也收不到 pointerdown（2026-09-23
+   * A/B 探针实证：topbar 临时改 no-drag 后事件立刻出现，恢复 drag 又被吞）。
+   * 所以在 topbar 里垫几块 no-drag 的透明垫片，让出顶边条、两个上角、
+   * 左右条与顶栏重叠的部分；垫片 pointer-events:none，只影响区域计算，
+   * 行为对齐原生窗口的「缩放边框优先于标题栏」。
+   */
+  function installNoDragPads() {
+    var topbar = document.querySelector('.topbar');
+    if (!topbar || document.querySelector('.qfd-no-drag-pad')) return;
+    var pads = [
+      'left:0;right:0;top:0;height:12px;',   // 顶边条 4px + 两个上角 12px
+      'left:0;top:0;width:6px;height:100%;', // 左条与顶栏的重叠段
+      'right:0;top:0;width:6px;height:100%;' // 右条与顶栏的重叠段
+    ];
+    pads.forEach(function (css) {
+      var pad = document.createElement('div');
+      pad.className = 'qfd-resize-strip qfd-no-drag-pad'; // 跟条子一起在最大化时隐藏
+      pad.style.cssText = 'position:absolute;-webkit-app-region:no-drag;' +
+        'pointer-events:none;' + css;
+      topbar.appendChild(pad);
+    });
+  }
+
+  // 垫片插在 </head> 前，此时 body 还没解析出来，等 DOM 能挂了再铺条子
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', installResizeStrips);
+  } else {
+    installResizeStrips();
+  }
 })();
