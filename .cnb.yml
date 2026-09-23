@@ -44,15 +44,17 @@ $:
             fi
 
             # 字段名以 OpenAPI 的 openapi.PostReleaseForm 为准：
-            # 是 draft / prerelease，不是 is_draft / is_prerelease
-            #（官方 issue 里那份示例写成 is_xxx，会被服务端静默忽略）
+            #   draft / prerelease 是布尔；make_latest 是**字符串**（"true"/"false"）——
+            #   写成布尔会被服务端回 400：cannot unmarshal bool into
+            #   PostReleaseForm.make_latest of type string（2026-09-23 实踩，
+            #   而且「建版本」stage 的容错会把它吞成绿色，版本页根本没建出来）。
             PAYLOAD=$(jq -n \
               --arg name "$CNB_BRANCH" \
               --arg body "$BODY" \
               --arg tag  "$CNB_BRANCH" \
               --arg sha  "$CNB_BRANCH_SHA" \
               '{name:$name, body:$body, draft:false, prerelease:false,
-                make_latest:true, tag_name:$tag, target_commitish:$sha}')
+                make_latest:"true", tag_name:$tag, target_commitish:$sha}')
 
             URL="${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/releases"
             CODE=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST "$URL" \
@@ -62,11 +64,15 @@ $:
               -d "$PAYLOAD")
             echo "POST $URL -> HTTP $CODE"
             cat /tmp/resp.json; echo
-            # 同一个 tag 重跑会撞「版本已存在」，那不算错，别把流水线搞红
+            # 同一个 tag 重跑会撞「版本已存在」，那不算错；除此之外的失败
+            # 必须把流水线搞红 —— 2xx 就继续吞，下次发版又是静默空页面
             case "$CODE" in
-              2*) echo "版本已就绪";;
-              *)  echo "创建版本没成功（HTTP $CODE）；若提示已存在可忽略";;
+              2*) echo "版本已就绪"; exit 0 ;;
             esac
+            if grep -qE "已存在|already exist" /tmp/resp.json; then
+              echo "版本已存在，忽略"; exit 0
+            fi
+            echo "创建版本失败（HTTP $CODE）"; exit 1
 
         # 清理 go 线历次版本，只留当前这一版。
         #
