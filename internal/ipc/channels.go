@@ -2,7 +2,8 @@ package ipc
 
 import "sort"
 
-// known 是渲染层会调用的**全部**通道名，逐条抄自 src/main/preload.js。
+// known 是渲染层会调用的**全部**通道名。清单最初逐条抄自 Electron 版的
+// src/main/preload.js（那份代码定格在 v2.8.0，git 历史里还能查到）。
 //
 // 为什么要维护这份清单，而不是「没注册就当未实现」：
 //
@@ -10,8 +11,8 @@ import "sort"
 //	而真正的问题是名字拼错了 —— 这类错最容易浪费时间。
 //	分开之后：在清单里 = 还没写；不在清单里 = 名字写错了。
 //
-// 它同时是进度表：启动时打印「已实现 14/44」，一眼看得见还剩多少。
-// 改 preload.js 时必须同步改这里（漏改的话，新通道会被误报成「名字写错了」，
+// 它同时是进度表：启动时打印「已实现 44/44」，一眼看得见还剩多少。
+// 渲染层加新通道时必须同步改这里（漏改的话，新通道会被误报成「名字写错了」，
 // 反而比误报成「未实现」更容易发现 —— 这是故意的取舍）。
 var known = []string{
 	// 应用
@@ -75,6 +76,9 @@ var known = []string{
 	"win:maximize",
 	"win:close",
 	"win:isMaximized",
+	// Go 壳专属：Electron 靠 CSS 的 -webkit-app-region 拖无边框窗口，
+	// WebView2 没有这东西，bridge.js 在标题栏 mousedown 时改调这条
+	"win:drag",
 }
 
 // clientSide 是「不用后端也能算实现」的通道：剪贴板走浏览器的
@@ -111,7 +115,7 @@ type UnknownChannelError struct {
 }
 
 func (e *UnknownChannelError) Error() string {
-	return "未知通道：" + e.Channel + "（不在渲染层的接口面里，八成是名字写错了；清单见 src/main/preload.js）"
+	return "未知通道：" + e.Channel + "（不在渲染层的接口面里，八成是名字写错了；清单见 internal/ipc/channels.go）"
 }
 
 // Progress 回报「已实现 / 总共」。

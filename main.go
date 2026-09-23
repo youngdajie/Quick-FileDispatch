@@ -1,31 +1,21 @@
 // Package main 是「快捷文件分发服务@JIE」Go 重写版（go 分支）的入口。
 //
 // 这一版的目标是复刻 Electron 主进程那 3,278 行的职责，**渲染层一行都不改**：
-// 渲染层（src/renderer，9,587 行）全部用绝对路径加载资源、所有原生能力都走
+// 渲染层（src/renderer）全部用绝对路径加载资源、所有原生能力都走
 // window.cloudpic 这一个对象，所以只要
 //
 //  1. 把 src/renderer 原样当静态资源托管；
 //  2. 用一个垫片（web/bridge.js）把 window.cloudpic 从「Electron IPC」
 //     接到「本地 HTTP 的 /ipc」上；
 //
-// 那 9,587 行界面代码就能直接跑起来。这也是本 demo 要证明的事。
+// 那 9,587 行界面代码就能直接跑起来。这也是本项目要证明的事。
 //
-// 当前进度：demo（只实现让界面跑起来的骨架通道）
-//   - 已实现：app:info / config:get / config:set / config:reset / app:fonts /
-//     shell:openExternal / shell:openLocalDir / win:*
-//   - 未实现：cloud:* / git:* / profile:* / fs:* / dialog:chooseDir / ui:setBackground，
-//     调用会返回「未实现（Go demo 阶段）：<通道名>」，在界面上表现为一条报错提示。
-//
-// 待办（按优先级）：
-//   - 窗口壳：现在是拿系统的 Edge/Chrome 用 --app= 模式开一个无地址栏窗口，
-//     只是过渡。正式版要换成 WebView2（复用系统 Chromium，安装包才能压到 10 MB 级）。
-//   - Token 落盘加密：Electron 用 safeStorage（Windows 上是 DPAPI）。
-//     Go 这边可以用 syscall 直接调 crypt32.dll 的 CryptProtectData，不需要 cgo。
-//   - 图片压缩：Electron 版在主进程用多核 CPU 压 AVIF/WebP（vendor/avif 那套 wasm
-//     在渲染层跑）。Go 版是否改为 Go 侧编码，还是保留渲染层的 wasm，待定。
+// 窗口壳是 WebView2（internal/wvhost，纯 syscall 不引第三方包）：
+// 无边框 + 渲染层自绘标题栏，和 Electron 版 frame:false 一个观感。
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -35,9 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -45,32 +33,45 @@ import (
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/ipc"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/webui"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/wvhost"
 )
 
-// version 跟随 package.json 的版本号；Go 版正式发版后再独立走版本。
-const version = "2.8.0-go"
+// Go 版独立走版本号（2.8.1 起不再跟随 Electron 时代的 package.json）。
+const version = "2.8.1-go"
 
-// appName 必须与 package.json 的 name 保持一致：Electron 的 userData 目录是
-// 「appData + 应用名」，两边对不上就会各自读一份配置，看起来像「配置丢了」。
+// appName 沿用 Electron 时代定下的 userData 目录名（appData + 应用名）：
+// 两边对不上就会各自读一份配置，看起来像「配置丢了」——老用户升级到 Go 版
+// 配置必须还能读到，所以这个名字不能改。
 const appName = "Quick-FileDispatch"
 
+// 窗口与任务栏图标。Electron 版由 electron-builder 从 build/icon.ico 打进去；
+// Go 不会给 exe 嵌资源（那是 rcedit 干的活），窗口运行时用的是这里嵌的一份。
+//
+//go:embed build/icon.ico
+var iconICO []byte
+
 func main() {
+	// exe 是 windowsgui 子系统（双击不弹 CMD 窗口），从终端跑 --check 时
+	// 要主动接回控制台才有输出；管道 / 重定向场景它自己会识别并跳过
+	attachConsole()
+
 	var (
-		headless = flag.Bool("headless", false, "只起服务，不开窗口")
-		check    = flag.Bool("check", false, "跑一遍自检（起服务 + 打几个接口）后退出")
-		dev      = flag.Bool("dev", false, "静态资源直接从磁盘读（改渲染层立即生效），而不是用编译进 exe 的那份")
-		port     = flag.Int("port", 0, "监听端口，0 = 随机挑一个空闲端口")
-		profile  = flag.String("profile", "", "配置目录，留空用真实的 userData；给个临时目录可以拿假配置做测试")
+		headless  = flag.Bool("headless", false, "只起服务，不开窗口")
+		check     = flag.Bool("check", false, "跑一遍自检（起服务 + 打几个接口）后退出")
+		dev       = flag.Bool("dev", false, "静态资源直接从磁盘读（改渲染层立即生效），而不是用编译进 exe 的那份")
+		port      = flag.Int("port", 0, "监听端口，0 = 随机挑一个空闲端口")
+		profile   = flag.String("profile", "", "配置目录，留空用真实的 userData；给个临时目录可以拿假配置做测试")
+		debugPort = flag.Int("debug-port", 0, "给 WebView2 开远程调试端口（自检 / 排障用），0 = 不开")
 	)
 	flag.Parse()
 
-	if err := run(*headless, *check, *dev, *port, *profile); err != nil {
+	if err := run(*headless, *check, *dev, *port, *profile, *debugPort); err != nil {
 		fmt.Fprintln(os.Stderr, "启动失败："+err.Error())
 		os.Exit(1)
 	}
 }
 
-func run(headless, check, dev bool, port int, profile string) error {
+func run(headless, check, dev bool, port int, profile string, debugPort int) error {
 	cfgDir, err := configDir(profile)
 	if err != nil {
 		return err
@@ -146,7 +147,7 @@ func run(headless, check, dev bool, port int, profile string) error {
 		select {} // 一直跑着，等人来打接口
 	}
 
-	return openAppWindow(base)
+	return openAppWindow(base, cfgDir, debugPort)
 }
 
 // configDir 决定配置放哪。
@@ -169,60 +170,39 @@ func configDir(profile string) (string, error) {
 	return dir, nil
 }
 
-/* ------------------------------------------------------------ 窗口壳（过渡方案） */
+/* ------------------------------------------------------------ 窗口壳（WebView2） */
 
-// openAppWindow 用系统里已有的 Edge / Chrome 开一个无地址栏窗口。
+// openAppWindow 开主窗口。无边框、渲染层自绘标题栏，与 Electron 版 frame:false 一致；
+// 初始 / 最小尺寸也逐字对齐（1360×880 / 1080×680）。
 //
-// 这只是过渡：正式版要换成 WebView2（复用系统 Chromium），安装包才能压到 10 MB 级。
-// 换成 --app= 模式的好处是零依赖、马上能看见界面像不像原版；坏处是自绘的
-// 最小化 / 最大化 / 关闭按钮不好使（那个要宿主进程配合，见 win:* 通道）。
-func openAppWindow(base string) error {
-	exe := findBrowser()
-	if exe == "" {
-		fmt.Println("没找到 Edge / Chrome，改成直接用默认浏览器打开：")
-		fmt.Println(base)
-		return openExternal(base)
+// WebView2 的浏览器数据目录（缓存 / Cookie / GPU 缓存）与配置目录分开：
+// 配置在 Roaming（要跟着用户备份），浏览器缓存是典型的 Local 数据，
+// 而且它自带 EBWebView 目录结构，塞进 Roaming 只会污染配置目录。
+func openAppWindow(base, cfgDir string, debugPort int) error {
+	local := os.Getenv("LOCALAPPDATA")
+	if local == "" {
+		local = cfgDir
 	}
-	cmd := exec.Command(exe, "--app="+base, "--window-size=1180,800", "--no-first-run")
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动窗口失败：%w", err)
-	}
-	go func() { _ = cmd.Wait() }()
-	return nil
-}
+	ud := filepath.Join(local, appName, "WebView2")
 
-func findBrowser() string {
-	candidates := []string{
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), `Microsoft\Edge\Application\msedge.exe`),
-		filepath.Join(os.Getenv("ProgramFiles"), `Microsoft\Edge\Application\msedge.exe`),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), `Microsoft\Edge\Application\msedge.exe`),
-		filepath.Join(os.Getenv("ProgramFiles"), `Google\Chrome\Application\chrome.exe`),
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), `Google\Chrome\Application\chrome.exe`),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), `Google\Chrome\Application\chrome.exe`),
+	// 远程调试：WebView2 认这个环境变量，专门给自检和排障用，
+	// 平时不开（开着等于把 DevTools 协议暴露在本机端口上）
+	if debugPort > 0 {
+		os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+			fmt.Sprintf("--remote-debugging-port=%d", debugPort))
 	}
-	for _, c := range candidates {
-		if c == "" {
-			continue
-		}
-		if st, err := os.Stat(c); err == nil && !st.IsDir() {
-			return c
-		}
-	}
-	return ""
-}
 
-// openExternal 用系统默认程序打开一个 URL / 文件，不经过浏览器选择逻辑。
-func openExternal(target string) error {
-	switch runtime.GOOS {
-	case "windows":
-		// cmd /c start 对 URL 和文件都管用；空标题参数是为了让 start 把带引号的
-		// 参数当成目标而不是窗口标题
-		return exec.Command("cmd", "/c", "start", "", target).Start()
-	case "darwin":
-		return exec.Command("open", target).Start()
-	default:
-		return exec.Command("xdg-open", target).Start()
-	}
+	return wvhost.Run(wvhost.Options{
+		URL:         base,
+		UserDataDir: ud,
+		Icon:        iconICO,
+		Width:       1360,
+		Height:      880,
+		MinWidth:    1080,
+		MinHeight:   680,
+		// A<<24|R<<16|G<<8|B，即 Electron 版的 backgroundColor '#0a1018'
+		Background: 0xFF0A1018,
+	})
 }
 
 /* ------------------------------------------------------------ 自检 */

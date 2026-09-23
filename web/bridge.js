@@ -16,9 +16,11 @@
  * 通道名逐字对照 src/main/preload.js，两边必须同步改 —— 名字差一个字母，
  * 界面上表现成「点了没反应」，而且不报错，很难查。
  *
- * 这一版**没有**的东西（见文件末尾的待办）：
- *   - 事件推送（Electron 的 ipcRenderer.on）：win:maximized 这类订阅现在拿不到通知，
- *     所以 onMaximized 返回一个空的取消订阅函数；
+ * 这版还补了两件 WebView2 壳需要的事（渲染层不用知道）：
+ *   - 标题栏拖动：见文件末尾的 mousedown 监听（Electron 靠 -webkit-app-region）；
+ *   - win:maximized 事件：onMaximized 用 400ms 轮询模拟主进程推送。
+ *
+ * 还没有的东西：
  *   - getPathForFile：拖拽进来的文件拿不到真实路径（那是 Electron 的 webUtils）。
  */
 (function () {
@@ -172,12 +174,18 @@
       isMaximized: call('win:isMaximized'),
       /**
        * Electron 版订阅的是主进程推过来的 win:maximized 事件。
-       * HTTP 这条路上还没有事件通道，所以现在只能返回一个空的取消订阅函数 ——
-       * 界面不会因此报错，只是最大化按钮的图标不会跟着变。
-       * 待办：换成 WebView2 之后用后端主动推送（SSE / WebSocket）补上。
+       * HTTP 这条路上没有事件通道，改用轮询：每 400ms 问一次状态，
+       * 变了才回调 —— 渲染层的用法（onMaximized(applyMax)）不变。
        */
-      onMaximized: function () {
-        return function () {};
+      onMaximized: function (listener) {
+        let last = null;
+        const timer = setInterval(function () {
+          invoke('win:isMaximized').then(function (v) {
+            if (last !== null && v !== last) listener(!!v);
+            last = !!v;
+          }).catch(function () { /* 服务没了就安静等着 */ });
+        }, 400);
+        return function () { clearInterval(timer); };
       }
     },
     /**
@@ -200,9 +208,8 @@
   /**
    * 关窗口。
    *
-   * 过渡期跑在 Edge 的 --app 模式里，window.close() 不一定被允许
-   * （不是脚本开出来的窗口），所以关不掉是常态，别让它报错吓人。
-   * 换 WebView2 之后这件事应该由宿主处理（见 win:close 通道）。
+   * 宿主（wvhost）监听 WM_CLOSE 走正常销毁流程；window.close() 只是顺手一试，
+   * 在 WebView2 里会失败（窗口不是脚本开的），失败是常态，别报错吓人。
    */
   function closeWindow() {
     invoke('win:close').catch(function () {});
@@ -213,4 +220,22 @@
     }
     return Promise.resolve(true);
   }
+
+  /**
+   * 无边框窗口的标题栏拖动。
+   *
+   * Electron 靠 CSS 的 -webkit-app-region: drag，浏览器引擎里只有 Chromium
+   * 的 app 模式认它，WebView2 不认。这里在标题栏按下鼠标时通知宿主
+   * （宿主用 WM_NCLBUTTONDOWN(HTCAPTION) 触发系统原生拖动）。
+   * 选择器对着 app.css 抄：标题栏是 .topbar，里面的按钮 / 仓库徽章不拖。
+   * 双击标题栏 = 最大化/还原，系统拖动循环自己处理。
+   */
+  document.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    var t = e.target;
+    if (!t || !t.closest) return;
+    if (!t.closest('.topbar')) return;
+    if (t.closest('button, .repo-chip, .win-controls, input, select, textarea, a, [contenteditable]')) return;
+    invoke('win:drag').catch(function () { /* 拖不动就算了 */ });
+  }, true);
 })();

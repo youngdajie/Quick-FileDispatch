@@ -60,9 +60,20 @@ EXE="$OUT_DIR/QuickFileDispatch-$VERSION.exe"
 echo "== 版本号 $VERSION（VI 用 $VERSION_NUM）"
 
 echo "== 1/3 go build"
+# -H=windowsgui：GUI 子系统，双击不弹 CMD 窗口（2026-09-23 杰哥反馈）。
+# 命令行输出不受影响 —— main.go 的 attachConsole() 会接回控制台。
 # 不加 -ldflags="-s -w"：刚起步，留着符号表，崩溃时栈能看出函数名。
 # 等稳定了再考虑（实测能小 3~4 MB）。
-go build -o "$EXE" .
+#
+# 防呆：先记旧 mtime，编完必须变新。出过一次「go build 没生效、安装包把
+# 早上的旧 exe 打进去」的事故（装上还是 demo 老版），不检查根本发现不了。
+old_mtime=$(stat -c%Y "$EXE" 2>/dev/null || echo 0)
+go build -ldflags "-H=windowsgui" -o "$EXE" .
+new_mtime=$(stat -c%Y "$EXE")
+if [ "$new_mtime" -le "$old_mtime" ]; then
+  echo "go build 没有产出新文件（mtime 没前进），终止——先查为什么"
+  exit 3
+fi
 echo "   $(mib "$EXE")"
 
 echo "== 2/3 rcedit 注入图标与版本信息"
@@ -76,7 +87,9 @@ echo "== 2/3 rcedit 注入图标与版本信息"
   --set-version-string "LegalCopyright" "Copyright (c) 2026 小杰"
 
 echo "== 3/3 makensis 打安装包"
-"$MAKENSIS" \
+# MSYS_NO_PATHCONV：git-bash 会把 "/DVERSION=..." 这种开关当 POSIX 路径翻译成
+# "<PortableGit>/DVERSION=..."，makensis 直接开不了脚本（2026-09-23 实踩）。
+MSYS_NO_PATHCONV=1 "$MAKENSIS" \
   "/DVERSION=$VERSION" \
   "/DVERSION_NUM=$VERSION_NUM" \
   "/DSRC_EXE=$(cygpath -w "$EXE")" \

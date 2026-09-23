@@ -16,6 +16,7 @@ import (
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/winfont"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/wvhost"
 )
 
 // Env 是处理函数需要的依赖。用结构体传进去而不是包级全局，
@@ -139,7 +140,7 @@ func Register(r *Registry, env *Env) {
 			// 下面三个是 Go 版的运行信息。About 页的「技术栈」那一段是写死在
 			// 渲染层里的文字（还写着 Electron / Node.js），等 Go 版定型了要一起改。
 			"go":       runtime.Version(),
-			"shell":    "edge-app（过渡，正式版换 WebView2）",
+			"shell":    "WebView2（internal/wvhost，纯 syscall 零依赖）",
 			"electron": "", // 明确留空：Go 版没有 Electron
 			"isDev":    false,
 		}, nil
@@ -220,13 +221,27 @@ func Register(r *Registry, env *Env) {
 
 	/* ---------------------------------------------------------- 窗口 */
 
-	// 过渡期（Edge --app 模式）拿不到窗口句柄，这几个只能是「不报错」。
-	// 换成 WebView2 之后要接真的：最小化 / 最大化 / 关闭、以及最大化状态变化
-	// 要推给渲染层（渲染层订阅的是 win:maximized 事件，现在的 HTTP 传输还推不了事件）。
-	r.Handle("win:minimize", func(json.RawMessage) (any, error) { return true, nil })
-	r.Handle("win:maximize", func(json.RawMessage) (any, error) { return false, nil })
-	r.Handle("win:close", func(json.RawMessage) (any, error) { return true, nil })
-	r.Handle("win:isMaximized", func(json.RawMessage) (any, error) { return false, nil })
+	// 这些操作只碰 HWND（ShowWindow / PostMessage / IsZoomed 跨线程安全），
+	// 从 HTTP 协程里调没问题；WebView2 的接口指针则只留在 UI 线程里（见 wvhost）。
+	r.Handle("win:minimize", func(json.RawMessage) (any, error) {
+		return wvhost.Minimize(), nil
+	})
+	// 「最大化 / 还原」二合一，返回切换后的状态（渲染层拿它切图标）
+	r.Handle("win:maximize", func(json.RawMessage) (any, error) {
+		return wvhost.ToggleMaximize(), nil
+	})
+	r.Handle("win:close", func(json.RawMessage) (any, error) {
+		return wvhost.CloseWin(), nil
+	})
+	r.Handle("win:isMaximized", func(json.RawMessage) (any, error) {
+		return wvhost.IsMaximized(), nil
+	})
+	// 标题栏拖动：渲染层的 -webkit-app-region 是 Electron 专属，WebView2 里
+	// 由 bridge.js 在 mousedown 时调这条，宿主触发系统原生拖动
+	r.Handle("win:drag", func(json.RawMessage) (any, error) {
+		wvhost.BeginDrag()
+		return true, nil
+	})
 	r.Handle("ui:setBackground", func(json.RawMessage) (any, error) { return true, nil })
 
 	/* ---------------------------------------------------------- Git */
