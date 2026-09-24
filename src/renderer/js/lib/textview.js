@@ -157,7 +157,7 @@ export function previewText(opts) {
 
   function closeModal() {
     if (st.dirty) {
-      confirmDialog('有未保存的修改', '关闭之后这次改的内容就没了。', '放弃修改').then((yes) => {
+      confirmDialog('有未保存的修改', '关闭之后这次改的内容就没了', '放弃修改').then((yes) => {
         if (yes) {
           st.dirty = false;
           m.close();
@@ -187,14 +187,14 @@ export function previewText(opts) {
   function showBlocked(res) {
     const r = (res && res.reason) || '';
     const copy = {
-      binary: ['这是二进制文件，没法按文本看', '后缀看着像文本，但内容里有空字节 —— 图片、压缩包、可执行文件都属于这一类。'],
-      utf16: ['这个文件的编码暂时不支持', '内容像是 UTF-16（Windows 记事本另存为「Unicode」就会这样），换个编码另存为 UTF-8 再看。'],
+      binary: ['这是二进制文件，没法按文本看', '后缀看着像文本，但内容里有空字节 —— 图片、压缩包、可执行文件都属于这一类'],
+      utf16: ['这个文件的编码暂时不支持', '内容像是 UTF-16（Windows 记事本另存为「Unicode」就会这样），换个编码另存为 UTF-8 再看'],
       tooLarge: [
         '文件太大，不在这里打开',
         '体积 ' + (CPLinks ? CPLinks.formatBytes(res.size) : res.size + ' B') +
-          '，超过 ' + (CPLinks ? CPLinks.formatBytes(res.limit) : res.limit + ' B') + ' 的预览上限。'
+          '，超过 ' + (CPLinks ? CPLinks.formatBytes(res.limit) : res.limit + ' B') + ' 的预览上限'
       ]
-    }[r] || ['读不出这个文件', '返回的数据里没有可显示的文本内容。'];
+    }[r] || ['读不出这个文件', '返回的数据里没有可显示的文本内容'];
 
     body.innerHTML =
       '<div class="tv-msg blocked">' +
@@ -325,7 +325,7 @@ export function previewText(opts) {
     }
     if (!st.editing) return;
     if (revert && st.dirty) {
-      confirmDialog('放弃这次的修改？', '文件会回到你打开它时的样子。', '放弃修改').then((yes) => {
+      confirmDialog('放弃这次的修改？', '文件会回到你打开它时的样子', '放弃修改').then((yes) => {
         if (!yes) return;
         st.text = st.base;
         st.dirty = false;

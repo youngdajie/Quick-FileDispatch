@@ -18,6 +18,7 @@ import {
 } from '../lib/dom.js';
 import { fileIcon, isImageName } from '../lib/fileicons.js';
 import { previewText } from '../lib/textview.js';
+import { openMiniUpload } from '../lib/upload-mini.js';
 import state from '../lib/state.js';
 
 const CPLinks = window.CPLinks;
@@ -46,7 +47,9 @@ const ICONS = {
   /** 本地：一台显示器 */
   monitor: svg('<rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6"/><path d="M12 16.5V20"/>', 15),
   /** 本地 ↔ 云端：上下互换的双箭头，替掉以前那个 ⟷ 字符 */
-  swap: svg('<path d="M8 4.5v13"/><path d="M4.6 7.9 8 4.5l3.4 3.4"/><path d="M16 19.5v-13"/><path d="M12.6 16.1 16 19.5l3.4-3.4"/>', 15)
+  swap: svg('<path d="M8 4.5v13"/><path d="M4.6 7.9 8 4.5l3.4 3.4"/><path d="M16 19.5v-13"/><path d="M12.6 16.1 16 19.5l3.4-3.4"/>', 15),
+  /** 上传到此文件夹：一个向上的箭头 */
+  upload: svg('<path d="M12 16V5.5"/><path d="M8 9.5 12 5.5l4 4"/><path d="M4 18.5h16"/>', 15)
 };
 
 /**
@@ -389,6 +392,14 @@ function blankMenuItems() {
   const list = visibleItems();
   const allOn = list.length > 0 && list.every((i) => view.selected.has(i.path));
   return [
+    {
+      // 直接往「当前目录」传文件，省掉「切到上传页 → 改目标目录」两步
+      label: '上传到此文件夹',
+      icon: ICONS.upload,
+      hint: view.dir || '仓库根目录',
+      onClick: () => openMiniUpload(view.dir, () => load())
+    },
+    { sep: true },
     {
       label: allOn ? '取消全选' : '全选当前目录',
       icon: ICONS.check,
@@ -961,8 +972,8 @@ function openRenameDialog(targets) {
   box.innerHTML =
     '<p class="rule-desc" style="margin:0 0 12px">' +
     (multi
-      ? '把选中的 <b>' + targets.length + '</b> 个文件移动到同一个目录；留空即仓库根目录。'
-      : '改目录 = 移动，改文件名 = 重命名，两个一起改也可以。') +
+      ? '把选中的 <b>' + targets.length + '</b> 个文件移动到同一个目录；留空即仓库根目录'
+      : '改目录 = 移动，改文件名 = 重命名，两个一起改也可以') +
     '</p>' +
     // 这里用 div 而不是 label：label 里塞按钮会让点按钮顺带触发 label 的默认行为
     '<div class="field"><span class="field-label">目录 <span class="hint">相对仓库根目录</span></span>' +
@@ -983,9 +994,9 @@ function openRenameDialog(targets) {
     '<div id="mgDirPick"></div>' +
     '<div class="callout" style="margin-bottom:0">' +
     (view.source === 'local'
-      ? '本地目录会直接改名；改完后记得在左侧点「提交并推送」把改动同步到云端。'
+      ? '本地目录会直接改名；改完后记得在左侧点「提交并推送」把改动同步到云端'
       : ((state.cfg || {}).platform === 'cnb'
-          ? 'CNB 的写入通过本地 Git 提交推送完成，整批只产生一次提交。'
+          ? 'CNB 的写入通过本地 Git 提交推送完成，整批只产生一次提交'
           : '云端会重新写一份内容并删除旧路径，整批只产生一次提交，是原子的')) +
     '</div>';
 
@@ -1252,8 +1263,8 @@ async function applyReplace(target, file) {
       target.path +
       '\n\n' +
       (view.source === 'local'
-        ? '本地文件会被直接覆盖，改动需要通过「提交并推送」同步到云端。'
-        : '云端会写入一次新提交，旧内容仍可在 Git 历史里找回。'),
+        ? '本地文件会被直接覆盖，改动需要通过「提交并推送」同步到云端'
+        : '云端会写入一次新提交，旧内容仍可在 Git 历史里找回'),
     '确认替换'
   );
   if (!yes) return;
@@ -1296,8 +1307,8 @@ async function removeOne(sel) {
       (paths.length > 8 ? '\n… 以及另外 ' + (paths.length - 8) + ' 个' : '') +
       '\n\n' +
       (view.source === 'local'
-        ? '本地文件会被删除，需要「提交并推送」才会同步到云端。'
-        : '云端会写入一次删除提交，无法撤销（Git 历史里仍可找回）。'),
+        ? '本地文件会被删除，需要「提交并推送」才会同步到云端'
+        : '云端会写入一次删除提交，无法撤销（Git 历史里仍可找回）'),
     '确认删除'
   );
   if (!yes) return;

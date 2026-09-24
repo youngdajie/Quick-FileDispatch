@@ -188,6 +188,27 @@ func onControllerReady(ctrl unsafe.Pointer, url string, bg uint32) {
 	// WM_NCLBUTTONDOWN —— 按下时浏览器进程握着鼠标捕获，宿主的拖动循环
 	// 启动了也收不到移动，实测窗口纹丝不动（2026-09-23）。
 	if settings := vcallOut(wv.core, 3); settings != nil {
+		// ICoreWebView2Settings 基接口（不需要 QI），vtable 顺序对着 WebView2.h
+		// （SDK 1.0.3124，头文件 ICoreWebView2SettingsVtbl）数：
+		// 0 QueryInterface / 1 AddRef / 2 Release、
+		// 3 get_IsScriptEnabled / 4 put_IsScriptEnabled、
+		// 5 get_IsWebMessageEnabled / 6 put_IsWebMessageEnabled、
+		// 7 get_AreDefaultScriptDialogsEnabled / 8 put_AreDefaultScriptDialogsEnabled、
+		// 9 get_IsStatusBarEnabled / 10 put_IsStatusBarEnabled、
+		// 11 get_AreDevToolsEnabled / 12 put_AreDevToolsEnabled、
+		// 13 get_AreDefaultContextMenusEnabled / 14 put_AreDefaultContextMenusEnabled、
+		// 15 get_AreHostObjectsAllowed / 16 put_AreHostObjectsAllowed、……
+
+		// [槽 10] put_IsStatusBarEnabled(false)：关掉悬停链接时左下角那条 URL
+		// 角标。它是浏览器层画在页面之外的，DOM/CSS 拦不住，只能原生关。
+		vcall(settings, 10, 0)
+
+		// [槽 14] put_AreDefaultContextMenusEnabled(false)：全局关掉浏览器默认
+		// 右键菜单。注意语义：只关浏览器自带的菜单，页面 DOM 的 contextmenu
+		// 事件仍照常触发 —— 文件管理页 manage.js 自己的右键菜单（contextmenu
+		// 里 preventDefault + 自绘 .menu）继续工作，其它页面右键则无菜单。
+		vcall(settings, 14, 0)
+
 		if s9 := comQI(settings, &iidSettings9); s9 != nil {
 			vcall(s9, 38, uintptr(0xFFFF))
 		} else {

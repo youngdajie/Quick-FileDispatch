@@ -3,6 +3,7 @@
 import { $, err, toast, paintRanges, paintRange } from './lib/dom.js';
 import { enhanceAll } from './lib/cselect.js';
 import { enhanceNumbers } from './lib/numfield.js';
+import { installTooltips } from './lib/tooltip.js';
 import * as fileIcons from './lib/fileicons.js';
 import state from './lib/state.js';
 import * as appearance from './lib/appearance.js';
@@ -163,6 +164,9 @@ async function boot() {
 
   // 粒子背景挂上就不用管了：它自己盯着 <html data-theme> 决定跑不跑
   initUniverse();
+
+  // 接管原生 title 提示（黑框系统小窗太突兀），换成自绘的云朵气泡
+  installTooltips();
 
   bindChrome();
   Object.keys(PAGES).forEach((k) => {

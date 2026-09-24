@@ -16,13 +16,13 @@ const PLATFORMS = [
   {
     id: 'github',
     name: 'GitHub',
-    desc: '全球最大代码托管平台，私有仓库免费。raw 域名国内访问偶有波动，可切 CDN。',
+    desc: '全球最大代码托管平台，私有仓库免费。raw 域名国内访问偶有波动，可切 CDN',
     tip: '单文件 ≤ 100MB · 单仓库建议 ≤ 1GB'
   },
   {
     id: 'cnb',
     name: 'CNB',
-    desc: '腾讯云原生构建的代码托管，国内直连快。写入通过 Git 完成，需要本机装了 Git。',
+    desc: '腾讯云原生构建的代码托管，国内直连快。写入通过 Git 完成，需要本机装了 Git',
     tip: '单文件 ≤ 200MB · 仓库存储免费 100GB'
   }
 ];
@@ -88,11 +88,11 @@ function panePlatform() {
   return (
     '<div class="ob-pane">' +
     '<p style="margin:0 0 12px;color:var(--text-dim);font-size:12.5px;line-height:1.9">' +
-    '把免费的代码托管仓库当成文件仓库来用 —— 仓库装得下的东西，这里都能分发。先选一个平台，后面随时能换。</p>' +
+    '把免费的代码托管仓库当成文件仓库来用 —— 仓库装得下的东西，这里都能分发。先选一个平台，后面随时能换</p>' +
     '<div class="plat-cards">' + cards + '</div>' +
     '<div class="ob-note" style="margin-top:14px">程序不会限制你能传什么，真正的边界在平台那边：' +
     '<b>' + escapeHtml(CPLinks.FILE_LIMITS.github.note) + '</b>（GitHub） / ' +
-    '<b>' + escapeHtml(CPLinks.FILE_LIMITS.cnb.note) + '</b>（CNB）。</div>' +
+    '<b>' + escapeHtml(CPLinks.FILE_LIMITS.cnb.note) + '</b>（CNB）</div>' +
     '</div>'
   );
 }
@@ -100,9 +100,9 @@ function panePlatform() {
 function paneRepo() {
   const help =
     draft.platform === 'cnb'
-      ? 'CNB 需要 <b>访问令牌</b>（必须是<b>经典令牌</b>，MCP 令牌调不了 REST 接口）。' +
+      ? 'CNB 需要 <b>访问令牌</b>（必须是<b>经典令牌</b>，MCP 令牌调不了 REST 接口）' +
         '申请：<a href="#" data-ext="https://cnb.cool/profile/token">cnb.cool/profile/token</a>'
-      : 'GitHub 需要 <b>Personal Access Token</b>，至少勾选 <b>repo</b>。' +
+      : 'GitHub 需要 <b>Personal Access Token</b>，至少勾选 <b>repo</b>' +
         '申请：<a href="#" data-ext="https://github.com/settings/tokens/new?scopes=repo&description=JIE-Dispatch">github.com/settings/tokens</a>';
 
   const checks =
@@ -138,7 +138,7 @@ function paneRepo() {
     (state.cfg && state.cfg.hasToken ? '已保存，留空即沿用' : '必填') +
     '</span></span>' +
     '<input type="password" id="obToken" placeholder="' + (state.cfg && state.cfg.hasToken ? '留空表示沿用已保存的 Token' : '粘贴 Token') + '" autocomplete="off" /></label>' +
-    '<div class="ob-note">' + help + '　Token 只保存在本机，使用 Windows 系统级加密（DPAPI）落盘。</div>' +
+    '<div class="ob-note">' + help + '　Token 只保存在本机，使用 Windows 系统级加密（DPAPI）落盘</div>' +
     checks +
     '</div>'
   );
@@ -155,7 +155,7 @@ function paneLocal() {
     '<div class="ob-pane">' +
     '<p style="margin:0 0 12px;color:var(--text-dim);font-size:12.5px;line-height:1.9">' +
     '把仓库拉到本地，文件管理界面就读本地磁盘（打开即见、翻页零延迟），' +
-    '而且本地改了文件也能直接推回云端。<b>建议映射</b>；实在不想也可以先只用云端浏览。</p>' +
+    '而且本地改了文件也能直接推回云端。<b>建议映射</b>；实在不想也可以先只用云端浏览</p>' +
     '<div class="input-row" style="margin-bottom:10px">' +
     '<input type="text" id="obLocalDir" placeholder="例如 D:\\my-files" value="' + escapeHtml(draft.localDir) + '" />' +
     '<button class="btn btn-ghost btn-sm" id="obPickDir">选择…</button>' +
@@ -171,7 +171,7 @@ function paneLocal() {
     '<span class="pn">暂不映射</span><span class="pd">只用云端浏览，速度慢一些，之后再设置也行</span></button>' +
     '</div>' +
     '<div class="ob-note" id="obLocalNote" style="margin-top:12px">' +
-    '选好目录后会立刻检测它是不是 Git 仓库。' +
+    '选好目录后会立刻检测它是不是 Git 仓库' +
     (c.localDir ? '　当前已配置：<span class="mono">' + escapeHtml(c.localDir) + '</span>' : '') +
     '</div>' +
     '</div>'
@@ -191,7 +191,7 @@ function paneDone() {
     '<div class="ob-done">' +
     '<div class="big-ic"><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="m7.6 12.3 3 3 5.8-6"/></svg></div>' +
     '<h3>配置完成，可以开始用了</h3>' +
-    '<p>把文件拖进上传区就会自动压缩并推送到仓库；想改这里的任何一项，随时去「设置」页。</p>' +
+    '<p>把文件拖进上传区就会自动压缩并推送到仓库；想改这里的任何一项，随时去「设置」页</p>' +
     '<div class="ob-summary"><dl class="kv">' +
     rows.map((r) => '<dt>' + escapeHtml(r[0]) + '</dt><dd>' + escapeHtml(r[1]) + '</dd>').join('') +
     '</dl></div>' +
@@ -450,7 +450,7 @@ function bindPane() {
           const note = $('#obLocalNote');
           if (note) {
             note.innerHTML =
-              '已选择仅云端浏览：文件管理会直接读云端接口，速度取决于网络。之后想映射本地目录，去「设置」页选一个目录即可。';
+              '已选择仅云端浏览：文件管理会直接读云端接口，速度取决于网络。之后想映射本地目录，去「设置」页选一个目录即可';
           }
           refreshNext();
           return;
@@ -459,11 +459,11 @@ function bindPane() {
         if (localMode === 'repo') {
           wrap.querySelectorAll('.plat-card[data-choice]').forEach((x) => x.classList.toggle('active', x === b));
           const note = $('#obLocalNote');
-          if (note) note.innerHTML = '本地目录已经是 Git 仓库，将直接使用，不做任何下载。';
+          if (note) note.innerHTML = '本地目录已经是 Git 仓库，将直接使用，不做任何下载';
         } else if (localMode === 'clone') {
           wrap.querySelectorAll('.plat-card[data-choice]').forEach((x) => x.classList.toggle('active', x === b));
           const note = $('#obLocalNote');
-          if (note) note.innerHTML = '点上面的「克隆到此处」把仓库拉到本地，目录需要是空的。';
+          if (note) note.innerHTML = '点上面的「克隆到此处」把仓库拉到本地，目录需要是空的';
         } else {
           localMode = null;
         }

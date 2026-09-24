@@ -104,6 +104,13 @@
         </div>
 
         <div class="dropzone" id="dropzone">
+          <svg class="dz-dash" aria-hidden="true">
+            <rect class="dz-dash-rect"/>
+            <circle class="dz-corner" data-corner="tl"/>
+            <circle class="dz-corner" data-corner="tr"/>
+            <circle class="dz-corner" data-corner="bl"/>
+            <circle class="dz-corner" data-corner="br"/>
+          </svg>
           <div class="dz-inner">
             <div class="dz-icon">
               <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -120,44 +127,54 @@
         </div>
 
         <div class="up-options" id="upOptions">
-          <div class="field">
-            <span class="field-label">目标目录 <span class="hint">留空 = 仓库根目录</span></span>
-            <div class="dir-input-row">
-              <input type="text" id="upDir" placeholder="留空 = 仓库根目录，如 blog/2026" />
-              <button type="button" class="btn btn-ghost btn-sm" id="btnUpDirPick" title="浏览云端仓库里现有的目录">浏览云端…</button>
+          <div class="up-basic">
+            <div class="field">
+              <span class="field-label">目标目录 <span class="hint">留空 = 仓库根目录</span></span>
+              <div class="dir-input-row">
+                <input type="text" id="upDir" placeholder="留空 = 仓库根目录，如 blog/2026" />
+                <button type="button" class="btn btn-ghost btn-sm" id="btnUpDirPick" title="浏览云端仓库里现有的目录">浏览云端…</button>
+              </div>
+            </div>
+            <label class="field">
+              <span class="field-label">文件名</span>
+              <select id="upRenameMode">
+                <option value="keep">保持原名</option>
+                <option value="hash">哈希化（保证唯一）</option>
+                <option value="timestamp">时间戳</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">前缀</span>
+              <input type="text" id="upPrefix" placeholder="如 cover-" />
+            </label>
+          </div>
+
+          <div class="up-compress" id="upCompressBox">
+            <div class="upc-head">
+              <label class="upc-toggle">
+                <input type="checkbox" id="upCompress" checked />
+                <span class="upc-title">图片压缩</span>
+              </label>
+              <span class="hint">仅对图片生效，其它文件原样上传</span>
+            </div>
+            <div class="upc-body">
+              <label class="field">
+                <span class="field-label">质量 <b id="upQualityVal">80</b></span>
+                <input type="range" id="upQuality" min="10" max="100" value="80" />
+              </label>
+              <label class="field">
+                <span class="field-label">输出格式</span>
+                <select id="upFormat">
+                  <option value="avif">AVIF（推荐，体积最小）</option>
+                  <option value="auto">智能（按内容自动选）</option>
+                  <option value="keep">保持原格式</option>
+                  <option value="webp">WebP</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="png">PNG</option>
+                </select>
+              </label>
             </div>
           </div>
-          <label class="field">
-            <span class="field-label">文件名</span>
-            <select id="upRenameMode">
-              <option value="keep">保持原名</option>
-              <option value="hash">哈希化（保证唯一）</option>
-              <option value="timestamp">时间戳</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field-label">前缀</span>
-            <input type="text" id="upPrefix" placeholder="如 cover-" />
-          </label>
-          <label class="field checkbox-field">
-            <input type="checkbox" id="upCompress" checked />
-            <span class="field-label">图片压缩 <span class="hint">仅对图片生效</span></span>
-          </label>
-          <label class="field">
-            <span class="field-label">质量 <b id="upQualityVal">80</b></span>
-            <input type="range" id="upQuality" min="10" max="100" value="80" />
-          </label>
-          <label class="field">
-            <span class="field-label">输出格式</span>
-            <select id="upFormat">
-              <option value="avif">AVIF（推荐，体积最小）</option>
-              <option value="auto">智能（按内容自动选）</option>
-              <option value="keep">保持原格式</option>
-              <option value="webp">WebP</option>
-              <option value="jpeg">JPEG</option>
-              <option value="png">PNG</option>
-            </select>
-          </label>
         </div>
 
         <div class="queue-panel" id="queuePanel" hidden>
@@ -468,7 +485,7 @@
 
                 <div class="prof-list" id="profileList"></div>
                 <div class="prof-empty" id="profileEmpty" hidden>
-                  还没有归档的配置。把上面三块填好，点「验证并归档」——验证通过后会出现在这里，以后一键切换。
+                  还没有归档的配置。把上面三块填好，点「验证并归档」——验证通过后会出现在这里，以后一键切换
                 </div>
               </div>
             </div>
@@ -557,7 +574,7 @@
                   两个都留 <b>0</b>（默认）就<b>不改动图片原始尺寸</b>，只按上面的质量与格式重新编码，
                   小图不会因为这里而被放大。填了数字才会等比缩放到不超过该尺寸 ——
                   比如宽高都填 <b>1920</b>，4000×3000 会变成 1920×1440，而 1200×900 原样保留。
-                  只想限制某一边，另一个留 0 即可。
+                  只想限制某一边，另一个留 0 即可
                 </p>
                 <label class="field">
                   <span class="field-label">目标体积（KB，0 = 不限制）<span class="hint">自动二分质量逼近</span></span>
@@ -632,7 +649,7 @@
             <div class="card-head"><h2>危险操作</h2></div>
             <div class="card-body">
               <button class="btn btn-danger" id="btnResetConfig">恢复默认设置</button>
-              <p class="hint" style="margin-top:10px">不会删除仓库里的任何文件，只重置本机配置。</p>
+              <p class="hint" style="margin-top:10px">不会删除仓库里的任何文件，只重置本机配置</p>
             </div>
           </section>
 

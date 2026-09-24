@@ -23,14 +23,14 @@ const PLATFORM_NAME = { github: 'GitHub', cnb: 'CNB' };
 
 const TOKEN_HELP = {
   github:
-    'GitHub 需要 <b>Personal Access Token</b>（经典版或细粒度均可），至少勾选 <b>repo</b>（读写仓库内容）。' +
-    '申请地址：<a href="#" data-ext="https://github.com/settings/tokens/new?scopes=repo&description=JIE-Dispatch">github.com/settings/tokens</a>。' +
-    'Token 只保存在本机，用 Windows 系统级加密（DPAPI）存储，代码不会把它写到任何地方。',
+    'GitHub 需要 <b>Personal Access Token</b>（经典版或细粒度均可），至少勾选 <b>repo</b>（读写仓库内容）' +
+    '申请地址：<a href="#" data-ext="https://github.com/settings/tokens/new?scopes=repo&description=JIE-Dispatch">github.com/settings/tokens</a>' +
+    'Token 只保存在本机，用 Windows 系统级加密（DPAPI）存储，代码不会把它写到任何地方',
   cnb:
-    'CNB 需要 <b>访问令牌</b>，请在「个人设置 → 访问令牌」创建，并勾选 <b>repo-code</b>（仓库代码读写）等权限。' +
-    '注意必须用<b>经典令牌</b>——MCP 令牌调不了 REST 接口（会一路 404）。' +
-    '申请地址：<a href="#" data-ext="https://cnb.cool/profile/token">cnb.cool/profile/token</a>。' +
-    'Token 只保存在本机，用 Windows 系统级加密存储。'
+    'CNB 需要 <b>访问令牌</b>，请在「个人设置 → 访问令牌」创建，并勾选 <b>repo-code</b>（仓库代码读写）等权限' +
+    '注意必须用<b>经典令牌</b>——MCP 令牌调不了 REST 接口（会一路 404）' +
+    '申请地址：<a href="#" data-ext="https://cnb.cool/profile/token">cnb.cool/profile/token</a>' +
+    'Token 只保存在本机，用 Windows 系统级加密存储'
 };
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -372,7 +372,7 @@ async function removeProfile(id) {
   if (!p) return;
   const yes = await confirmDialog(
     '删除配置',
-    '将从本机移除「' + profileLabel(p) + '」及其 Token。仓库里的文件不受影响。',
+    '将从本机移除「' + profileLabel(p) + '」及其 Token。仓库里的文件不受影响',
     '删除'
   );
   if (!yes) return;
@@ -462,11 +462,11 @@ function confirmExport(count, withToken) {
     wrap.innerHTML =
       '<p class="hint" style="margin:0 0 10px">导出的 JSON 会带上：各份配置的仓库信息、' +
       '<b class="accent">访问令牌（明文）</b>，以及<b>每份配置各自的链接规则和自定义域名</b>；' +
-      '复制格式与预览代理是全局设置，也会一并带上。</p>' +
+      '复制格式与预览代理是全局设置，也会一并带上</p>' +
       '<p class="hint" style="margin:0 0 10px"><b>本地目录不会写入</b> —— 换台电脑原路径多半不存在，' +
-      '导入后程序会引导你为本机重新绑定目录。</p>' +
-      '<p class="rule-desc" style="margin:0">本次共 ' + count + ' 份配置，其中 ' + withToken + ' 份带令牌。' +
-      '这个文件等于一把钥匙，请只放在你自己的机器或加密盘里，别发到群聊和公开仓库。</p>';
+      '导入后程序会引导你为本机重新绑定目录</p>' +
+      '<p class="rule-desc" style="margin:0">本次共 ' + count + ' 份配置，其中 ' + withToken + ' 份带令牌' +
+      '这个文件等于一把钥匙，请只放在你自己的机器或加密盘里，别发到群聊和公开仓库</p>';
     modal({
       title: '导出配置',
       node: wrap,
@@ -579,7 +579,7 @@ async function importProfiles() {
     modal({
       title: '没有新增配置',
       html:
-        '<p class="hint" style="margin:0 0 10px">文件里的配置本机都已经有了，没有导入新的。</p>' +
+        '<p class="hint" style="margin:0 0 10px">文件里的配置本机都已经有了，没有导入新的</p>' +
         (skipped.length ? '<div class="imp-report">' + skipped.map(skipLine).join('') + '</div>' : ''),
       buttons: [{ label: '好', primary: true }]
     });
@@ -617,15 +617,14 @@ async function importProfiles() {
     '<p class="hint" style="margin:0 0 10px">' +
     '导入 <b class="accent">' + added.length + '</b> 份，其中 <b class="accent">' + usable + '</b> 份可用' +
     (needFix ? '，<b style="color:var(--warn)">' + needFix + '</b> 份需要修一下' : '') +
-    '。' +
-    (skipped.length ? '另有 ' + skipped.length + ' 份被跳过。' : '') +
-    (res.settingsApplied ? '<br>「文件链接」的全局设置（复制格式 / 预览代理）也一并恢复了。' : '') +
+    (skipped.length ? '；另有 ' + skipped.length + ' 份被跳过' : '') +
+    (res.settingsApplied ? '<br>「文件链接」的全局设置（复制格式 / 预览代理）也一并恢复了' : '') +
     '</p>' +
     (needLocal
       ? '<p class="rule-desc" style="margin:0 0 10px">' +
-        '<b class="accent">导入不含本地路径</b>：换台电脑原路径多半不存在，所以配置文件里没有它。' +
+        '<b class="accent">导入不含本地路径</b>：换台电脑原路径多半不存在，所以配置文件里没有它' +
         '下面的 <b>本地目录 ✗</b> 提示就是这么来的 —— 为这份配置在本机绑一个目录（' +
-        '已有仓库用房「选择…」，想重新拉一份用「克隆到此处」），再点「验证并归档」即可。' +
+        '已有仓库用房「选择…」，想重新拉一份用「克隆到此处」），再点「验证并归档」即可' +
         '</p>'
       : '') +
     '<div class="imp-report">' +
@@ -634,9 +633,9 @@ async function importProfiles() {
     '</div>' +
     (needFix
       ? '<p class="rule-desc" style="margin:10px 0 0">修的方式：用标题右边的「归档配置」下拉切到那一份，' +
-        '按上面的提示改「仓库信息 / 本地目录」，改完点「验证并归档」。' +
+        '按上面的提示改「仓库信息 / 本地目录」，改完点「验证并归档」' +
         '<span class="hint">Token 已经随配置文件一起导入，不用再手填；若某份确实没令牌，' +
-        '说明导出时那份配置本身就没存。</span></p>'
+        '说明导出时那份配置本身就没存</span></p>'
       : '');
 
   foot.innerHTML = '';
@@ -733,7 +732,7 @@ async function archiveProfile() {
 
     if (!chk.ok) {
       const wrap = document.createElement('div');
-      wrap.innerHTML = renderSteps(chk) + '<br><span class="bad">三块里还有没通过的，先修好再归档。</span>';
+      wrap.innerHTML = renderSteps(chk) + '<br><span class="bad">三块里还有没通过的，先修好再归档</span>';
       modal({ title: '验证未通过', node: wrap, buttons: [{ label: '好', primary: true }] });
       return;
     }
@@ -983,15 +982,15 @@ function updateProxyDesc() {
   const raw = ($('#cfgProxyUrl').value || '').trim();
   if (!raw) {
     box.innerHTML =
-      '留空的话，预览会直接请求仓库直链（GitHub raw 这类），国内经常加载不出来。' +
-      '填上自己的 CDN 之后，预览和缩略图都会改走它。';
+      '留空的话，预览会直接请求仓库直链（GitHub raw 这类），国内经常加载不出来' +
+      '填上自己的 CDN 之后，预览和缩略图都会改走它';
     return;
   }
   const base = CPLinks.normalizeBaseUrl(raw);
   const demo = CPLinks.buildProxyUrl({ proxyUrl: raw }, '111.avif');
   box.innerHTML =
     '预览将请求：<span class="accent">' + escapeHtml(demo) + '</span><br>' +
-    '按「' + escapeHtml(base) + '/<仓库内相对路径>」拼接，例：仓库根目录的 111.avif → 上面那条。' +
+    '按「' + escapeHtml(base) + '/<仓库内相对路径>」拼接，例：仓库根目录的 111.avif → 上面那条' +
     (/\{path\}/.test(raw) ? '（用了 {path} 占位）' : '');
 }
 
@@ -1226,7 +1225,7 @@ async function test() {
       .map((s) => (s.ok ? '<span class="ok">✓</span> ' : '<span class="bad">✗</span> ') + escapeHtml(s.name) + '：' + escapeHtml(s.message))
       .join('<br>');
     const wrap = document.createElement('div');
-    wrap.innerHTML = lines + (res.ok ? '<br><br><span class="ok">一切正常，可以开始上传了。</span>' : '');
+    wrap.innerHTML = lines + (res.ok ? '<br><br><span class="ok">一切正常，可以开始上传了</span>' : '');
     modal({ title: res.ok ? '连接正常' : '连接存在问题', node: wrap, buttons: [{ label: '好', primary: true }] });
   } catch (e) {
     err(e.message || String(e));
@@ -1320,7 +1319,7 @@ export default {
       $('#btnToggleToken').textContent = el.type === 'password' ? '显示' : '隐藏';
     };
     $('#btnClearToken').onclick = async () => {
-      const yes = await confirmDialog('清除 Token', '清除后需要重新填写才能上传 / 删除。', '清除');
+      const yes = await confirmDialog('清除 Token', '清除后需要重新填写才能上传 / 删除', '清除');
       if (!yes) return;
       await state.patch({ token: '' });
       tokenTouched = false;
@@ -1352,7 +1351,7 @@ export default {
     });
 
     $('#btnResetConfig').onclick = async () => {
-      const yes = await confirmDialog('恢复默认设置', '将清空所有本机配置（含 Token）。仓库里的文件不受影响。', '恢复默认');
+      const yes = await confirmDialog('恢复默认设置', '将清空所有本机配置（含 Token）。仓库里的文件不受影响', '恢复默认');
       if (!yes) return;
       await window.cloudpic.config.reset();
       await state.refresh();

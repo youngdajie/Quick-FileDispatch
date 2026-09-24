@@ -9,11 +9,66 @@ const SITE = 'https://www.yangjie.site';
 const REPO = 'https://cnb.cool/youngdajie/Quick-FileDispatch';
 
 /**
+ * hero 行两个链接的前缀图标（14px）。
+ * 线宽是照「小杰」两个加粗字的字重配的：14px 图标、24 视口、stroke 2.6 ≈ 1.5px 笔画，
+ * 和 12.5px 粗体汉字并排看起来一样重，不会一个虚一个实。
+ */
+const ICON_GLOBE =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
+  '<path d="M12 3a15.3 15.3 0 0 1 0 18a15.3 15.3 0 0 1 0-18z"/></svg>';
+const ICON_CODE =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M15.5 7 20 12l-4.5 5"/><path d="M8.5 7 4 12l4.5 5"/></svg>';
+
+/** 「展开看看」按钮的小箭头（展开时 CSS 把它转 180°） */
+const ICON_CHEVRON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M6 9.5 12 15.5 18 9.5"/></svg>';
+
+/**
+ * hero 大图标（内联版 logo）。和 assets/logo.svg 同一份图形，但拆成两层：
+ *   外层 rect（蓝色圆角方块）—— 静止；
+ *   内层 <g class="hero-logo-mark">（罗盘图形）—— 点击时飞速旋转。
+ * 用 <img> 做不到只转内层，所以这里内联；gradient 的 id 全局唯一免得撞车。
+ */
+const LOGO_SVG =
+  '<svg class="hero-logo" viewBox="0 0 1024 1024" aria-hidden="true">' +
+  '<defs><linearGradient id="qfdLogoG" x1="0" y1="0" x2="0.55" y2="1">' +
+  '<stop offset="0%" stop-color="#4E9BEA"/><stop offset="100%" stop-color="#0B4A9C"/>' +
+  '</linearGradient></defs>' +
+  '<rect x="0" y="0" width="1024" height="1024" rx="256" fill="url(#qfdLogoG)"/>' +
+  '<g class="hero-logo-mark">' +
+  '<circle cx="512" cy="512" r="235.71" fill="#FFFFFF" opacity="0.55"/>' +
+  '<line x1="647.59" y1="512" x2="935.44" y2="512" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>' +
+  '<line x1="607.87" y1="607.87" x2="811.42" y2="811.42" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>' +
+  '<line x1="512" y1="647.59" x2="512" y2="935.44" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>' +
+  '<line x1="416.13" y1="607.87" x2="212.58" y2="811.42" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>' +
+  '<line x1="376.41" y1="512" x2="88.56" y2="512" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>' +
+  '<line x1="416.13" y1="416.13" x2="212.58" y2="212.58" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>' +
+  '<line x1="512" y1="376.41" x2="512" y2="88.56" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>' +
+  '<line x1="607.87" y1="416.13" x2="811.42" y2="212.58" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>' +
+  '<circle cx="512" cy="512" r="319.15" fill="none" stroke="#FFFFFF" stroke-width="54.23"/>' +
+  '<circle cx="512" cy="512" r="258.65" fill="none" stroke="#FFFFFF" stroke-width="54.23"/>' +
+  '<line x1="512" y1="512" x2="745.62" y2="512" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>' +
+  '<line x1="512" y1="512" x2="677.2" y2="677.2" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>' +
+  '<line x1="512" y1="512" x2="512" y2="745.62" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>' +
+  '<line x1="512" y1="512" x2="346.8" y2="677.2" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>' +
+  '<line x1="512" y1="512" x2="278.38" y2="512" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>' +
+  '<line x1="512" y1="512" x2="346.8" y2="346.8" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>' +
+  '<line x1="512" y1="512" x2="512" y2="278.38" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>' +
+  '<line x1="512" y1="512" x2="677.2" y2="346.8" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>' +
+  '<circle cx="512" cy="512" r="100.12" fill="#FFFFFF"/>' +
+  '<circle cx="512" cy="512" r="35.46" fill="#12508F"/>' +
+  '</g></svg>';
+
+/**
  * 技术栈。分三段拼，因为头和尾**跟着运行时走**。
  *
  * 起因：这一页原先把「Electron / Node.js」写死在表里。项目在 2.8.0 之后分出一支
- * 用 Go 重写的版本（CNB 的 go 分支），两侧共用这份渲染层 —— 再写成死表，
- * 就会出现「Go 版程序自称基于 Electron」这种自相矛盾。
+ * 用 Go 重写的版本（CNB 的 go 分支），到 3.0.0 起转正为唯一主线，Electron 版则
+ * 定格在 v2.8.0 不再更新；两侧共用这份渲染层 —— 再写成死表，就会出现
+ * 「Go 版程序自称基于 Electron」这种自相矛盾。
  *
  * 判据取 app.info() 的字段，不猜环境：Go 版给 go（后端运行时）、electron 留空；
  * Electron 版给 electron / node。渲染层一个字都不用为版本分叉。
@@ -27,7 +82,7 @@ function shellTech(info) {
   return isGoShell(info)
     ? [
         ['Go', '桌面外壳。后端编译成单个 exe，不随包携带任何运行时，所以安装包只有十几 MB'],
-        ['WebView2', '复用系统里的 Chromium 内核来画界面，不再把 Chromium 打进安装包（过渡期先用 Edge 的应用模式）'],
+        ['WebView2', '复用系统里的 Chromium 内核来画界面，不再把 Chromium 打进安装包'],
         ['127.0.0.1 本地服务', '后端本身就是它：只监听回环地址，界面和它之间走 HTTP，天然不对外暴露']
       ]
     : [
@@ -93,23 +148,55 @@ function quotaTable() {
   );
 }
 
+/* 当前展开的技术条目下标（-1 = 全折叠）。render 会重建 DOM，所以每次重画都重置 */
+let techOpen = -1;
+
+/**
+ * 点技术标签：展开该项说明；再点同一个收起。
+ * 卡片每次整块重建而不是只换文字 —— 这样入场动画每次都能重新触发。
+ */
+function toggleTech(idx) {
+  const fold = $('#techFold');
+  const card = $('#techFoldCard');
+  if (!fold || !card) return;
+  const info = state.info || {};
+  const TECH = tech(info);
+  const tags = document.querySelectorAll('#aboutWrap .tech-tag');
+
+  if (techOpen === idx) {
+    techOpen = -1;
+    fold.classList.remove('open');
+    tags.forEach((el) => el.classList.remove('active'));
+    return;
+  }
+  const t = TECH[idx];
+  if (!t) return;
+  techOpen = idx;
+  tags.forEach((el, i) => el.classList.toggle('active', i === idx));
+  card.innerHTML = '<b>' + escapeHtml(t[0]) + '</b>' + escapeHtml(t[1]);
+  fold.classList.add('open');
+}
+
 function render() {
+  techOpen = -1;
   const info = state.info || {};
   const used = info.cpuCount || navigator.hardwareConcurrency || '-';
   const threads = Math.max(1, Math.min(16, navigator.hardwareConcurrency || 4));
   const TECH = tech(info);
 
   $('#aboutWrap').innerHTML =
-    /* hero */
+    /* hero：居中大图标 + 主色渐变底，参考「关于手机」的排法；
+       作者一行、两个链接另起一行 */
     '<div class="about-hero">' +
-    '<div class="about-logo"><img src="/assets/logo.svg" alt="" /></div>' +
-    '<div>' +
+    '<div class="about-logo" title="点一下试试">' + LOGO_SVG + '</div>' +
     '<h2>' + escapeHtml(APP) + '</h2>' +
-    '<div class="ver">版本 ' + escapeHtml(info.version || '1.2') + ' · Windows 桌面版 · 本地压缩 + 云端分发</div>' +
-    '<div class="author">作者：<b>' + escapeHtml(AUTHOR) + '</b>　·　' +
-    '<a href="#" data-ext="' + SITE + '">' + escapeHtml(SITE.replace('https://', '')) + '</a>　·　' +
-    '<a href="#" data-ext="' + REPO + '" title="' + escapeHtml(REPO) + '">项目地址</a></div>' +
-    '</div>' +
+    '<div class="ver">版本 ' + escapeHtml(info.version || '-') + ' · Windows 桌面版</div>' +
+    '<div class="author">作者：<b>' + escapeHtml(AUTHOR) + '</b></div>' +
+    '<div class="author-links">' +
+    '<a href="#" data-ext="' + SITE + '" class="author-link" title="' + escapeHtml(SITE) + '">' + ICON_GLOBE +
+    escapeHtml(SITE.replace('https://', '')) + '</a> · ' +
+    '<a href="#" data-ext="' + REPO + '" class="author-link" title="' + escapeHtml(REPO) + '">' + ICON_CODE +
+    '项目地址</a></div>' +
     '</div>' +
 
     /* 这个程序在做什么 */
@@ -117,30 +204,32 @@ function render() {
     '<div class="card-head"><h2>这个程序在做什么</h2></div>' +
     '<div class="card-body" style="font-size:13px;color:var(--text-dim);line-height:2">' +
     '把免费的代码托管仓库当成文件仓库来用：图片在本机用多核 CPU 压缩好再推上去，其他文件原样上传，' +
-    '仓库装得下的东西这里都能分发。' +
-    '<ul style="margin:10px 0 0;padding-left:20px;line-height:2">' +
-    '<li><b>不预设仓库和分支</b>——仓库名、分支自己填，分支默认 <span class="mono">main</span>，现在新建的仓库本来也就是它。</li>' +
-    '<li><b>压缩用你的 CPU</b>——Worker 池 + OffscreenCanvas，多核并行，几十张图基本是点一下就完事，不再是 Web 版那种一张一张排队等。</li>' +
-    '<li><b>不止是图片</b>——仓库能装什么，它就能管什么。只要不越过 CNB / GitHub 的配额，就不额外设限。</li>' +
+    '仓库装得下的东西这里都能分发' +
+    '<p style="margin:11px 0 2px;color:var(--text-dim)">这程序主要是自用，也会给我妹用——细节上多磨一磨，用起来就事半功倍</p>' +
+    '<button type="button" class="about-fold-toggle" id="aboutFoldToggle" aria-expanded="false">' +
+    '<span class="aft-text">展开看看都支持什么</span>' + ICON_CHEVRON +
+    '</button>' +
+    '<div class="about-fold" id="aboutFold"><div class="about-fold-clip">' +
+    '<ul class="about-list">' +
+    '<li><b>不预设仓库和分支</b>——仓库名、分支自己填，分支默认 <span class="mono">main</span>，现在新建的仓库本来也就是它</li>' +
+    '<li><b>压缩用你的 CPU</b>——Worker 池 + OffscreenCanvas，多核并行，几十张图基本是点一下就完事，不再是 Web 版那种一张一张排队等</li>' +
+    '<li><b>不止是图片</b>——仓库能装什么，它就能管什么。只要不越过 CNB / GitHub 的配额，就不额外设限</li>' +
     '<li><b>云端和本地是同一份东西</b>——仓库会拉到本地，管理界面直接读本地磁盘，所以翻起来是瞬时的；' +
-    '两边都能改名、移动、替换内容，本地改完点一下「提交并推送」就能推回云端。</li>' +
-    '<li><b>第一次打开有引导</b>——选平台、填仓库与令牌（现场验证）、映射本地目录，一步步带过；不想走就按右上角 ❌ 退出，之后在「设置」页能重看。</li>' +
+    '两边都能改名、移动、替换内容，本地改完点一下「提交并推送」就能推回云端</li>' +
+    '<li><b>第一次打开有引导</b>——选平台、填仓库与令牌（现场验证）、映射本地目录，一步步带过；不想走就按右上角 ❌ 退出，之后在「设置」页能重看</li>' +
     '</ul>' +
+    '</div></div>' +
     '</div>' +
     '</section>' +
 
-    /* 技术栈 */
+    /* 技术栈：标签是按钮，说明默认折叠，点哪个看哪个 */
     '<section class="card">' +
-    '<div class="card-head"><h2>用到了哪些技术</h2></div>' +
+    '<div class="card-head"><h2>用到了哪些技术</h2><p>点一下标签，在下面看它是干什么的</p></div>' +
     '<div class="card-body">' +
     '<div class="tech-tags">' +
-    TECH.map((t) => '<span class="tech-tag"><b>' + escapeHtml(t[0]) + '</b></span>').join('') +
+    TECH.map((t, i) => '<button type="button" class="tech-tag" data-tech="' + i + '">' + escapeHtml(t[0]) + '</button>').join('') +
     '</div>' +
-    '<div style="margin-top:14px">' +
-    '<dl class="kv">' +
-    TECH.map((t) => '<dt>' + escapeHtml(t[0]) + '</dt><dd style="font-family:inherit;font-size:12.5px">' + escapeHtml(t[1]) + '</dd>').join('') +
-    '</dl>' +
-    '</div>' +
+    '<div class="tech-fold" id="techFold"><div class="tech-fold-clip"><div class="tech-fold-card" id="techFoldCard"></div></div></div>' +
     '</div>' +
     '</section>' +
 
@@ -157,11 +246,11 @@ function render() {
     '<div class="card-body">' +
     '<div class="tribute">' +
     '如果没有 <b>PicX</b>，大概不会有这个程序。<br>' +
-    'PicX（<a href="#" data-ext="https://github.com/XPoet/picx">github.com/XPoet/picx</a>，作者 XPoet）' +
+    'PicX（<a href="#" data-ext="https://github.com/XPoet/picx">GitHub</a>，作者 XPoet）' +
     '最早把「用 GitHub 仓库当图床」这件事做得足够简单、足够完整，' +
     '它对配置项的拆解、对链接规则的整理、对多级目录和批量操作的设计，都是这个项目直接借鉴的对象。<br>' +
-    APP + ' 只是换了个思路——把同一件事放到本地，用原生性能重做一遍，并且顺手把「不只是图片」这件事补上。' +
-    'PicX 的 AGPL-3.0 授权与它的作者，都值得被明确地写在这里。' +
+    APP + ' 只是换了个思路——把同一件事放到本地，用原生性能重做一遍，并且顺手把「不只是图片」这件事补上' +
+    'PicX 的 AGPL-3.0 授权与它的作者，都值得被明确地写在这里' +
     '</div>' +
     '</div>' +
     '</section>' +
@@ -202,9 +291,9 @@ function render() {
     '<section class="card">' +
     '<div class="card-head"><h2>说明</h2></div>' +
     '<div class="card-body" style="font-size:12.5px;color:var(--muted);line-height:2">' +
-    '本程序只读写你自己配置的仓库，不做任何数据上传或统计。' +
-    '删除与替换操作会真实提交到你的仓库，请谨慎操作——不过 Git 有历史记录，误删是可以找回的。' +
-    '使用第三方免费服务时，请遵守对应平台的服务条款，不要用它存放违规内容。' +
+    '本程序只读写你自己配置的仓库，不做任何数据上传或统计' +
+    '删除与替换操作会真实提交到你的仓库，请谨慎操作——不过 Git 有历史记录，误删是可以找回的' +
+    '使用第三方免费服务时，请遵守对应平台的服务条款，不要用它存放违规内容' +
     '</div>' +
     '</section>';
 }
@@ -213,6 +302,29 @@ export default {
   init() {
     render();
     $('#aboutWrap').addEventListener('click', (e) => {
+      const tag = e.target.closest('.tech-tag');
+      if (tag) {
+        toggleTech(Number(tag.dataset.tech));
+        return;
+      }
+      const foldBtn = e.target.closest('#aboutFoldToggle');
+      if (foldBtn) {
+        const open = $('#aboutFold').classList.toggle('open');
+        foldBtn.classList.toggle('open', open);
+        foldBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        foldBtn.querySelector('.aft-text').textContent = open ? '收起' : '展开看看都支持什么';
+        return;
+      }
+      const logo = e.target.closest('.about-logo');
+      if (logo) {
+        // 彩蛋：点图标，罗盘图形飞速转三圈（蓝方块不动）。
+        // 先摘类再强制重排一次 —— 连点也能重新播动画；播完清掉标记
+        logo.classList.remove('spin');
+        void logo.offsetWidth;
+        logo.classList.add('spin');
+        logo.addEventListener('animationend', () => logo.classList.remove('spin'), { once: true });
+        return;
+      }
       const a = e.target.closest('a[data-ext]');
       if (!a) return;
       e.preventDefault();
