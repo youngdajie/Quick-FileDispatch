@@ -37,6 +37,10 @@ var known = []string{
 
 	"dialog:chooseDir",
 
+	// 自定义背景图（仅浅色模式生效；选图 / 清除）
+	"ui:chooseBgImage",
+	"ui:clearBgImage",
+
 	// 云端仓库读写
 	"cloud:verify",
 	"cloud:list",

@@ -66,6 +66,228 @@ export function applyTheme(theme) {
   return t;
 }
 
+/**
+ * 浅色模式的自定义背景图（ui.bgImage，主进程存的是配置目录里的副本路径）。
+ *
+ * 规则是杰哥定的，一条都不能让步：
+ *   - 只在浅色模式渲染 —— 深色永远星野，这个字段看都不看；
+ *   - 没设置 / 文件被删了就安静退回默认浅色底，不报错。
+ * 状态变更全走 applyAppearance（每次 state 变更都会路过这里），不用单独订阅。
+ */
+export function applyBackgroundImage(cfg) {
+  const el = document.getElementById('customBg');
+  if (!el) return;
+  const ui = (cfg && cfg.ui) || {};
+  const theme = (cfg && cfg.ui && cfg.ui.theme) || 'dark';
+  const path = String(ui.bgImage || '').trim();
+  if (theme !== 'light' || !path) {
+    el.classList.remove('on');
+    el.style.backgroundImage = '';
+    return;
+  }
+  try {
+    // localUrl → /__local?p=...：白名单里只有配置目录的 bg/，别的路径一律 403
+    el.style.backgroundImage = 'url("' + window.cloudpic.localUrl(path) + '")';
+    el.classList.add('on');
+  } catch (e) {
+    el.classList.remove('on');
+  }
+}
+
+/**
+ * 毛玻璃（浅色 + 有背景图时才启用）。
+ *
+ * 为什么不用 backdrop-filter：它拿不到 .app 层叠上下文外面的内容（自定义背景图
+ * 正好在外面），实测开关 blur 两态像素差为 0（挂在 body 上的同款元素却能糊）。
+ * 所以改成「给面板塞一层玻璃」：
+ *   - <html> 上打 glass-ready / 写 --glass-blur、--glass-alpha、--glass-img；
+ *     （glass-on 只在浓度 > 0 时为真，给自检当信号用，样式不依赖它）
+ *   - 给每个 .glass-host 面板插入 .glass-layer（绝对定位的一层，
+ *     里面画「白纱 + 背景图」，由 CSS 做 filter: blur）。
+ * 深色模式不加这个类（星野本来就在面板后面透），但滑块在两种主题下
+ * 行为一致：随时可调、随时生效。
+ */
+const GLASS_HOSTS = [
+  '.topbar',
+  '.sidebar',
+  '.card',
+  '.about-hero',
+  '.queue-panel',
+  '.result-panel',
+  '.up-target',
+  '.dropzone',
+  '.up-options',
+  '.up-imgset'
+];
+
+/* 背景图明暗：暗图要把白纱加厚、灰字提亮，否则正文糊在图上（杰哥点名的
+   「危险操作里的字看不清」）。采样一次按路径缓存，不重复解码。 */
+const toneCache = new Map();
+
+function sampleImageTone(url, cb) {
+  if (toneCache.has(url)) {
+    cb(toneCache.get(url));
+    return;
+  }
+  const img = new Image();
+  img.onload = () => {
+    let lum = 0.5;
+    try {
+      const c = document.createElement('canvas');
+      c.width = 12;
+      c.height = 12;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0, 12, 12);
+      const d = g.getImageData(0, 0, 12, 12).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        sum += (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
+      }
+      lum = sum / (d.length / 4);
+    } catch (e) {
+      lum = 0.5; // 跨域 / 读不了像素就按中间调处理
+    }
+    toneCache.set(url, lum);
+    cb(lum);
+  };
+  img.onerror = () => {
+    toneCache.set(url, 0.5);
+    cb(0.5);
+  };
+  img.src = url;
+}
+
+function applyTone(lum) {
+  const root = document.documentElement;
+  const dark = lum < 0.5;
+  root.classList.toggle('glass-dark', dark);
+  // 暗底：白纱 0.42 → 0.62（顶栏 0.36 → 0.52），灰字另由 .glass-dark 规则提亮
+  root.style.setProperty('--glass-wash', dark ? '0.62' : '0.42');
+  root.style.setProperty('--glass-wash-soft', dark ? '0.52' : '0.36');
+}
+
+function syncGlassLayers(on) {
+  GLASS_HOSTS.forEach((sel) => {
+    document.querySelectorAll(sel).forEach((host) => {
+      const old = host.querySelector(':scope > .glass-layer');
+      if (!on) {
+        host.classList.remove('glass-host');
+        if (old) old.remove();
+        return;
+      }
+      host.classList.add('glass-host');
+      if (!old) {
+        const layer = document.createElement('i');
+        layer.className = 'glass-layer';
+        layer.setAttribute('aria-hidden', 'true');
+        // 负层级：盖住面板底色、垫在内容下面（见 app.css 里的说明）
+        host.appendChild(layer);
+      }
+      positionLayer(host);
+    });
+  });
+  installGlassHooks();
+}
+
+/**
+ * 把面板的视口坐标写进它那层玻璃的 --gx/--gy。
+ * 玻璃层里的背景图按视口尺寸画，靠这两个值反推偏移 —— 面板一滚动就要重算，
+ * 否则图会跟着面板「浮」起来。
+ */
+function positionLayer(host) {
+  const layer = host.querySelector(':scope > .glass-layer');
+  if (!layer) return;
+  const r = host.getBoundingClientRect();
+  layer.style.setProperty('--gx', Math.round(r.left) + 'px');
+  layer.style.setProperty('--gy', Math.round(r.top) + 'px');
+}
+
+let glassHookInstalled = false;
+
+/** 滚动 / 缩放时重算（rAF 节流；捕获阶段才能收到 #content 这种内层滚动） */
+function installGlassHooks() {
+  if (glassHookInstalled) return;
+  glassHookInstalled = true;
+  let ticking = false;
+  // 补挂：关于页 / 文件管理页的面板是 JS 现拼 innerHTML 生成的，
+  // 生成时玻璃层早就装完了 —— 所以每次 DOM 变动都补一遍（缺就加、已加就只更新坐标）
+  const run = () => {
+    ticking = false;
+    if (!document.documentElement.classList.contains('glass-ready')) return;
+    GLASS_HOSTS.forEach((sel) => {
+      document.querySelectorAll(sel).forEach((host) => {
+        if (!host.querySelector(':scope > .glass-layer')) {
+          host.classList.add('glass-host');
+          const layer = document.createElement('i');
+          layer.className = 'glass-layer';
+          layer.setAttribute('aria-hidden', 'true');
+          host.appendChild(layer);
+        }
+        positionLayer(host);
+      });
+    });
+  };
+  const ask = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(run);
+  };
+  window.addEventListener('scroll', ask, { capture: true, passive: true });
+  window.addEventListener('resize', ask);
+  document.addEventListener('transitionend', ask, true);
+  try {
+    new MutationObserver(ask).observe(document.body, { childList: true, subtree: true });
+  } catch (e) {
+    /* 观察不了就靠上面几个事件兜底 */
+  }
+}
+
+export function applyGlass(cfg) {
+  const root = document.documentElement;
+  const ui = (cfg && cfg.ui) || {};
+  const theme = ui.theme || 'dark';
+  const img = String(ui.bgImage || '').trim();
+  let blur = Number(ui.bgBlur);
+  if (!isFinite(blur) || blur < 0) blur = 0;
+  if (blur > 24) blur = 24; // 上限 24：再往上面板就「透明感」压过「玻璃感」，正文反而难读
+  // 保留一位小数：滑块是 0.1 一档的，取整会把档位吃掉
+  root.style.setProperty('--glass-blur', blur.toFixed(1) + 'px');
+  // 玻璃浓度 = 强度/上限（线性同步）。**别改成 /8 那种提前满浓度**：
+  // 那样 blur=4 时浓度已经 50%，而 4px 的模糊还糊不住背景条纹 ——
+  // 露出来的是「清晰的背景」，看起来就是「越调越透明」（杰哥实测点名的）。
+  // 线性之后：2 → 8% 几乎看不出来，12 → 一半，24 → 满，与「数字越大越糊」一致。
+  const alpha = Math.max(0, Math.min(1, blur / 24));
+  root.style.setProperty('--glass-alpha', alpha.toFixed(3));
+  const on = theme === 'light' && !!img && blur > 0;
+  const ready = theme === 'light' && !!img; // 层常驻，浓度交给 --glass-alpha
+  let imgUrl = '';
+  if (ready) {
+    try {
+      imgUrl = window.cloudpic.localUrl(img);
+      root.style.setProperty('--glass-img', 'url("' + imgUrl + '")');
+    } catch (e) {
+      root.style.setProperty('--glass-img', 'none');
+    }
+  } else {
+    root.style.setProperty('--glass-img', 'none');
+  }
+  root.classList.toggle('glass-ready', ready);
+  root.classList.toggle('glass-on', on);
+  if (imgUrl) {
+    // 背景图偏暗 → 加厚白纱 + 提亮灰字（异步，回来时若已换图就丢弃）
+    const mine = imgUrl;
+    sampleImageTone(mine, (lum) => {
+      if (root.style.getPropertyValue('--glass-img').indexOf(mine) >= 0) applyTone(lum);
+    });
+  } else {
+    root.classList.remove('glass-dark');
+    root.style.setProperty('--glass-wash', '0.42');
+    root.style.setProperty('--glass-wash-soft', '0.36');
+  }
+  syncGlassLayers(ready);
+  return { on: on, blur: blur, alpha: alpha };
+}
+
 export function applyFont(font) {
   const f = String(font || '').trim();
   document.documentElement.style.setProperty('--font-ui', stackFor(f));
@@ -77,6 +299,8 @@ export function applyAppearance(cfg) {
   const ui = (cfg && cfg.ui) || {};
   const theme = applyTheme(ui.theme);
   const font = applyFont(ui.font);
+  applyBackgroundImage(cfg);
+  applyGlass(cfg);
   return { theme: theme, font: font };
 }
 

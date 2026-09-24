@@ -572,19 +572,29 @@ function renderCloudDetect(d) {
     );
   }
 
+  // 哈希只显 7 位、不加外框（瘦身：以前是个带边框的药丸，两个框占掉半行），
+  // 完整 commit 塞进 title —— 悬停会由自绘云朵气泡显示完整的 40 位 sha。
+  // 没有完整值时不挂 title：空 title 会让气泡弹出一个空壳
+  const shaSpan = (short, full, extra) => {
+    const t = full ? ' title="' + escapeHtml(full) + '"' : '';
+    return (
+      '<span class="sha' + (extra ? ' ' + extra : '') + '"' + t + '>' + escapeHtml(short) + '</span>'
+    );
+  };
+
   const cloudShort = d.cloud.short || (d.cloud.ok ? '?' : '空');
   const cloudRow =
     '<div class="cd-row">' +
     '<span class="cd-ico cloud">' + ICONS.cloud + '</span>' +
     '<span class="cd-label">云端</span>' +
-    '<span class="sha" title="' + escapeHtml(d.cloud.sha || '') + '">' + escapeHtml(cloudShort) + '</span>' +
+    shaSpan(cloudShort, d.cloud.sha || '') +
     '</div>';
 
   const localRow = d.local.isRepo
     ? '<div class="cd-row">' +
       '<span class="cd-ico local">' + ICONS.monitor + '</span>' +
       '<span class="cd-label">本地</span>' +
-      '<span class="sha" title="' + escapeHtml(d.local.sha || '') + '">' + escapeHtml(d.local.short || '?') + '</span>' +
+      shaSpan(d.local.short || '?', d.local.sha || '') +
       '</div>'
     : '<div class="cd-row">' +
       '<span class="cd-ico local off">' + ICONS.monitor + '</span>' +

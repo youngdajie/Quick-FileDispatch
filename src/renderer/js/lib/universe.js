@@ -1,8 +1,5 @@
 /**
- * 深空背景（浅色 / 深色两套形态，共用一块画布）。
- *
- * 浅色 —— 缓慢漂移的点阵 + 近邻连线。浅色界面本来就平，加一层极淡的底纹做质感；
- *          顶栏 / 侧栏 / 卡片在浅色下带一点透明度，粒子从面板后面隐约透出来。
+ * 深空背景 —— 只剩深色一种形态。
  *
  * 深色 —— 星野，逐行照着 www.yangjie.site 那份 dark.js 移植过来的。
  *          密度、速度基数、三种粒子（巨星 / 彗星 / 普通小星）的比例和明灭节奏
@@ -10,35 +7,21 @@
  *          唯一的改动是把坐标换成 dpr 缩放（高分屏上边缘才不糊），
  *          尺寸仍然按 CSS px 算，画出来和网页上一样大。
  *
+ * 浅色 —— 什么都不画（2026-09-24 杰哥定的）：浅色界面是白天，粒子点阵撤掉，
+ *          想要质感就由设置页的「自定义背景图」接管（仅浅色生效，见 appearance.js）。
+ *
+ * 窗口尺寸与粒子分布：
+ *   最小化再恢复（或最大化切换）时 WebView2 会报一串中间尺寸，粒子的坐标
+ *   还是按旧尺寸撒的 —— 恢复后就挤在一角。所以凡是「真实尺寸变化 / 恢复可见 /
+ *   最大化状态翻转」，都按当前画布重新撒一遍粒子（relayout），保证均匀铺满。
+ *
  * 几条自我约束：
- *   - 两套形态互不叠加：浅色不画星，深色不画连线（连线在近黑底上会显脏）。
- *   - 浅色点阵的连线是 O(n²)，粒子数必须封顶；深色星野是 O(n)，按原版密度来。
  *   - 页面不可见、或系统开了「减弱动态效果」时不跑动画。
  *   - 帧率锁在 ~50fps：再高对背景来说看不出差别，只是白白耗电。
  */
 
 const HOST_ID = 'universe';
 const TAU = Math.PI * 2;
-
-/* ------------------------------------------------ 浅色：漂移点阵 */
-
-/** 多少 CSS px² 放一个粒子；数越大越稀 */
-const AREA_PER_DOT = 15000;
-const MAX_DOTS = 120;
-const MIN_DOTS = 34;
-
-/** 超过这个距离就不画线 */
-const LINK_DIST = 118;
-const LINK_DIST2 = LINK_DIST * LINK_DIST;
-const LINK_ALPHA = 0.19;
-
-const STEPS = 16;
-const DOT_COLORS = [];
-const LINE_COLORS = [];
-for (let i = 0; i < STEPS; i++) {
-  DOT_COLORS.push('rgba(35, 84, 145, ' + (((i + 1) / STEPS) * 0.86).toFixed(3) + ')');
-  LINE_COLORS.push('rgba(47, 127, 214, ' + (((i + 1) / STEPS) * LINK_ALPHA).toFixed(3) + ')');
-}
 
 /* ------------------------------------------------ 深色：星野（照搬主页那份） */
 
@@ -55,17 +38,14 @@ let canvas = null;
 let ctx = null;
 let observer = null;
 
-/** 'light' | 'dark' | 'off'（off = 主题还没落定，画布收起来不画） */
+/** 'dark' | 'off'（off = 浅色主题 / 主题还没落定，画布收起来不画） */
 let mode = 'off';
 
 /** 粒子坐标是 CSS px，画布按 dpr 放大后再 setTransform 缩放回来 */
 let w = 0;
 let h = 0;
 
-/** 浅色用 */
-let dots = [];
-
-/** 深色用：原版就是把所有粒子塞一个数组里 */
+/** 深色星野：原版就是把所有粒子塞一个数组里 */
 let field = [];
 /** 原版是「粒子构造完 50ms 之后才开始放彗星」，照搬，刚切到深色先是一片干净的星星 */
 let noCometYet = true;
@@ -84,82 +64,6 @@ function themeNow() {
 
 function reducedMotion() {
   return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-}
-
-/* ------------------------------------------------ 浅色：生成与绘制 */
-
-function makeDot() {
-  return {
-    x: Math.random() * w,
-    y: Math.random() * h,
-    vx: (Math.random() - 0.5) * 0.24,
-    vy: (Math.random() - 0.5) * 0.24,
-    r: 0.85 + Math.random() * 1.25,
-    a: 0.34 + Math.random() * 0.52,
-    // 呼吸相位：让每个点的明暗错开，整片看起来是活的
-    tw: Math.random() * Math.PI * 2,
-    tws: 0.005 + Math.random() * 0.011
-  };
-}
-
-/** 按当前窗口尺寸补齐 / 裁掉粒子，并把越界的挪回画面内 */
-function fitDots() {
-  const want = Math.max(MIN_DOTS, Math.min(MAX_DOTS, Math.round((w * h) / AREA_PER_DOT)));
-  while (dots.length < want) dots.push(makeDot());
-  if (dots.length > want) dots.length = want;
-  dots.forEach((p) => {
-    if (p.x > w || p.y > h) {
-      p.x = Math.random() * w;
-      p.y = Math.random() * h;
-    }
-  });
-}
-
-function moveDots() {
-  for (let i = 0; i < dots.length; i++) {
-    const p = dots[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.tw += p.tws;
-    if (p.x < 0) p.x += w;
-    else if (p.x > w) p.x -= w;
-    if (p.y < 0) p.y += h;
-    else if (p.y > h) p.y -= h;
-  }
-}
-
-function drawLight() {
-  ctx.clearRect(0, 0, w, h);
-
-  // 先画线：让点压在线上，点才显得实
-  ctx.lineWidth = 0.7;
-  for (let i = 0; i < dots.length; i++) {
-    const a = dots[i];
-    for (let j = i + 1; j < dots.length; j++) {
-      const b = dots[j];
-      const dx = a.x - b.x;
-      const dy = a.y - b.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 > LINK_DIST2) continue;
-      const t = 1 - Math.sqrt(d2) / LINK_DIST;
-      ctx.strokeStyle = LINE_COLORS[Math.min(STEPS - 1, Math.floor(t * STEPS))];
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-  }
-
-  for (let i = 0; i < dots.length; i++) {
-    const p = dots[i];
-    // 0.62~1 之间呼吸，不让它闪得太明显
-    const pulse = 0.62 + 0.38 * Math.sin(p.tw);
-    const a = Math.max(0.04, Math.min(0.95, p.a * pulse));
-    ctx.fillStyle = DOT_COLORS[Math.min(STEPS - 1, Math.floor(a * STEPS))];
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, TAU);
-    ctx.fill();
-  }
 }
 
 /* ------------------------------------------------ 深色：生成与绘制 */
@@ -277,8 +181,16 @@ function drawDark() {
 
 /* ------------------------------------------------ 共用的调度 */
 
+/** resize 拿到的尺寸是不是「没有意义的」——最小化时窗口会缩成一个点 */
+function degenerate() {
+  return window.innerWidth < 8 || window.innerHeight < 8;
+}
+
 function resize() {
   if (!canvas || !ctx) return;
+  // 最小化那一瞬间 innerWidth/innerHeight 会缩成个位数：不能跟着改，
+  // 否则画布和粒子密度全按「一个小点」算，恢复窗口后整片星空就废了
+  if (degenerate()) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   w = window.innerWidth;
   h = window.innerHeight;
@@ -287,20 +199,24 @@ function resize() {
   canvas.style.width = w + 'px';
   canvas.style.height = h + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // 原版 resize 只管画布尺寸，粒子一颗都不动 —— 越界的自己会淡出重生。
-  // 这里跟着来，免得窗口一小一大就把整片星空洗牌一次。
 }
 
-/** 换主题时把当前这套形态的粒子备齐，另一套直接丢掉 */
+/**
+ * 按当前画布把粒子重新撒一遍（杰哥点名的修法）：
+ * 尺寸变化 / 恢复 / 最大化切换之后，粒子必须均匀铺满整个背景，
+ * 不能还停在旧尺寸的坐标上挤成一团。
+ */
+function relayout() {
+  if (!canvas || mode !== 'dark') return;
+  resize();
+  if (w < 8 || h < 8) return;
+  buildField();
+  if (!running) drawDark();
+}
+
+/** 换主题时把当前这套形态的粒子备齐 */
 function buildFor() {
-  if (mode === 'dark') {
-    dots = [];
-    buildField();
-  } else if (mode === 'light') {
-    field = [];
-    dots = [];
-    fitDots();
-  }
+  if (mode === 'dark') buildField();
 }
 
 function frame(ts) {
@@ -313,10 +229,6 @@ function frame(ts) {
   if (ts - lastTs < 20) return;
   lastTs = ts;
   if (mode === 'dark') drawDark();
-  else {
-    moveDots();
-    drawLight();
-  }
 }
 
 function play() {
@@ -333,7 +245,7 @@ function pause() {
 /** 主题或尺寸变了之后，把「该不该跑」重新算一遍 */
 function sync() {
   if (!canvas) return;
-  const next = themeNow();
+  const next = themeNow() === 'dark' ? 'dark' : 'off';
   const changed = next !== mode;
   mode = next;
   canvas.hidden = mode === 'off';
@@ -348,7 +260,6 @@ function sync() {
     // 系统要求减弱动态效果：给一张静态的底，动画一个都不跑
     pause();
     if (mode === 'dark') drawDark();
-    else drawLight();
     return;
   }
   running = true;
@@ -359,11 +270,8 @@ function onResize() {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (!canvas || mode === 'off') return;
-    resize();
-    if (!running) {
-      if (mode === 'dark') drawDark();
-      else drawLight();
-    }
+    // 真实尺寸变了就重撒粒子（内部有最小化保护，最小化时不会真动）
+    relayout();
   }, 160);
 }
 
@@ -375,6 +283,9 @@ function onVisibility() {
   } else if (running && !raf) {
     lastTs = 0;
     raf = requestAnimationFrame(frame);
+    // 从最小化恢复时不一定有 resize 事件（窗口矩形没变过，但中间尺寸
+    // 可能已经被 WebView2 报过一次）：回来第一件事就是把粒子重新铺满
+    setTimeout(relayout, 120);
   }
 }
 
@@ -398,6 +309,12 @@ export function initUniverse() {
   window.addEventListener('resize', onResize);
   document.addEventListener('visibilitychange', onVisibility);
 
+  // 最大化 / 还原切换：窗口矩形会大幅变化，有时还不带 resize 事件
+  //（最小化恢复尤其如此）。垫片的轮询钩子在这里最可靠，翻转一下就重铺一次。
+  if (window.cloudpic && window.cloudpic.win && typeof window.cloudpic.win.onMaximized === 'function') {
+    window.cloudpic.win.onMaximized(() => setTimeout(relayout, 260));
+  }
+
   // mode 先落定，sync() 里才不会把「本该建的地基」当成没变过而跳过
   mode = 'off';
   sync();
@@ -414,9 +331,9 @@ export function universeState() {
   return {
     mounted: !!canvas,
     mode: mode,
-    light: mode === 'light',
+    light: false, // 浅色已经不画粒子（自定义背景图接管），字段留着兼容旧断言
     running: running && !!raf,
-    dots: dots.length,
+    dots: 0,
     stars: field.length,
     giants: giants,
     comets: comets,

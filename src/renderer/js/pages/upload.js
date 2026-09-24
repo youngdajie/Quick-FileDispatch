@@ -1,13 +1,17 @@
 /** 上传页 */
 
-import { $, toast, err, ok, warn, modal, previewImage, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
+import { $, $$, toast, err, ok, warn, modal, previewImage, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
 import state from '../lib/state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from '../lib/compress.js';
+import { openColorPicker, closeColorPicker, normalizeHex } from '../lib/colorpicker.js';
 // 前后对比（含 OUT_MIME / canCompare / openCompare）已提到共享模块，
 // 主上传页与「上传到此文件夹」mini 弹窗共用一份
 import { canCompare, openCompare } from '../lib/compare.js';
 
 const CPLinks = window.CPLinks;
+
+/** 水印配色快捷项（#1296db 是默认）——原设置页的色板跟着水印一起迁了过来 */
+const WM_PRESETS = ['#1296db', '#ffffff', '#101722', '#ff4d4f', '#20c997', '#f5a623'];
 
 let pool = null;
 let seq = 0;
@@ -104,7 +108,8 @@ function updateItem(it) {
   }
   const nameEl = el.querySelector('.q-name');
   nameEl.textContent = it.outName || it.origName;
-  nameEl.title = (it.path ? it.path + '  ·  ' : '') + (it.outName || it.origName);
+  // 不给文件名挂 title：任务项本身已经把大小 / 尺寸 / 质量全摆出来了，
+  // 再弹一个云朵气泡只会重复同样的信息（杰哥点名去掉）
 
   const parts = [CPLinks.formatBytes(it.origSize)];
   if (it.outSize && it.outSize !== it.origSize) {
@@ -203,21 +208,42 @@ function clearQueue() {
 /* ---------------------------------------------------------------- 压缩 */
 
 function poolSize() {
-  const c = Number(state.cfg && state.cfg.concurrency) || 0;
-  return c > 0 ? Math.min(32, c) : defaultThreads();
+  // 并行线程数现在跟压缩参数一起摆在上传页（原设置页的「图片压缩」卡迁来的）；
+  // 输入框还没挂上（理论不会）时退回配置值
+  const el = $('#upConcurrency');
+  const c = Number(el && el.value);
+  if (c > 0) return Math.min(32, c);
+  const cfg = Number(state.cfg && state.cfg.concurrency) || 0;
+  return cfg > 0 ? Math.min(32, cfg) : defaultThreads();
 }
 
 function compressOptions() {
-  const c = state.cfg || {};
-  const cmp = c.compress || {};
+  const v = (sel) => {
+    const el = $(sel);
+    return el ? Number(el.value) || 0 : 0;
+  };
+  const on = (sel, def) => {
+    const el = $(sel);
+    return el ? el.checked : def;
+  };
   return {
     quality: Number($('#upQuality').value) || 80,
-    maxWidth: Number(cmp.maxWidth) || 0,
-    maxHeight: Number(cmp.maxHeight) || 0,
+    maxWidth: v('#upMaxWidth'),
+    maxHeight: v('#upMaxHeight'),
     format: $('#upFormat').value || 'auto',
-    targetSizeKB: Number(cmp.targetSizeKB) || 0,
-    skipIfSmaller: cmp.skipIfSmaller !== false,
-    watermark: c.watermark || { enabled: false }
+    targetSizeKB: v('#upTargetSize'),
+    skipIfSmaller: on('#upSkipSmaller', true),
+    skipBelowKB: v('#upSkipBelow'),
+    // 水印参数从「图片设置」的水印块里现读 —— 以前是从 cfg 直接带过去的，
+    // 迁到上传页之后这里就是唯一数据源
+    watermark: {
+      enabled: on('#upWmEnabled', false),
+      text: ($('#upWmText').value || '').trim(),
+      position: $('#upWmPosition').value || 'bottom-right',
+      opacity: (Number($('#upWmOpacity').value) || 35) / 100,
+      fontSize: Number($('#upWmFontSize').value) || 22,
+      color: $('#upWmColor').value || '#1296db'
+    }
   };
 }
 
@@ -524,6 +550,7 @@ function fillTarget() {
 function fillOptions() {
   const c = state.cfg || {};
   const cmp = c.compress || {};
+  const wm = c.watermark || {};
   const ren = c.rename || {};
   const lim = CPLinks.limitOf(c.platform);
 
@@ -533,6 +560,21 @@ function fillOptions() {
   $('#upQuality').value = cmp.quality || 80;
   $('#upQualityVal').textContent = String(cmp.quality || 80);
   $('#upFormat').value = cmp.format || 'auto';
+  $('#upMaxWidth').value = cmp.maxWidth || 0;
+  $('#upMaxHeight').value = cmp.maxHeight || 0;
+  $('#upTargetSize').value = cmp.targetSizeKB || 0;
+  $('#upSkipSmaller').checked = cmp.skipIfSmaller !== false;
+  $('#upSkipBelow').value = cmp.skipBelowKB || 0;
+  $('#upConcurrency').value = c.concurrency || 0;
+
+  $('#upWmEnabled').checked = !!wm.enabled;
+  $('#upWmText').value = wm.text || '';
+  $('#upWmPosition').value = wm.position || 'bottom-right';
+  $('#upWmOpacity').value = Math.round((wm.opacity == null ? 0.35 : wm.opacity) * 100);
+  $('#upWmOpacityVal').textContent = (wm.opacity == null ? 0.35 : wm.opacity).toFixed(2);
+  $('#upWmFontSize').value = wm.fontSize || 22;
+  setWmColor(wm.color || '#1296db');
+
   $('#upRenameMode').value = ren.mode || 'keep';
   $('#upPrefix').value = ren.prefix || '';
   if (document.activeElement !== $('#upDir')) $('#upDir').value = c.lastUploadDir || '';
@@ -546,10 +588,26 @@ function fillOptions() {
 const persistQuickOptions = debounce(() => {
   state.patch({
     lastUploadDir: CPLinks.normalizePath($('#upDir').value || ''),
+    // 压缩与水印的全部字段都在上传页维护了，这里就是它们的唯一落盘出口；
+    // patch 是深合并，只提交界面上有的键，别的全局设置不受影响
+    concurrency: Number($('#upConcurrency').value) || 0,
     compress: {
       enabled: $('#upCompress').checked,
       quality: Number($('#upQuality').value),
-      format: $('#upFormat').value
+      format: $('#upFormat').value,
+      maxWidth: Number($('#upMaxWidth').value) || 0,
+      maxHeight: Number($('#upMaxHeight').value) || 0,
+      targetSizeKB: Number($('#upTargetSize').value) || 0,
+      skipIfSmaller: $('#upSkipSmaller').checked,
+      skipBelowKB: Number($('#upSkipBelow').value) || 0
+    },
+    watermark: {
+      enabled: $('#upWmEnabled').checked,
+      text: ($('#upWmText').value || '').trim(),
+      position: $('#upWmPosition').value,
+      opacity: (Number($('#upWmOpacity').value) || 35) / 100,
+      fontSize: Number($('#upWmFontSize').value) || 22,
+      color: $('#upWmColor').value || '#1296db'
     },
     rename: {
       mode: $('#upRenameMode').value,
@@ -557,6 +615,83 @@ const persistQuickOptions = debounce(() => {
     }
   });
 }, 500);
+
+/* ---------------------------------------------------------- 图片设置（折叠 + 水印色板） */
+
+/** 折叠状态记在 localStorage：换页 / 重启都保持用户上次的展开习惯 */
+const IMGSET_KEY = 'qfd-imgset-open';
+
+function setImgSetOpen(open) {
+  const box = $('#upImgSet');
+  if (!box) return;
+  box.classList.toggle('open', !!open);
+  const head = $('#upImgSetHead');
+  if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+  try {
+    localStorage.setItem(IMGSET_KEY, open ? '1' : '0');
+  } catch (e) {
+    /* 隐私模式存不了就算了 */
+  }
+}
+
+function imgSetOpen() {
+  try {
+    const v = localStorage.getItem(IMGSET_KEY);
+    if (v !== null) return v === '1';
+  } catch (e) {
+    /* 读不到按展开算 */
+  }
+  return true;
+}
+
+/** 色块 / 隐藏色值 / hex 文本框三处同步（自设置页原样迁来，#upWmColor 是数据源） */
+let wmPicker = null;
+
+function setWmColor(hex) {
+  const norm = normalizeHex(hex) || '#1296db';
+  const valueEl = $('#upWmColor');
+  if (valueEl) valueEl.value = norm;
+  const textEl = $('#wmColorText');
+  if (textEl) textEl.value = norm;
+  const sw = $('#wmSwatch');
+  if (sw) sw.style.setProperty('--sw', norm);
+  $$('#wmPresets .wm-pre').forEach((b) => b.classList.toggle('on', b.dataset.color === norm));
+  if (wmPicker) wmPicker.setColor(norm);
+  return norm;
+}
+
+function openWmPicker() {
+  const sw = $('#wmSwatch');
+  if (!sw) return;
+  if (wmPicker) {
+    closeColorPicker();
+    wmPicker = null;
+    return;
+  }
+  wmPicker = openColorPicker({
+    anchor: sw,
+    color: $('#upWmColor').value || '#1296db',
+    presets: WM_PRESETS,
+    onChange: (hex) => {
+      setWmColor(hex);
+      invalidate();
+      scheduleProcess(320);
+      persistQuickOptions();
+    },
+    onClose: () => {
+      wmPicker = null;
+    }
+  });
+}
+
+function renderWmPresets() {
+  const box = $('#wmPresets');
+  if (!box) return;
+  box.innerHTML = WM_PRESETS.map(
+    (c) =>
+      '<button type="button" class="wm-pre" data-color="' + c + '" title="' + c + '" style="--sw:' + c + '"></button>'
+  ).join('');
+}
 
 /* ---------------------------------------------------------------- 云端目录选择 */
 
@@ -820,6 +955,72 @@ export default {
     $('#upQuality').oninput = () => {
       $('#upQualityVal').textContent = $('#upQuality').value;
     };
+    $('#upWmOpacity').oninput = () => {
+      $('#upWmOpacityVal').textContent = (Number($('#upWmOpacity').value) / 100).toFixed(2);
+    };
+
+    // 「图片设置」折叠：点头部开合，状态记 localStorage
+    $('#upImgSetHead').onclick = () => setImgSetOpen(!imgSetOpen());
+    setImgSetOpen(imgSetOpen());
+
+    // 压缩 / 水印参数变了：清掉「就绪」让队列按新参数重算 + 落盘
+    // （水印也影响输出，所以同样要走 invalidate）
+    [
+      '#upMaxWidth', '#upMaxHeight', '#upTargetSize', '#upSkipBelow', '#upConcurrency'
+    ].forEach((s) => {
+      $(s).addEventListener('change', () => {
+        invalidate();
+        scheduleProcess(320);
+        persistQuickOptions();
+      });
+    });
+    $('#upSkipSmaller').addEventListener('change', () => {
+      invalidate();
+      scheduleProcess(60);
+      persistQuickOptions();
+    });
+    [
+      '#upWmEnabled', '#upWmText', '#upWmPosition', '#upWmFontSize'
+    ].forEach((s) => {
+      $(s).addEventListener('change', () => {
+        invalidate();
+        scheduleProcess(320);
+        persistQuickOptions();
+      });
+    });
+    $('#upWmOpacity').addEventListener('change', () => {
+      invalidate();
+      scheduleProcess(320);
+      persistQuickOptions();
+    });
+    // 色块点开自绘选择器（原生 type=color 的系统面板和界面完全不搭）
+    $('#wmSwatch').onclick = (e) => {
+      e.preventDefault();
+      openWmPicker();
+    };
+    // hex 文本框：随时输入随时生效，非法值不写回（等用户补全）
+    const applyHex = () => {
+      const norm = normalizeHex($('#wmColorText').value);
+      if (!norm) return;
+      setWmColor(norm);
+      invalidate();
+      scheduleProcess(320);
+      persistQuickOptions();
+    };
+    $('#wmColorText').addEventListener('input', applyHex);
+    $('#wmColorText').addEventListener('blur', () => {
+      const norm = normalizeHex($('#wmColorText').value);
+      setWmColor(norm || $('#upWmColor').value);
+    });
+    $('#wmPresets').addEventListener('click', (e) => {
+      const b = e.target.closest('.wm-pre');
+      if (!b) return;
+      setWmColor(b.dataset.color);
+      invalidate();
+      scheduleProcess(320);
+      persistQuickOptions();
+    });
+    renderWmPresets();
 
     ['#upQuality', '#upFormat', '#upRenameMode'].forEach((s) => {
       $(s).addEventListener('change', () => {

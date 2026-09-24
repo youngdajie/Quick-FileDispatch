@@ -5,19 +5,16 @@ import state from '../lib/state.js';
 import {
   applyTheme,
   applyFont,
+  applyGlass,
   stackFor,
   installedFontGroups,
   installFontCount,
   PRIMARY_FONT_NAME
 } from '../lib/appearance.js';
 import { brandIcon } from '../lib/brandicons.js';
-import { openColorPicker, closeColorPicker, normalizeHex } from '../lib/colorpicker.js';
 
 const CPLinks = window.CPLinks;
 let tokenTouched = false;
-
-/** 水印配色快捷项（#1296db 是默认） */
-const WM_PRESETS = ['#1296db', '#ffffff', '#101722', '#ff4d4f', '#20c997', '#f5a623'];
 
 const PLATFORM_NAME = { github: 'GitHub', cnb: 'CNB' };
 
@@ -189,9 +186,18 @@ function profileLabel(p) {
   return p.name || [p.owner, p.repo].filter(Boolean).join('/') || '未命名配置';
 }
 
+/** 归档卡片里「云端 ↕ 本地」那三个小图标（和文件管理页的检测器同一套形状） */
+const CD_ICON = {
+  cloud:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.2 11.2 4 4 0 0 0 7 19h10.5z"/></svg>',
+  monitor:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M9 20h6"/></svg>',
+  swap:
+    '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v15"/><path d="M5 7l3-3 3 3"/><path d="M16 20V5"/><path d="M13 17l3 3 3-3"/></svg>'
+};
+
 function profileRow(p) {
   const plat = PLATFORM_NAME[p.platform] || 'GitHub';
-  const repoPath = p.owner && p.repo ? p.owner + '/' + p.repo : '（未填写仓库）';
   const bits = [];
   if (p.verified) {
     bits.push('<span class="pf-badge ok">已归档</span>');
@@ -208,33 +214,44 @@ function profileRow(p) {
   const ruleText = ruleId === 'auto'
     ? '链接：自动（' + (platOf(p.platform) === 'cnb' ? 'CNB 国内 CDN' : 'jsDelivr CDN') + '）'
     : '链接：' + ((rule && rule.name) || ruleId);
-  // 单独一个类：这一条要独占行尾（margin-left:auto），不能跟着目录一起换行
-  const ruleHtml =
-    '<span class="pf-rule" title="' + escapeHtml(ruleText) + '">' + escapeHtml(ruleText) + '</span>';
 
-  const dir = p.localDir
-    ? '<span class="pf-dir" title="' + escapeHtml(p.localDir) + '">📁 ' + escapeHtml(p.localDir) + '</span>'
-    : '<span class="pf-dir bad">未绑定本地目录</span>';
-
-  // 三行：第一行「平台 + 仓库」，第二行目录，第三行状态/日期/链接规则。
-  // 状态那一坨单独放进 .pf-meta 小卡片里 —— 目录、状态、日期、链接挤在一条线上时
-  // 谁都看不清，分层之后一眼能扫。
+  /* 正方形卡片（杰哥定的版式）：内容竖排、一层一层往下读 ——
+     ①平台 + 使用中徽章 ②「云端 ↕ 本地」小图（只画图标和字，不写路径）
+     ③别名 ④状态徽章行 ⑤链接规则 ⑥操作按钮沉底。
+     具体路径不摆在卡片上：鼠标移到「云端」/「本地」文字上，气泡里给完整内容
+     —— 卡片小、路径长，写上去只会把版式撑乱。 */
+  const cloudVal = p.owner && p.repo ? p.owner + '/' + p.repo : '';
+  const localVal = p.localDir || '';
+  const cloudTitle = cloudVal || '未填写仓库';
+  const localTitle = localVal || '未绑定本地目录';
   return (
     '<div class="pf-row' + (p.isActive ? ' active' : '') + '" data-id="' + escapeHtml(p.id) + '">' +
-    '<span class="pf-dot" aria-hidden="true"></span>' +
-    '<div class="pf-main">' +
-    '<div class="pf-line1">' +
+    '<div class="pf-top">' +
     '<span class="pf-platform pf-' + escapeHtml(p.platform || 'github') + '">' + plat + '</span>' +
-    '<span class="pf-name">' + escapeHtml(repoPath) + '</span>' +
-    (p.name ? '<span class="pf-alias">' + escapeHtml(p.name) + '</span>' : '') +
+    (p.isActive ? '<span class="pf-cur">使用中</span>' : '') +
     '</div>' +
-    '<div class="pf-dirline">' + dir + '</div>' +
-    '<div class="pf-meta">' + bits.join('') + ruleHtml + '</div>' +
+    '<div class="pf-cd">' +
+    '<div class="pf-cd-row' + (cloudVal ? '' : ' bad') + '">' +
+    '<span class="pf-cd-ico cloud">' + CD_ICON.cloud + '</span>' +
+    // title 挂在**文字**上（不是整行）：气泡要对准「云端」这两个字，
+    // 挂在行上会以「图标 + 文字」的整行中心定位，看着偏左（杰哥点名的）
+    '<span class="pf-cd-label" title="' + escapeHtml(cloudTitle) + '">云端</span>' +
+    '</div>' +
+    '<div class="pf-cd-link">' + CD_ICON.swap + '</div>' +
+    '<div class="pf-cd-row' + (localVal ? '' : ' bad') + '">' +
+    '<span class="pf-cd-ico local">' + CD_ICON.monitor + '</span>' +
+    '<span class="pf-cd-label" title="' + escapeHtml(localTitle) + '">本地</span>' +
+    '</div>' +
+    '</div>' +
+    // 别名和链接规则都是完整可见的文字，不再挂 title ——
+    // 悬停弹一个跟眼前一模一样的气泡只会打扰（杰哥点名的）
+    (p.name ? '<div class="pf-alias">' + escapeHtml(p.name) + '</div>' : '') +
+    '<div class="pf-meta">' +
+    '<div class="pf-badges">' + bits.join('') + '</div>' +
+    '<span class="pf-rule">' + escapeHtml(ruleText) + '</span>' +
     '</div>' +
     '<div class="pf-ops">' +
-    (p.isActive
-      ? '<span class="pf-cur">使用中</span>'
-      : '<button type="button" class="btn btn-ghost btn-sm" data-act="use">切换</button>') +
+    (p.isActive ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-act="use">切换</button>') +
     '<button type="button" class="btn btn-ghost btn-sm" data-act="rename" title="重命名这份配置">改名</button>' +
     '<button type="button" class="btn btn-ghost btn-sm" data-act="del" title="删除这份配置">删除</button>' +
     '</div>' +
@@ -751,60 +768,72 @@ async function archiveProfile() {
   }
 }
 
-/* ---------------------------------------------------------------- 水印颜色 */
-
-/** 自绘选择器的句柄；开着的时候拖色板要实时同步给它 */
-let wmPicker = null;
-let autoSave = null;
+/* ---------------------------------------------------------------- 自定义背景图 */
 
 /**
- * 色块 / 隐藏的原生色值输入 / hex 文本框三处同步。
- * `#cfgWmColor` 仍然是唯一的数据源（collect() 只读它），
- * 只是从「原生 type=color」换成了隐藏输入，弹层改由自绘选择器负责。
+ * 浅色模式的自定义背景图（深色永远星野，这是杰哥定的规矩）。
+ * 选图 / 清除都走主进程：选中的图会被拷进配置目录 bg/ 里，
+ * 配置里记的是副本路径 —— 原图挪走删掉都不影响。
  */
-function setWmColor(hex) {
-  const norm = normalizeHex(hex) || '#1296db';
-  const valueEl = $('#cfgWmColor');
-  if (valueEl) valueEl.value = norm;
-  const textEl = $('#wmColorText');
-  if (textEl) textEl.value = norm;
-  const sw = $('#wmSwatch');
-  if (sw) sw.style.setProperty('--sw', norm);
-  $$('#wmPresets .wm-pre').forEach((b) => b.classList.toggle('on', b.dataset.color === norm));
-  if (wmPicker) wmPicker.setColor(norm);
-  return norm;
-}
+let autoSave = null;
 
-function openWmPicker() {
-  const sw = $('#wmSwatch');
-  if (!sw) return;
-  if (wmPicker) {
-    closeColorPicker();
-    wmPicker = null;
+async function fillBgPreview() {
+  const box = $('#bgPreview');
+  if (!box) return;
+  const ui = (state.cfg && state.cfg.ui) || {};
+  const path = String(ui.bgImage || '').trim();
+  if (!path) {
+    box.classList.add('empty');
+    box.style.backgroundImage = '';
+    box.title = '尚未设置自定义背景图';
     return;
   }
-  wmPicker = openColorPicker({
-    anchor: sw,
-    color: $('#cfgWmColor').value || '#1296db',
-    presets: WM_PRESETS,
-    onChange: (hex) => {
-      setWmColor(hex);
-      if (autoSave) autoSave();
-    },
-    onClose: () => {
-      wmPicker = null;
-    }
-  });
+  box.classList.remove('empty');
+  box.style.backgroundImage = 'url("' + window.cloudpic.localUrl(path) + '")';
+  box.title = path;
 }
 
-function renderWmPresets() {
-  const box = $('#wmPresets');
-  if (!box) return;
-  box.innerHTML = WM_PRESETS.map(
-    (c) =>
-      '<button type="button" class="wm-pre" data-color="' + c + '" title="' + c + '" style="--sw:' + c + '"></button>'
-  ).join('');
+async function pickBgImage() {
+  const btn = $('#btnBgPick');
+  btn.disabled = true;
+  try {
+    const out = await window.cloudpic.app.chooseBgImage();
+    if (out && out.canceled) return;
+    await state.refresh();
+    fillBgPreview();
+    ok('背景图已更新（浅色模式下生效）');
+  } catch (e) {
+    err(e.message || String(e));
+  } finally {
+    btn.disabled = false;
+  }
 }
+
+async function clearBgImage() {
+  try {
+    await window.cloudpic.app.clearBgImage();
+    await state.refresh();
+    fillBgPreview();
+    ok('已恢复默认浅色背景');
+  } catch (e) {
+    err(e.message || String(e));
+  }
+}
+
+/** 滑块是 0.1 一档：数值取一位小数（避免 12.300000000000001 这种浮点噪声），
+ *  显示时整数不带小数点 —— 12 而不是 12.0 */
+function round1(n) {
+  return Math.round((Number(n) || 0) * 10) / 10;
+}
+function fmtBlur(n) {
+  const v = round1(n);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+/** 毛玻璃强度落盘（防抖：拖动过程中别每像素都写一次配置） */
+const saveBlur = debounce(() => {
+  state.patch({ ui: { bgBlur: round1(Number($('#cfgBgBlur').value) || 0) } }).catch((e) => err(e.message || String(e)));
+}, 260);
 
 /* ---------------------------------------------------------------- 外观 */
 
@@ -996,8 +1025,6 @@ function updateProxyDesc() {
 
 function fill() {
   const c = state.cfg || {};
-  const cmp = c.compress || {};
-  const wm = c.watermark || {};
   const sync = c.sync || {};
   const ui = c.ui || {};
 
@@ -1043,28 +1070,13 @@ function fill() {
   $('#cfgLinkFormat').value = c.linkFormat || 'markdown';
   updateProxyDesc();
 
-  // 外观（主题 / 字体）
+  // 外观（主题 / 字体 / 背景图 / 毛玻璃）
   fillThemeCards();
   ensureFontOptions(ui.font || '');
-
-  $('#cfgCompressEnabled').checked = cmp.enabled !== false;
-  $('#cfgQuality').value = cmp.quality || 80;
-  $('#cfgQualityVal').textContent = String(cmp.quality || 80);
-  $('#cfgFormat').value = cmp.format || 'auto';
-  $('#cfgMaxWidth').value = cmp.maxWidth || 0;
-  $('#cfgMaxHeight').value = cmp.maxHeight || 0;
-  $('#cfgTargetSize').value = cmp.targetSizeKB || 0;
-  $('#cfgConcurrency').value = c.concurrency || 0;
-  $('#cfgSkipSmaller').checked = cmp.skipIfSmaller !== false;
-  $('#cfgSkipBelow').value = cmp.skipBelowKB || 0;
-
-  $('#cfgWmEnabled').checked = !!wm.enabled;
-  $('#cfgWmText').value = wm.text || '';
-  $('#cfgWmPosition').value = wm.position || 'bottom-right';
-  $('#cfgWmOpacity').value = Math.round((wm.opacity == null ? 0.35 : wm.opacity) * 100);
-  $('#cfgWmOpacityVal').textContent = ((wm.opacity == null ? 0.35 : wm.opacity)).toFixed(2);
-  $('#cfgWmFontSize').value = wm.fontSize || 22;
-  setWmColor(wm.color || '#1296db');
+  fillBgPreview();
+  const blur = ui.bgBlur == null ? 12 : Number(ui.bgBlur);
+  $('#cfgBgBlur').value = blur;
+  $('#cfgBgBlurVal').textContent = fmtBlur(blur);
 
   renderProfiles();
   updateLinkPreview();
@@ -1084,25 +1096,6 @@ function collect() {
     customDomain: $('#cfgCustomDomain').value.trim(),
     proxyUrl: $('#cfgProxyUrl').value.trim(),
     linkFormat: $('#cfgLinkFormat').value,
-    concurrency: Number($('#cfgConcurrency').value) || 0,
-    compress: {
-      enabled: $('#cfgCompressEnabled').checked,
-      quality: Number($('#cfgQuality').value),
-      format: $('#cfgFormat').value,
-      maxWidth: Number($('#cfgMaxWidth').value) || 0,
-      maxHeight: Number($('#cfgMaxHeight').value) || 0,
-      targetSizeKB: Number($('#cfgTargetSize').value) || 0,
-      skipIfSmaller: $('#cfgSkipSmaller').checked,
-      skipBelowKB: Number($('#cfgSkipBelow').value) || 0
-    },
-    watermark: {
-      enabled: $('#cfgWmEnabled').checked,
-      text: $('#cfgWmText').value,
-      position: $('#cfgWmPosition').value,
-      opacity: Number($('#cfgWmOpacity').value) / 100,
-      fontSize: Number($('#cfgWmFontSize').value) || 22,
-      color: $('#cfgWmColor').value
-    },
     sync: {
       autoPull: $('#cfgAutoPull').checked,
       strategy: $('#cfgSyncStrategy').value
@@ -1156,7 +1149,9 @@ const PER_PROFILE_KEYS = ['platform', 'owner', 'repo', 'branch', 'apiBase', 'loc
  *
  * 关键点：写进「正在编辑的那一份」，而不是无条件写当前生效的那份 ——
  * 平台按钮只切编辑对象，用户完全可以一边用着 GitHub、一边把 CNB 那份填好。
- * 全局设置（压缩 / 水印 / 同步 / 外观 / 链接格式 / 预览代理）不分配置，照旧写当前生效那份。
+ * 全局设置（同步 / 外观 / 链接格式 / 预览代理）不分配置，照旧写当前生效那份；
+ * 压缩 / 水印也是全局项，但它们的表单在上传页的「图片设置」里（2026-09-24 迁走的），
+ * 这里**不碰**这两个键 —— patch 是深合并，缺键不会冲掉上传页写进去的值。
  */
 async function save(opts) {
   const patch = collect();
@@ -1290,7 +1285,6 @@ export default {
     const setActive = $('#btnSetActive');
     if (setActive) setActive.onclick = () => useEditingTarget();
 
-    renderWmPresets();
     fill();
 
     // 归档配置下拉
@@ -1371,6 +1365,9 @@ export default {
     $('#cfgFont').addEventListener('change', () => {
       setFont($('#cfgFont').value).catch((err2) => err(err2.message || String(err2)));
     });
+    // 外观：自定义背景图（仅浅色生效）
+    $('#btnBgPick').onclick = pickBgImage;
+    $('#btnBgClear').onclick = clearBgImage;
 
     const live = (sel, handler) => {
       const el = $(sel);
@@ -1379,35 +1376,18 @@ export default {
       el.addEventListener('change', handler);
     };
 
-    live('#cfgQuality', () => {
-      $('#cfgQualityVal').textContent = $('#cfgQuality').value;
+    // 外观：毛玻璃强度。拖动时本地立刻重算整套玻璃状态（class + 模糊量），
+    // 不等落盘往返 —— 否则滑块动了画面要慢半拍才跟上（杰哥实测点名的）。
+    // 深色模式下同样可调，只是那一层暂时看不到效果。
+    // （live 是上面刚声明的 const，用之前必须已经初始化，否则整段 init 会因为
+    //  TDZ 抛错静默中断，后面所有绑定都挂不上 —— 踩过一次，别再挪到它上面）
+    live('#cfgBgBlur', () => {
+      const v = round1(Number($('#cfgBgBlur').value) || 0);
+      $('#cfgBgBlurVal').textContent = fmtBlur(v);
+      applyGlass({ ui: Object.assign({}, (state.cfg && state.cfg.ui) || {}, { bgBlur: v }) });
+      saveBlur();
     });
-    live('#cfgWmOpacity', () => {
-      $('#cfgWmOpacityVal').textContent = (Number($('#cfgWmOpacity').value) / 100).toFixed(2);
-    });
-    // 色块点开自绘选择器（原生 type=color 的系统面板和界面完全不搭）
-    $('#wmSwatch').onclick = (e) => {
-      e.preventDefault();
-      openWmPicker();
-    };
-    // hex 文本框：随时输入随时生效，非法值不写回（等用户补全）
-    const applyHex = () => {
-      const norm = normalizeHex($('#wmColorText').value);
-      if (!norm) return;
-      setWmColor(norm);
-      if (autoSave) autoSave();
-    };
-    $('#wmColorText').addEventListener('input', applyHex);
-    $('#wmColorText').addEventListener('blur', () => {
-      const norm = normalizeHex($('#wmColorText').value);
-      setWmColor(norm || $('#cfgWmColor').value);
-    });
-    $('#wmPresets').addEventListener('click', (e) => {
-      const b = e.target.closest('.wm-pre');
-      if (!b) return;
-      setWmColor(b.dataset.color);
-      if (autoSave) autoSave();
-    });
+
     ['#cfgOwner', '#cfgRepo', '#cfgBranch', '#cfgCustomDomain'].forEach((s) => live(s, updateLinkPreview));
     live('#cfgProxyUrl', updateProxyDesc);
     $('#cfgLinkRule').addEventListener('change', () => {

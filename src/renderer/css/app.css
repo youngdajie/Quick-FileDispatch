@@ -561,6 +561,14 @@ select.csel-native {
 .field-help b { color: var(--text-dim); font-weight: 600; }
 .field-help code { font-family: var(--mono); color: var(--accent-hi); }
 
+/* 普通说明文字（不给左侧竖线 / 不做引用块）：补充一句「会怎样、为什么」，
+   比 .field-help 更轻，紧贴上面的控件，不抢视觉 */
+.field-note {
+  margin: 7px 0 0;
+  font-size: 11.5px; line-height: 1.75; color: var(--muted);
+}
+.field-note b { color: var(--text-dim); font-weight: 600; }
+
 /* ------------------------------------------------ 归档的仓库配置 */
 .prof-count {
   font-size: 10.5px; font-family: var(--mono); font-weight: 400;
@@ -575,44 +583,67 @@ select.csel-native {
 .prof-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; }
 .prof-actions .hint { margin-left: auto; font-family: var(--mono); text-align: right; }
 
-.prof-list { display: flex; flex-direction: column; gap: 7px; }
+/* 归档配置：正方形卡片网格（杰哥定的版式）。内容竖排分层：
+   ①平台 + 使用中 ②仓库 ③别名 ④目录 ⑤徽章 ⑥验证日期 ⑦链接规则 ⑧操作。
+   aspect-ratio 只是「想要方」：内容放不下时盒子会自己长高，绝不为方裁内容 */
+.prof-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
 
 .pf-row {
-  display: flex; align-items: center; gap: 11px;
-  padding: 8px 11px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 6px;
+  aspect-ratio: 1 / 1;
+  padding: 11px 12px 10px; cursor: pointer;
   border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
   background: var(--panel-2);
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, transform 0.14s var(--ease);
   animation: rowIn 0.26s var(--ease) both;
 }
-.pf-row:hover { border-color: var(--border); background: var(--panel-3); }
+.pf-row:hover { border-color: var(--border); background: var(--panel-3); transform: translateY(-1px); }
 .pf-row.active { border-color: var(--accent-line); background: var(--accent-soft); }
 
-.pf-dot {
-  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
-  background: var(--border); transition: background 0.15s, box-shadow 0.15s;
+/* ①顶部：平台 pill 在左，「使用中」徽章顶到右边 */
+.pf-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pf-cur {
+  margin-left: auto; flex: 0 0 auto;
+  font-size: 10px; color: var(--accent-hi); white-space: nowrap;
 }
-.pf-row.active .pf-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
-/* 一份配置 = 三行固定结构：①平台 + 仓库 ②本地目录 ③状态 / 日期 / 链接规则。
-   第③行单独装进 .pf-meta 小卡片 —— 目录、状态、日期、链接挤在一条线上时，
-   四样信息互相压着谁都看不清；分层之后各归各位，一眼能扫。
-   每一行都必须**单行不换行**：路径长的配置一旦把内容挤到下一行，
-   整个列表的行高就会参差不齐（踩过）。 */
-.pf-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-.pf-line1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pf-dirline { display: flex; align-items: center; min-width: 0; }
+/* 云端 ↕ 本地 小图（杰哥定的版式）：只画图标和字，路径不写上来，
+   悬停「云端」/「本地」时由云朵气泡给出具体内容 */
+.pf-cd { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 1px; }
+.pf-cd-row { display: flex; align-items: center; gap: 7px; cursor: default; padding: 1px 0; }
+.pf-cd-ico { flex: 0 0 auto; display: grid; place-items: center; color: var(--muted); }
+.pf-cd-ico.cloud { color: var(--accent); }
+.pf-cd-ico.local { color: var(--ok); }
+.pf-cd-label { font-size: 11.5px; color: var(--text-dim); }
+.pf-cd-row.bad .pf-cd-label,
+.pf-cd-row.bad .pf-cd-ico { color: var(--warn); }
+.pf-cd-link {
+  display: flex; align-items: center; height: 13px; padding-left: 1px;
+  color: var(--muted); opacity: 0.8;
+}
 
-/* 状态卡片：比行底（--panel-2）差一档，边框用 --border 而不是 --border-soft。
-   行本身已经是 --border-soft 的框，里面的卡片再用同一档就等于没框 ——
-   实测卡片确实是铺满整行的，但肉眼根本看不出边界，白做了。
-   注意别用 --panel-3 —— 那是行的 hover 底色，鼠标一上去卡片就糊进背景里了。 */
+/* ③别名：小一号、弱一档 */
+.pf-alias {
+  min-width: 0; font-size: 10.5px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ⑤⑥⑦状态区：竖排小字，紧跟在目录下面（信息在上一组、状态在下一组），
+   中间不留空档；真正被压到底的是下面的操作按钮 */
 .pf-meta {
-  display: flex; align-items: center; gap: 7px;
-  min-width: 0; overflow: hidden;
-  padding: 3px 9px; border-radius: 6px;
-  background: var(--panel); border: 1px solid var(--border);
-  font-size: 11px; color: var(--muted);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  margin-top: 7px; padding-top: 7px;
+  border-top: 1px dashed var(--border-soft);
+  min-width: 0;
+}
+.pf-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.pf-rule {
+  max-width: 100%;
+  font-size: 10.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .pf-platform {
@@ -622,25 +653,6 @@ select.csel-native {
 }
 .pf-platform.pf-cnb { color: var(--cnb); border-color: color-mix(in srgb, var(--cnb) 32%, transparent); }
 
-.pf-name {
-  flex: 0 1 auto; min-width: 0;
-  font-size: 12.5px; font-family: var(--mono); color: var(--text);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.pf-alias {
-  flex: 0 1 auto; min-width: 0;
-  font-size: 11px; color: var(--accent-hi);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
-.pf-dir {
-  /* 独占一行，只有路径比自己这一行的宽度还长时才会截断 */
-  flex: 0 1 auto; min-width: 0;
-  font-family: var(--mono);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.pf-dir.bad { color: var(--warn); flex: 0 0 auto; }
-
 .pf-badge {
   flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 4px;
   border: 1px solid var(--border); color: var(--text-dim);
@@ -649,24 +661,17 @@ select.csel-native {
 .pf-badge.ok { color: var(--ok); border-color: rgba(51, 189, 144, 0.32); background: rgba(51, 189, 144, 0.1); }
 .pf-badge.warn { color: var(--warn); border-color: rgba(221, 162, 63, 0.3); background: rgba(221, 162, 63, 0.1); }
 .pf-badge.danger { color: var(--danger); border-color: rgba(239, 85, 96, 0.3); background: var(--danger-soft); }
-.pf-sub { flex: 0 0 auto; font-size: 11px; white-space: nowrap; }
+.pf-sub { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
 
-/* 链接规则靠卡片行尾站：左边那串「徽标 + 日期」长短不一，用它兜住不齐的宽度，
-   同时把「这几份配置各用什么 CDN」在右侧排成一条竖线，一眼能比。
-   真的窄到放不下时，宁可让它自己省略号收尾，也别让卡片直接裁掉半行字。 */
-.pf-rule {
-  flex: 0 1 auto; min-width: 0; margin-left: auto; padding-left: 12px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
+/* ⑧操作：沉到卡片最底（margin-top:auto 把剩余空间全吃掉），一行两三个小按钮；
+   hover 才完全显形 */
 .pf-ops {
-  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
-  flex: 0 0 auto; min-width: 136px;
-  opacity: 0.5; transition: opacity 0.14s;
+  display: flex; align-items: center; gap: 5px;
+  margin-top: auto;
+  opacity: 0.55; transition: opacity 0.14s;
 }
 .pf-row:hover .pf-ops, .pf-row.active .pf-ops { opacity: 1; }
-.pf-ops .btn { padding: 3px 8px; font-size: 11px; }
-.pf-cur { font-size: 11px; color: var(--accent-hi); padding: 0 5px; white-space: nowrap; }
+.pf-ops .btn { padding: 2px 7px; font-size: 10.5px; }
 
 .prof-empty {
   padding: 12px 13px; font-size: 12px; line-height: 1.75; color: var(--muted);
@@ -766,6 +771,33 @@ select.csel-native {
 }
 .wm-pre:hover { transform: translateY(-1px); border-color: var(--text-dim); }
 .wm-pre.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--accent); }
+
+/* ------------------------------------------------ 自定义背景图（外观） */
+/* 整组装进一个框：预览、操作、说明、毛玻璃滑块都在里面，和图片设置同一家族样式 */
+.bg-box {
+  margin-top: 14px; padding: 12px 14px 13px;
+  border: 1px solid var(--border-soft); border-radius: 10px;
+  background: var(--bg-soft);
+}
+.bg-box-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin-bottom: 11px; }
+.bg-box-title { font-size: 12.5px; color: var(--text); font-weight: 600; }
+.bg-row { display: flex; align-items: center; gap: 12px; }
+/* 预览缩略图：16:9 的小窗，一眼看出现在用的是哪张图 */
+.bg-preview {
+  flex: 0 0 auto;
+  width: 132px; height: 74px;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--bg-soft) center / cover no-repeat;
+  box-shadow: 0 2px 8px -4px rgba(10, 20, 40, 0.35);
+}
+.bg-preview.empty {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 11px;
+  background: repeating-linear-gradient(45deg, var(--bg-soft) 0 8px, var(--panel-2) 8px 16px);
+}
+.bg-preview.empty::after { content: '未设置'; }
+.bg-ops { display: flex; gap: 8px; flex-wrap: wrap; }
+.bg-box .field { margin-bottom: 0; }
 
 /* ------------------------------------------------ 数字输入框：干掉原生角标，自绘步进 */
 .numfield { position: relative; display: flex; align-items: center; }
@@ -978,23 +1010,120 @@ html[data-theme="light"] .dropzone {
   .up-basic > .field:first-child { grid-column: span 2; }
 }
 
-/* 第二行：压缩参数独立成组。和上面三项拉开一层视觉 —— 它是「一整件事」，
-   不是又一个并列字段；关掉开关时参数区淡下去，视线自然知道它不参与干活 */
-.up-compress {
+/* 第二行：图片设置（压缩 + 水印，原设置页两块卡迁入）。
+   日常只改目录/文件名/前缀，这些低频参数默认可折叠 —— 点头部开合，
+   grid 0fr→1fr 过渡（和关于页的折叠列表同一招），高度未知也能平滑收展 */
+.up-imgset {
   border: 1px solid var(--border-soft); border-radius: 10px;
-  background: var(--bg-soft); padding: 12px 15px 15px;
+  background: var(--bg-soft);
+  margin-top: 13px;
+  overflow: hidden; /* 收起时圆角不被内容戳穿 */
 }
-.upc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 11px; }
+/* 头部：箭头 + 标题 + 右侧说明压在同一条基线上（同一行、垂直居中）。
+   说明文字靠右对齐并允许在窄窗口下省略，绝不换行挤歪这一行 */
+.uis-head {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 11px 15px;
+  background: none; border: none; cursor: pointer;
+  font: inherit; text-align: left; color: inherit;
+}
+.uis-head:hover .uis-chev { color: var(--accent); }
+.uis-chev { flex: 0 0 auto; color: var(--muted); transition: transform 0.28s var(--ease), color 0.15s; }
+.up-imgset:not(.open) .uis-chev { transform: rotate(-90deg); }
+.uis-title {
+  flex: 0 0 auto; line-height: 1;
+  font-size: 12.5px; color: var(--text); font-weight: 600; transition: color 0.15s;
+}
+.uis-sub {
+  margin-left: auto; min-width: 0; line-height: 1;
+  font-size: 11.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.uis-collapse {
+  display: grid; grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s var(--ease);
+}
+.up-imgset.open .uis-collapse { grid-template-rows: 1fr; }
+/* 裁剪层：自身零内边距、零边框，收起时高度为 0，把里面的东西全部剪掉 ——
+   内边距和栅格都放在它儿子身上，收起就不会剩下一条边 */
+.uis-clip { overflow: hidden; min-height: 0; }
+.uis-inner {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  padding: 2px 15px 15px;
+}
+@media (max-width: 880px) {
+  .uis-inner { grid-template-columns: 1fr; }
+}
+.uis-block {
+  border: 1px solid var(--border-soft); border-radius: 9px;
+  background: var(--panel); padding: 12px 14px 2px;
+}
+.uis-block-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 11px; }
 .upc-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-.upc-title { font-size: 12.5px; color: var(--text); font-weight: 500; }
-.upc-body {
-  display: grid; grid-template-columns: minmax(160px, 1fr) minmax(172px, 1.15fr);
-  gap: 0 18px; align-items: end;
-  transition: opacity 0.2s ease;
+.uis-block-title { font-size: 12.5px; color: var(--text); font-weight: 500; }
+/* ------------------------------------------------------------
+   自绘复选框（压缩 / 水印 / 保留原图）
+   浏览器默认那个小方框在自绘界面里太「网页」：颜色跟着系统走、
+   圆角和描边都对不上。整块重画，状态只有三条：
+     常态   —— 淡底 + 内凹高光，描边 --border（就是个「没勾」的样子）
+     hover  —— **只把描边加深一档**，不碰底色、不用主色。
+               以前 hover 用主色描边 + 提亮底色，看着就像「已经选中了」，
+               鼠标一划过去满屏都是选中态（杰哥打回）。
+     选中   —— 主色竖向渐变 + 主色投影 + 白色小对勾
+   踩过的坑（必看）：hover 规则一旦比 :checked 更具体，选中后鼠标不移开
+   就会一直显示 hover 的底色 —— 表现为「点了没反应，移开才变」。
+   所以 hover 只用 :hover 一个伪类（具体性低于 :checked:hover），
+   并且 :checked:hover 显式再声明一次，把选中态钉死。
+   ------------------------------------------------------------ */
+.up-imgset input[type="checkbox"] {
+  -webkit-appearance: none; appearance: none;
+  position: relative; flex: 0 0 auto;
+  width: 16px; height: 16px; margin: 0;
+  border: 1.5px solid var(--border); border-radius: 5px;
+  background: var(--panel-2);
+  box-shadow: inset 0 1px 1.5px rgba(15, 30, 60, 0.09);
+  cursor: pointer;
+  transition: background 0.18s var(--ease), border-color 0.18s,
+              box-shadow 0.18s, transform 0.1s var(--ease);
 }
-.upc-body .field { margin-bottom: 0; }
-.up-compress input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
-.up-compress:has(#upCompress:not(:checked)) .upc-body { opacity: 0.42; }
+.up-imgset input[type="checkbox"]:hover { border-color: var(--text-dim); }
+.up-imgset input[type="checkbox"]:active { transform: scale(0.9); }
+.up-imgset input[type="checkbox"]:focus-visible {
+  outline: none; box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.up-imgset input[type="checkbox"]:checked,
+.up-imgset input[type="checkbox"]:checked:hover {
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+  border-color: var(--accent);
+  box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--accent) 62%, transparent);
+}
+/* 勾要秀气并且真正居中：left/top 各 50% + translate(-50%,-50%) 后再旋转，
+   绕自身中心转，天生居中；以前用固定 left/top 摆，肉眼看着偏左下 */
+.up-imgset input[type="checkbox"]::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 4px; height: 7px;
+  margin: -4px 0 0 -2px;
+  border: 1.8px solid #fff; border-top: 0; border-left: 0;
+  transform: rotate(42deg) scale(0); transform-origin: center;
+  opacity: 0;
+  transition: transform 0.18s var(--ease), opacity 0.12s;
+}
+.up-imgset input[type="checkbox"]:checked::after {
+  transform: rotate(42deg) scale(1); opacity: 1;
+}
+.up-imgset input[type="checkbox"]:disabled {
+  opacity: 0.45; cursor: not-allowed;
+  background: var(--panel-3); border-color: var(--border); box-shadow: none;
+}
+.up-imgset input[type="checkbox"]:disabled::after { opacity: 0; }
+.up-imgset input[type="checkbox"]:disabled + .uis-block-title,
+.up-imgset input[type="checkbox"]:disabled + .field-label { color: var(--muted); }
+/* 整行都能点；hover 只反馈在复选框自己身上，**文字不许变色**（杰哥点的） */
+.upc-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+/* 关掉开关时把参数区淡下去：视线立刻知道它不参与干活（压缩 / 水印各管各的） */
+.uis-block .grid-2 { transition: opacity 0.2s ease; }
+.uis-block:has(#upCompress:not(:checked)) .grid-2,
+.uis-block:has(#upWmEnabled:not(:checked)) .grid-2 { opacity: 0.42; }
 
 .queue-panel, .result-panel {
   margin-top: 14px; background: var(--panel);
@@ -1160,10 +1289,14 @@ html[data-theme="light"] .dropzone {
 .side-git .cd-ico.local { color: var(--ok); }
 .side-git .cd-ico.off { opacity: 0.55; }
 .side-git .cd-label { flex: 0 0 auto; font-size: 10.5px; letter-spacing: 0.3px; color: var(--muted); }
+/* 哈希：只显 7 位、不加外框（杰哥要「瘦身」）——
+   以前是个带边框的药丸，两个框吃掉半行宽度，值又都是同一串；
+   现在退成一行等宽小字，完整 commit 走 title（悬停出云朵气泡）。
+   放不下才省略，绝不去挤压左边的图标和标签 */
 .side-git .sha {
-  margin-left: auto; max-width: 86px;
-  font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 5px;
-  background: var(--bg-soft); border: 1px solid var(--border-soft); color: var(--text-dim);
+  margin-left: auto; min-width: 0; max-width: 96px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.2px;
+  color: var(--text-dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .side-git .sha.off { color: var(--muted); }
@@ -2094,6 +2227,73 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 .dir-input-row input { flex: 1; }
 
 /* ============================================================
+   毛玻璃（浅色 + 已设自定义背景图时启用，强度由设置页滑块写进 --glass-blur）
+   ------------------------------------------------------------
+   为什么不用 backdrop-filter（踩过的坑，别再改回去）：
+     backdrop-filter 只模糊「本元素的 backdrop」，而 Chromium 里这个 backdrop
+     取不到 .app（z-index:1 的层叠上下文）**外面**的东西 —— 自定义背景图正好在
+     外面，于是卡片上 blur 完全不生效（实测：同一位置开关 blur 两态像素差 = 0，
+     而挂在 body 上的同款元素却能正常糊）。
+   改用「自己在面板里画一层背景图 + 上一层 CSS filter: blur」：
+     JS 按需给面板塞一个 .glass-layer（绝对定位、inset 外扩 28px 抵消模糊边缘），
+     层里画「白纱 + 背景图」，background-attachment: fixed 让每块面板看到的是
+     同一张按视口对齐的图 —— 视觉上就是「透过玻璃看背景」。
+     面板自身底色转透明，白纱在层里统一给，正文对比度由白纱透明度控制。
+   ============================================================ */
+:root { --glass-blur: 12px; --glass-alpha: 0; --glass-img: none; --glass-wash: 0.42; --glass-wash-soft: 0.36; }
+
+.glass-layer { display: none; }
+
+/* 玻璃层挂在面板的**负层级**上：绘制顺序是「面板自身底色 → 负层级子元素 → 流内内容」，
+   所以它天然盖住底色、天然垫在内容下面 —— 不需要给任何子元素改 position/z-index
+   （早先给 `> *` 统一加 position:relative，把 .dz-dash 的 absolute 冲掉了，
+    上传页的虚线框当场裂开 —— 那个坑别再踩）。 */
+html[data-theme="light"].glass-ready .glass-host { position: relative; z-index: 0; overflow: hidden; }
+
+html[data-theme="light"].glass-ready .glass-host > .glass-layer {
+  display: block;
+  position: absolute; inset: -28px; z-index: -1; pointer-events: none;
+  /* 白纱浓度直接由滑块决定：强度 0 → 纱几乎不透明（看起来就是原来的实心面板），
+     强度拉满 → 纱退到 --glass-wash，模糊的图透出来。
+     所以「越调越透」不会再出现：透出来的一直是被模糊过的图，且模糊半径同步变大。 */
+  background-image:
+    linear-gradient(
+      rgba(255, 255, 255, calc(1 - (1 - var(--glass-wash)) * var(--glass-alpha, 0))),
+      rgba(255, 255, 255, calc(1 - (1 - var(--glass-wash)) * var(--glass-alpha, 0)))
+    ),
+    var(--glass-img);
+  background-size: 100% 100%, 100vw 100vh;
+  background-position: 0 0, calc(28px - var(--gx, 0px)) calc(28px - var(--gy, 0px));
+  background-repeat: no-repeat, no-repeat;
+  filter: blur(var(--glass-blur)) saturate(1.15);
+  transition: filter 0.22s linear, background-image 0.38s linear;
+}
+/* 顶栏 / 侧栏的白纱再薄一点，让背景图的气色透出来 */
+html[data-theme="light"].glass-ready .topbar > .glass-layer,
+html[data-theme="light"].glass-ready .sidebar > .glass-layer {
+  background-image:
+    linear-gradient(
+      rgba(247, 249, 252, calc(1 - (1 - var(--glass-wash-soft)) * var(--glass-alpha, 0))),
+      rgba(247, 249, 252, calc(1 - (1 - var(--glass-wash-soft)) * var(--glass-alpha, 0)))
+    ),
+    var(--glass-img);
+}
+/* 卡片左侧那根 hover 主色条是 ::before，得抬到玻璃层上面，不然被白纱盖住 */
+html[data-theme="light"].glass-ready .glass-host::before { z-index: 2; }
+html[data-theme="light"].glass-ready .content {
+  background: linear-gradient(180deg, rgba(247, 249, 252, 0.88) 0%, rgba(247, 249, 252, 0.62) 120px, rgba(247, 249, 252, 0) 240px);
+}
+/* 背景图偏暗时（JS 采样后加 glass-dark）：白纱加厚，保证正文对比度。
+   灰字（.hint / .field-note / .card-head p）在这种底上最容易糊，
+   一并抬到 --text-dim —— 这就是「字体颜色跟着背景动」那一半 */
+html[data-theme="light"].glass-dark .hint,
+html[data-theme="light"].glass-dark .field-note,
+html[data-theme="light"].glass-dark .card-head p,
+html[data-theme="light"].glass-dark .card-body .hint { color: var(--text-dim); }
+html[data-theme="light"].glass-dark .pf-rule,
+html[data-theme="light"].glass-dark .pf-path-label { color: var(--text-dim); }
+
+/* ============================================================
    深空背景（浅色 / 深色各一套形态，共用同一块画布）
    画布固定在最底层；两套主题都把几块大面积面板调成半透明，粒子才透得出来。
    浅色卡片留 0.84 —— 既能让粒子在它后面淡淡地动，正文又不糊；
@@ -2105,8 +2305,25 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
   display: none;            /* 主题没落定前不参与；下面两条按主题打开 */
   pointer-events: none;
 }
-html[data-theme="light"] #universe,
+/* 浅色不再渲染粒子（自定义背景图接管质感），画布只在深色出场 */
 html[data-theme="dark"] #universe { display: block; }
+
+/* ------------------------------------------------------------
+   浅色模式的自定义背景图（设置页「外观 → 自定义背景图」选的那张）。
+   只在浅色 + 已设置时渲染；深色永远星野，这个元素在深色下 display:none，
+   一条规则钉死，谁也影响不到星野。层级与画布同为 0（都在界面层之下），
+   画布在浅色下本来就不画，两者永远不会同时可见。
+   ------------------------------------------------------------ */
+#customBg {
+  position: fixed; inset: 0; z-index: 0;
+  display: none;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+#customBg.on { display: block; }
+html[data-theme="dark"] #customBg { display: none; }
 
 /* 界面整体压在画布之上。.content / .page 本来就没有底色，
    它们那一块会直接透出粒子；有底色的容器得半透明才透得过。 */

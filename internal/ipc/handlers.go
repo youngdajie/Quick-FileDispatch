@@ -3,7 +3,9 @@ package ipc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,6 +122,25 @@ func (e *Env) repoKey() string {
 	}, "|")
 }
 
+// copyFile 把 src 原样复制到 dst（覆盖语义）。背景图副本、导出附件这类
+// 「整个文件搬个家」的需求都用它；文件不大，不值得上缓冲池花样。
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
 // Register 把这一版实现的通道挂上去。
 //
 // 通道名逐字对照 src/main/preload.js 与 main.js 里的 ipcMain.handle，
@@ -139,6 +160,15 @@ func Register(r *Registry, env *Env) {
 	// 临时目录也要放行：CNB 写入通道克隆出来的工作区在里面
 	if env.TmpRoot != "" {
 		env.allowRoot(env.TmpRoot)
+	}
+	// 自定义背景图的副本目录同理：配置里记着它，启动就得放行，
+	// 否则重启后浅色背景先 403 一次（和上面本地目录是同一个坑）
+	if cfg := env.Store.Get(); cfg != nil {
+		if ui, ok := cfg["ui"].(map[string]any); ok {
+			if bg, _ := ui["bgImage"].(string); bg != "" {
+				env.allowRoot(filepath.Dir(bg))
+			}
+		}
 	}
 
 	/* ---------------------------------------------------------- 应用信息 */
@@ -414,6 +444,67 @@ func Register(r *Registry, env *Env) {
 			return nil, nil
 		}
 		return dir, nil
+	})
+
+	/* ---------------------------------------------------------- 自定义背景图 */
+
+	// 背景图不存用户选的原始路径，而是**拷一份进配置目录 bg/ 里再记这个副本**：
+	// 原图在 U 盘 / 下载目录里，哪天删了换台机器，背景就悄悄失效还查不出原因。
+	// 副本目录单独放（不和 config.json 混在一起），/__local 的白名单只放行
+	// bg/ 这一个目录 —— 不为一张图把整个配置目录（里面有加密 Token）暴露出去。
+	chooseBg := func() (any, error) {
+		picked, err := dialog.OpenFile("选择背景图片（仅浅色模式生效）", []dialog.Filter{
+			{Name: "图片文件", Exts: []string{"jpg", "jpeg", "png", "webp", "bmp", "gif"}},
+			{Name: "所有文件", Exts: []string{"*"}},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if picked == "" {
+			return map[string]any{"canceled": true}, nil
+		}
+		ext := strings.ToLower(filepath.Ext(picked))
+		if ext == "" {
+			return nil, errors.New("选中的文件没有扩展名，认不出是什么格式")
+		}
+		if ext == ".jpeg" {
+			ext = ".jpg"
+		}
+		bgDir := filepath.Join(env.ConfigDir, "bg")
+		if err := os.MkdirAll(bgDir, 0o755); err != nil {
+			return nil, err
+		}
+		// 换图时把旧副本清干净，bg/ 里永远只有当前这一张
+		if entries, e2 := os.ReadDir(bgDir); e2 == nil {
+			for _, it := range entries {
+				if !it.IsDir() {
+					_ = os.Remove(filepath.Join(bgDir, it.Name()))
+				}
+			}
+		}
+		dst := filepath.Join(bgDir, "custom"+ext)
+		if err := copyFile(picked, dst); err != nil {
+			return nil, fmt.Errorf("背景图复制失败：%w", err)
+		}
+		env.allowRoot(bgDir)
+		out, err := env.Store.Patch(map[string]any{"ui": map[string]any{"bgImage": dst}})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	r.Handle("ui:chooseBgImage", func(json.RawMessage) (any, error) { return chooseBg() })
+
+	r.Handle("ui:clearBgImage", func(json.RawMessage) (any, error) {
+		bgDir := filepath.Join(env.ConfigDir, "bg")
+		if entries, e2 := os.ReadDir(bgDir); e2 == nil {
+			for _, it := range entries {
+				if !it.IsDir() {
+					_ = os.Remove(filepath.Join(bgDir, it.Name()))
+				}
+			}
+		}
+		return env.Store.Patch(map[string]any{"ui": map[string]any{"bgImage": ""}})
 	})
 
 	/* ---------------------------------------------------------- 云端 */

@@ -11,6 +11,8 @@
 <body>
 
 <canvas id="universe" aria-hidden="true"></canvas>
+<!-- 浅色模式的自定义背景图（仅浅色生效；深色永远星野） -->
+<div id="customBg" aria-hidden="true"></div>
 
 <div class="app" id="appRoot">
 
@@ -126,6 +128,32 @@
           <input type="file" id="fileInput" multiple hidden />
         </div>
 
+        <!-- 文件处理队列紧跟上传框：拖完文件视线不用往下找，
+             和上传框保持同一个间距（见 app.css 的 .dropzone / .queue-panel） -->
+        <div class="queue-panel" id="queuePanel" hidden>
+          <div class="queue-head">
+            <div class="queue-title">
+              待上传 <b id="queueCount">0</b> 个
+              <span class="sep">·</span>
+              原始 <b id="queueOrig">0 B</b>
+              <span class="sep">→</span>
+              实际 <b class="accent" id="queueNew">0 B</b>
+              <span class="save-tag" id="queueSave" hidden></span>
+            </div>
+            <div class="queue-actions">
+              <button class="btn btn-ghost btn-sm" id="btnClearQueue">清空</button>
+              <button class="btn btn-primary btn-sm" id="btnUpload">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 15.5V5"/><path d="M8 9l4-4 4 4"/><path d="M4 16v2.5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V16"/>
+                </svg>
+                开始上传
+              </button>
+            </div>
+          </div>
+          <div class="progress" id="upProgress" hidden><div class="progress-bar" id="upProgressBar"></div></div>
+          <div class="queue-list" id="queueList"></div>
+        </div>
+
         <div class="up-options" id="upOptions">
           <div class="up-basic">
             <div class="field">
@@ -149,56 +177,120 @@
             </label>
           </div>
 
-          <div class="up-compress" id="upCompressBox">
-            <div class="upc-head">
-              <label class="upc-toggle">
-                <input type="checkbox" id="upCompress" checked />
-                <span class="upc-title">图片压缩</span>
-              </label>
-              <span class="hint">仅对图片生效，其它文件原样上传</span>
-            </div>
-            <div class="upc-body">
-              <label class="field">
-                <span class="field-label">质量 <b id="upQualityVal">80</b></span>
-                <input type="range" id="upQuality" min="10" max="100" value="80" />
-              </label>
-              <label class="field">
-                <span class="field-label">输出格式</span>
-                <select id="upFormat">
-                  <option value="avif">AVIF（推荐，体积最小）</option>
-                  <option value="auto">智能（按内容自动选）</option>
-                  <option value="keep">保持原格式</option>
-                  <option value="webp">WebP</option>
-                  <option value="jpeg">JPEG</option>
-                  <option value="png">PNG</option>
-                </select>
-              </label>
+          <!-- 图片设置：压缩 + 水印全部集中在这里（原设置页两块卡整体迁入），
+               可折叠 —— 日常只改目录/文件名/前缀，这些低频参数收起来不占地方 -->
+          <div class="up-imgset" id="upImgSet">
+            <button type="button" class="uis-head" id="upImgSetHead" aria-expanded="true" aria-controls="upImgSetBody">
+              <svg class="uis-chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              <span class="uis-title">图片设置</span>
+              <span class="uis-sub">压缩与水印 · 仅对图片生效，其它文件原样上传</span>
+            </button>
+            <div class="uis-collapse" id="upImgSetBody">
+              <!-- 裁剪层必须单独一层、且自身不带内边距/边框：
+                   收起时行高归零，靠它把子面板连同它们的间距、圆角、边框一起裁掉。
+                   把 padding 放在栅格层(.uis-inner)上，收起后会留一条撑开的空边 -->
+              <div class="uis-clip">
+                <div class="uis-inner">
+                  <div class="uis-block">
+                  <div class="uis-block-head">
+                    <label class="upc-toggle">
+                      <input type="checkbox" id="upCompress" checked />
+                      <span class="uis-block-title">图片压缩</span>
+                    </label>
+                    <span class="hint">本机多核并行，原图不出电脑</span>
+                  </div>
+                  <div class="grid-2">
+                    <label class="field">
+                      <span class="field-label">质量 <b id="upQualityVal">80</b></span>
+                      <input type="range" id="upQuality" min="10" max="100" value="80" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">输出格式</span>
+                      <select id="upFormat">
+                        <option value="avif">AVIF（推荐，体积最小）</option>
+                        <option value="auto">智能（按内容自动选）</option>
+                        <option value="keep">保持原格式</option>
+                        <option value="webp">WebP</option>
+                        <option value="jpeg">JPEG</option>
+                        <option value="png">PNG</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span class="field-label">最大宽度 <span class="hint">px · 0 = 不限</span></span>
+                      <input type="number" id="upMaxWidth" min="0" step="100" placeholder="0" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">最大高度 <span class="hint">px · 0 = 不限</span></span>
+                      <input type="number" id="upMaxHeight" min="0" step="100" placeholder="0" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">目标体积（KB，0 = 不限）<span class="hint">二分质量逼近</span></span>
+                      <input type="number" id="upTargetSize" min="0" step="10" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">并行线程数 <span class="hint">0 = 自动</span></span>
+                      <input type="number" id="upConcurrency" min="0" max="32" />
+                    </label>
+                    <label class="field checkbox-field span-2">
+                      <input type="checkbox" id="upSkipSmaller" />
+                      <span class="field-label">压缩后反而变大时，保留原图</span>
+                    </label>
+                    <label class="field span-2">
+                      <span class="field-label">小于该体积的图片跳过压缩（KB）</span>
+                      <input type="number" id="upSkipBelow" min="0" step="10" />
+                    </label>
+                  </div>
+                </div>
+                <div class="uis-block">
+                  <div class="uis-block-head">
+                    <label class="upc-toggle">
+                      <input type="checkbox" id="upWmEnabled" />
+                      <span class="uis-block-title">文字水印</span>
+                    </label>
+                    <span class="hint">画在压缩输出上</span>
+                  </div>
+                  <div class="grid-2">
+                    <label class="field span-2">
+                      <span class="field-label">水印文字</span>
+                      <input type="text" id="upWmText" placeholder="@your-name" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">位置</span>
+                      <select id="upWmPosition">
+                        <option value="bottom-right">右下角</option>
+                        <option value="bottom-left">左下角</option>
+                        <option value="top-right">右上角</option>
+                        <option value="top-left">左上角</option>
+                        <option value="center">居中</option>
+                        <option value="tile">平铺</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span class="field-label">字号基准</span>
+                      <input type="number" id="upWmFontSize" min="8" max="96" />
+                    </label>
+                    <label class="field span-2">
+                      <span class="field-label">不透明度 <b id="upWmOpacityVal">0.35</b></span>
+                      <input type="range" id="upWmOpacity" min="5" max="100" />
+                    </label>
+                    <div class="field span-2">
+                      <span class="field-label">颜色</span>
+                      <div class="wm-color">
+                        <button type="button" class="wm-swatch" id="wmSwatch" title="点击选择颜色" aria-haspopup="dialog" aria-expanded="false">
+                          <span class="wm-swatch-fill"></span>
+                        </button>
+                        <input type="hidden" id="upWmColor" />
+                        <input type="text" class="wm-hex" id="wmColorText" maxlength="7" spellcheck="false"
+                               placeholder="#1296db" aria-label="水印颜色十六进制值" />
+                        <span class="wm-presets" id="wmPresets"></span>
+                      </div>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="queue-panel" id="queuePanel" hidden>
-          <div class="queue-head">
-            <div class="queue-title">
-              待上传 <b id="queueCount">0</b> 个
-              <span class="sep">·</span>
-              原始 <b id="queueOrig">0 B</b>
-              <span class="sep">→</span>
-              实际 <b class="accent" id="queueNew">0 B</b>
-              <span class="save-tag" id="queueSave" hidden></span>
-            </div>
-            <div class="queue-actions">
-              <button class="btn btn-ghost btn-sm" id="btnClearQueue">清空</button>
-              <button class="btn btn-primary btn-sm" id="btnUpload">
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 15.5V5"/><path d="M8 9l4-4 4 4"/><path d="M4 16v2.5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V16"/>
-                </svg>
-                开始上传
-              </button>
-            </div>
-          </div>
-          <div class="progress" id="upProgress" hidden><div class="progress-bar" id="upProgressBar"></div></div>
-          <div class="queue-list" id="queueList"></div>
         </div>
 
         <div class="result-panel" id="resultPanel" hidden>
@@ -536,114 +628,34 @@
                   <div class="font-sample" id="fontSample">快捷文件分发服务@JIE 　Aa 123 中文示例</div>
                 </div>
               </div>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-head"><h2>图片压缩</h2><p>压缩在本机用多核 CPU 并行完成，不上传原图，速度取决于你的电脑</p></div>
-            <div class="card-body">
-              <label class="field checkbox-field">
-                <input type="checkbox" id="cfgCompressEnabled" />
-                <span class="field-label">上传前自动压缩</span>
-              </label>
-              <div class="grid-2">
-                <label class="field">
-                  <span class="field-label">质量 <b id="cfgQualityVal">80</b></span>
-                  <input type="range" id="cfgQuality" min="10" max="100" />
-                </label>
-                <label class="field">
-                  <span class="field-label">输出格式</span>
-                  <select id="cfgFormat">
-                    <option value="avif">AVIF（推荐，体积最小）</option>
-                    <option value="auto">智能（按内容自动选）</option>
-                    <option value="keep">保持原格式</option>
-                    <option value="webp">WebP</option>
-                    <option value="jpeg">JPEG</option>
-                    <option value="png">PNG</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span class="field-label">最大宽度 <span class="hint">px · 0 = 不限制</span></span>
-                  <input type="number" id="cfgMaxWidth" min="0" step="100" placeholder="0" />
-                </label>
-                <label class="field">
-                  <span class="field-label">最大高度 <span class="hint">px · 0 = 不限制</span></span>
-                  <input type="number" id="cfgMaxHeight" min="0" step="100" placeholder="0" />
-                </label>
-                <p class="field-help span-2">
-                  两个都留 <b>0</b>（默认）就<b>不改动图片原始尺寸</b>，只按上面的质量与格式重新编码，
-                  小图不会因为这里而被放大。填了数字才会等比缩放到不超过该尺寸 ——
-                  比如宽高都填 <b>1920</b>，4000×3000 会变成 1920×1440，而 1200×900 原样保留。
-                  只想限制某一边，另一个留 0 即可
-                </p>
-                <label class="field">
-                  <span class="field-label">目标体积（KB，0 = 不限制）<span class="hint">自动二分质量逼近</span></span>
-                  <input type="number" id="cfgTargetSize" min="0" step="10" />
-                </label>
-                <label class="field">
-                  <span class="field-label">并行线程数 <span class="hint">0 = 自动（CPU 核心数）</span></span>
-                  <input type="number" id="cfgConcurrency" min="0" max="32" />
-                </label>
-              </div>
-              <div class="grid-2">
-                <label class="field checkbox-field">
-                  <input type="checkbox" id="cfgSkipSmaller" />
-                  <span class="field-label">压缩后反而变大时，保留原图</span>
-                </label>
-                <label class="field">
-                  <span class="field-label">小于该体积的图片跳过压缩（KB）</span>
-                  <input type="number" id="cfgSkipBelow" min="0" step="10" />
-                </label>
-              </div>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-head"><h2>水印</h2></div>
-            <div class="card-body">
-              <label class="field checkbox-field">
-                <input type="checkbox" id="cfgWmEnabled" />
-                <span class="field-label">上传时添加文字水印</span>
-              </label>
-              <div class="grid-2">
-                <label class="field">
-                  <span class="field-label">水印文字</span>
-                  <input type="text" id="cfgWmText" placeholder="@your-name" />
-                </label>
-                <label class="field">
-                  <span class="field-label">位置</span>
-                  <select id="cfgWmPosition">
-                    <option value="bottom-right">右下角</option>
-                    <option value="bottom-left">左下角</option>
-                    <option value="top-right">右上角</option>
-                    <option value="top-left">左上角</option>
-                    <option value="center">居中</option>
-                    <option value="tile">平铺</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span class="field-label">不透明度 <b id="cfgWmOpacityVal">0.35</b></span>
-                  <input type="range" id="cfgWmOpacity" min="5" max="100" />
-                </label>
-                <label class="field">
-                  <span class="field-label">字号基准</span>
-                  <input type="number" id="cfgWmFontSize" min="8" max="96" />
-                </label>
-              </div>
-              <label class="field">
-                <span class="field-label">颜色</span>
-                <div class="wm-color">
-                  <button type="button" class="wm-swatch" id="wmSwatch" title="点击选择颜色" aria-haspopup="dialog" aria-expanded="false">
-                    <span class="wm-swatch-fill"></span>
-                  </button>
-                  <input type="hidden" id="cfgWmColor" />
-                  <input type="text" class="wm-hex" id="wmColorText" maxlength="7" spellcheck="false"
-                         placeholder="#1296db" aria-label="水印颜色十六进制值" />
-                  <span class="wm-presets" id="wmPresets"></span>
+              <!-- 背景图这一组整体装进一个框（预览/操作/说明/毛玻璃滑块都在里面） -->
+              <div class="bg-box">
+                <div class="bg-box-head">
+                  <span class="bg-box-title">自定义背景图</span>
+                  <span class="hint">只替换浅色模式的背景；深色模式永远是星野，不受影响</span>
                 </div>
-              </label>
+                <div class="bg-row">
+                  <div class="bg-preview" id="bgPreview" title="当前背景图预览"></div>
+                  <div class="bg-ops">
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnBgPick">选择图片…</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnBgClear">清除</button>
+                  </div>
+                </div>
+                <p class="field-note">程序会把图片复制一份进自己的配置目录，之后原图挪走、删掉都不影响背景</p>
+                <label class="field" style="margin-top:10px">
+                  <span class="field-label">
+                    毛玻璃强度 <b id="cfgBgBlurVal">12</b>
+                    <span class="hint">0 = 关闭 · 设了背景图时在浅色模式下生效</span>
+                  </span>
+                  <input type="range" id="cfgBgBlur" min="0" max="24" step="0.1" />
+                </label>
+                <p class="field-note">给顶栏、侧栏和卡片加上背景模糊，让背景图在面板后面透出来又不抢正文</p>
+              </div>
             </div>
           </section>
+
+          <!-- 图片压缩 / 水印已整体迁到上传页的「图片设置」折叠区（2026-09-24）：
+               这两类参数只在传图时才有意义，摆在设置页里反而要两头跑 -->
 
           <section class="card card-danger">
             <div class="card-head"><h2>危险操作</h2></div>
