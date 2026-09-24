@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/cloud"
@@ -978,10 +979,18 @@ func (e *Env) fsLocalDelete(payload map[string]any) (any, error) {
 
 /* ------------------------------------------------------------ 小工具 */
 
-// decodeBytes 接受两种形状：字节数组（渲染层传 Array）和 base64 字符串。
+// decodeBytes 接受三种形状：字节数组、base64 字符串，以及「被 JSON 化过的
+// Uint8Array」。
 //
-// 两种都要认：Array.from(buffer) 在大文件上会产生一个几十万元素的 JSON 数组，
-// 体积膨胀三四倍；所以大文件走 base64，小文件两种都行。
+// 为什么会有第三种：渲染层按 Electron 时代的老写法传 new Uint8Array(...)，
+// 而 JSON.stringify(Uint8Array) **不会**变成数组，而是变成 {"0":104,"1":105}
+// 这种数字键对象（结构化克隆才有 TypedArray 语义，HTTP+JSON 这条路上没有）。
+// 于是三个吃字节的通道（cloud:upload / cloud:replace / fs:localWrite）在 Go
+// 壳下全部报「期望字节数组或 base64 字符串」——这条兼容分支就是为了补上这个
+// 落差，渲染层一个字都不用改。
+//
+// 三种都要认：Array.from(buffer) 在大文件上会产生一个几十万元素的 JSON 数组，
+// 体积膨胀三四倍；所以大文件走 base64，小文件三种都行。
 func decodeBytes(v any) ([]byte, error) {
 	switch t := v.(type) {
 	case []byte:
@@ -997,6 +1006,27 @@ func decodeBytes(v any) ([]byte, error) {
 			default:
 				return nil, BadPayload("字节数组里有非数字元素")
 			}
+		}
+		return out, nil
+	case map[string]any:
+		// Uint8Array 被 JSON 化后的形状：{"0":..,"1":..}。按数字键归位，
+		// 键必须恰好覆盖 0..len-1，否则说明这个对象根本不是字节数组。
+		if len(t) == 0 {
+			return []byte{}, nil
+		}
+		out := make([]byte, len(t))
+		seen := make([]bool, len(t))
+		for k, n := range t {
+			idx, err := strconv.Atoi(k)
+			if err != nil || idx < 0 || idx >= len(out) || seen[idx] {
+				return nil, BadPayload("期望字节数组或 base64 字符串")
+			}
+			f, ok := n.(float64)
+			if !ok {
+				return nil, BadPayload("字节数组里有非数字元素")
+			}
+			out[idx] = byte(f)
+			seen[idx] = true
 		}
 		return out, nil
 	case string:
