@@ -14,6 +14,9 @@ type Filter struct {
 	Exts []string
 }
 
+// SetOwner 非 Windows 上什么都不做（没有窗口句柄这回事）。
+func SetOwner(hwnd uintptr) {}
+
 // ChooseDir / OpenFile / SaveFile 在非 Windows 上都没有实现：
 // 返回明确错误，而不是悄悄给个空串 —— 空串会被上层当成「用户取消了」，
 // 于是界面什么都不发生，比报错更难查。

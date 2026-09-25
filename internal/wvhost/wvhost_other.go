@@ -19,6 +19,9 @@ type Options struct {
 
 func Run(o Options) error { return errors.New("当前平台没有窗口壳（仅支持 Windows）") }
 
+// Hwnd 非 Windows 平台没有窗口句柄。
+func Hwnd() uintptr { return 0 }
+
 func Minimize() bool       { return false }
 func ToggleMaximize() bool { return false }
 func CloseWin() bool       { return false }

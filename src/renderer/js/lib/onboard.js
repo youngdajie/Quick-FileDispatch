@@ -9,6 +9,7 @@ import state from './state.js';
 import { brandIcon } from './brandicons.js';
 
 const CPLinks = window.CPLinks;
+import { FIELDS, linkPreviewHtml } from './config-fields.js';
 
 const STEPS = ['选择平台', '仓库与令牌', '映射本地目录', '完成'];
 
@@ -45,7 +46,13 @@ function resetDraft() {
     branch: c.branch || 'main',
     apiBase: c.apiBase || '',
     token: '',
-    localDir: c.localDir || ''
+    // 已存过 Token 时留空表示沿用 —— 字段渲染（config-fields）要看这个标记
+    tokenKept: !!c.hasToken,
+    localDir: c.localDir || '',
+    // 链接规则 / 默认复制格式：和配置向导问的是同一批字段
+    linkRule: c.linkRule || 'auto',
+    customDomain: c.customDomain || '',
+    linkFormat: c.linkFormat || 'markdown'
   };
   verify = null;
   testing = false;
@@ -98,13 +105,6 @@ function panePlatform() {
 }
 
 function paneRepo() {
-  const help =
-    draft.platform === 'cnb'
-      ? 'CNB 需要 <b>访问令牌</b>（必须是<b>经典令牌</b>，MCP 令牌调不了 REST 接口）' +
-        '申请：<a href="#" data-ext="https://cnb.cool/profile/token">cnb.cool/profile/token</a>'
-      : 'GitHub 需要 <b>Personal Access Token</b>，至少勾选 <b>repo</b>' +
-        '申请：<a href="#" data-ext="https://github.com/settings/tokens/new?scopes=repo&description=JIE-Dispatch">github.com/settings/tokens</a>';
-
   const checks =
     verify && verify.steps && verify.steps.length
       ? '<div class="ob-checks">' +
@@ -120,25 +120,16 @@ function paneRepo() {
         '</div>'
       : '';
 
+  // 仓库信息 + 令牌 + 文件链接：字段本身来自 config-fields（与配置向导同一份定义）
   return (
     '<div class="ob-pane">' +
     '<div class="grid-2">' +
-    '<label class="field"><span class="field-label">用户名 / 组织名（owner）</span>' +
-    '<input type="text" id="obOwner" placeholder="your-name" value="' + escapeHtml(draft.owner) + '" /></label>' +
-    '<label class="field"><span class="field-label">仓库名（repo）</span>' +
-    '<input type="text" id="obRepo" placeholder="my-files" value="' + escapeHtml(draft.repo) + '" /></label>' +
+    FIELDS.owner.html(draft) +
+    FIELDS.repo.html(draft) +
     '</div>' +
-    '<div class="grid-2">' +
-    '<label class="field"><span class="field-label">分支 <span class="hint">新建仓库默认 main</span></span>' +
-    '<input type="text" id="obBranch" placeholder="main" value="' + escapeHtml(draft.branch) + '" /></label>' +
-    '<label class="field"><span class="field-label">接口地址 <span class="hint">留空即官方地址</span></span>' +
-    '<input type="text" id="obApiBase" placeholder="' + (draft.platform === 'cnb' ? 'https://api.cnb.cool' : 'https://api.github.com') + '" value="' + escapeHtml(draft.apiBase) + '" /></label>' +
-    '</div>' +
-    '<label class="field"><span class="field-label">访问令牌（Token）<span class="hint">' +
-    (state.cfg && state.cfg.hasToken ? '已保存，留空即沿用' : '必填') +
-    '</span></span>' +
-    '<input type="password" id="obToken" placeholder="' + (state.cfg && state.cfg.hasToken ? '留空表示沿用已保存的 Token' : '粘贴 Token') + '" autocomplete="off" /></label>' +
-    '<div class="ob-note">' + help + '　Token 只保存在本机，使用 Windows 系统级加密（DPAPI）落盘</div>' +
+    FIELDS.branch.html(draft) +
+    FIELDS.token.html(draft) +
+    FIELDS.link.html(draft) +
     checks +
     '</div>'
   );
@@ -305,14 +296,13 @@ function bindPane() {
   }
 
   if (step === 1) {
-    const take = () => {
-      draft.owner = $('#obOwner').value.trim();
-      draft.repo = $('#obRepo').value.trim();
-      draft.branch = $('#obBranch').value.trim() || 'main';
-      draft.apiBase = $('#obApiBase').value.trim();
-      draft.token = $('#obToken').value.trim();
-      return draft;
-    };
+    // 字段绑定由 config-fields 负责，输入直接落进 draft —— 不用再从 DOM 里 take
+    FIELDS.owner.bind(draft);
+    FIELDS.repo.bind(draft);
+    FIELDS.branch.bind(draft);
+    FIELDS.token.bind(draft);
+    FIELDS.link.bind(draft);
+    const take = () => draft;
     const invalidateVerify = () => {
       verify = null;
       const n = $('#obNext');
@@ -325,8 +315,9 @@ function bindPane() {
       const box = document.querySelector('.ob-checks');
       if (box) box.remove();
     };
-    ['#obOwner', '#obRepo', '#obBranch', '#obApiBase', '#obToken'].forEach((s) => {
-      $(s).addEventListener('input', invalidateVerify);
+    wrap.querySelectorAll('.ob-pane input, .ob-pane select').forEach((el) => {
+      el.addEventListener('input', invalidateVerify);
+      el.addEventListener('change', invalidateVerify);
     });
 
     testHandler = async () => {
@@ -345,7 +336,10 @@ function bindPane() {
           owner: draft.owner,
           repo: draft.repo,
           branch: draft.branch,
-          apiBase: draft.apiBase
+          apiBase: draft.apiBase,
+          linkRule: draft.linkRule,
+          customDomain: draft.customDomain,
+          linkFormat: draft.linkFormat
         };
         if (draft.token) patch.token = draft.token;
         await state.patch(patch);

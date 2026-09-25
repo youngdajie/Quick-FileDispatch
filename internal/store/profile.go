@@ -15,16 +15,18 @@ import (
 
 // profileFields 是「属于这一份配置」的字段：切 profile 时整组一起换。
 //
-// linkRule / customDomain 也在内 —— 一份配置 = 仓库信息 + 本地目录 + 文件链接。
+// linkRule / customDomain / linkFormat 也在内 —— 一份配置 = 仓库信息 + 本地目录 + 文件链接。
 // 早先它们放在顶层当全局设置，结果切到另一个平台时，平台专属的规则
 // （如 jsdelivr 只给 GitHub）在新平台的下拉里不存在，表单只能回落到「自动」，
 // 一保存就把用户的规则冲掉了。
+// linkFormat（默认复制格式）同理：不同仓库的用途不一样，图床要 Markdown、素材库要裸链接，
+// 它跟着配置走才合理。
 var profileFields = []string{
-	"platform", "owner", "repo", "branch", "apiBase", "localDir", "linkRule", "customDomain",
+	"platform", "owner", "repo", "branch", "apiBase", "localDir", "linkRule", "customDomain", "linkFormat",
 }
 
 // profileFieldDefault 是上面那些字段「空值该回落到什么」。
-var profileFieldDefault = map[string]string{"branch": "main", "linkRule": "auto"}
+var profileFieldDefault = map[string]string{"branch": "main", "linkRule": "auto", "linkFormat": "markdown"}
 
 func profileDefaultOf(k string) string {
 	if v, ok := profileFieldDefault[k]; ok {

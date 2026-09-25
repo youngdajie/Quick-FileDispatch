@@ -149,6 +149,14 @@ func applyRoundedCorners(hwnd uintptr) {
 
 /* ------------------------------------------------------------ 给 IPC 用的窗口操作 */
 
+// Hwnd 返回主窗口句柄（0 = 还没建出来）。
+//
+// 给原生对话框当宿主用：没有宿主窗口的对话框不会跟在本窗口上面，
+// 用户会以为「点了没反应」，其实它开到了窗口背后。
+func Hwnd() uintptr {
+	return gHwnd.Load()
+}
+
 // Minimize 最小化窗口。
 func Minimize() bool {
 	if h := gHwnd.Load(); h != 0 {

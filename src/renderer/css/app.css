@@ -440,7 +440,9 @@ select.csel-native {
 .csel-btn.is-open .csel-arrow { transform: rotate(180deg); color: var(--accent-hi); }
 .csel.is-disabled { opacity: 0.5; }
 .csel-panel {
-  position: fixed; z-index: 9995;
+  /* 9998 是 .modal-wrap，下拉面板必须比它高 —— 否则在弹窗（配置向导）里
+     一点开就被遮罩盖住，看着像「点了没反应」 */
+  position: fixed; z-index: 10001;
   padding: 6px; border-radius: 12px;
   background: var(--panel-2); border: 1px solid var(--border);
   /* 两层阴影：近处一层压出轮廓，远处一层把它从页面上「抬」起来 */
@@ -604,37 +606,44 @@ select.csel-native {
 .pf-row.active { border-color: var(--accent-line); background: var(--accent-soft); }
 
 /* ①顶部：平台 pill 在左，「使用中」徽章顶到右边 */
-.pf-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pf-top { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
 .pf-cur {
-  margin-left: auto; flex: 0 0 auto;
+  flex: 0 0 auto;
   font-size: 10px; color: var(--accent-hi); white-space: nowrap;
 }
 
 /* 云端 ↕ 本地 小图（杰哥定的版式）：只画图标和字，路径不写上来，
    悬停「云端」/「本地」时由云朵气泡给出具体内容 */
-.pf-cd { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 1px; }
-.pf-cd-row { display: flex; align-items: center; gap: 7px; cursor: default; padding: 1px 0; }
+/* 云端 ↕ 本地：横排一行、居中、放大一号 —— 正方形卡片里这行是主角，
+   竖着排两个小字太零碎 */
+.pf-cd {
+  display: flex; flex-direction: row; align-items: center; justify-content: center;
+  gap: 10px; margin: 9px 0 7px;
+}
+.pf-cd-row { display: flex; align-items: center; gap: 6px; cursor: default; }
 .pf-cd-ico { flex: 0 0 auto; display: grid; place-items: center; color: var(--muted); }
+.pf-cd-ico svg { width: 15px; height: 15px; }
 .pf-cd-ico.cloud { color: var(--accent); }
 .pf-cd-ico.local { color: var(--ok); }
-.pf-cd-label { font-size: 11.5px; color: var(--text-dim); }
+.pf-cd-label { font-size: 12.5px; color: var(--text-dim); }
 .pf-cd-row.bad .pf-cd-label,
 .pf-cd-row.bad .pf-cd-ico { color: var(--warn); }
 .pf-cd-link {
-  display: flex; align-items: center; height: 13px; padding-left: 1px;
-  color: var(--muted); opacity: 0.8;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); opacity: 0.85;
 }
+.pf-cd-link svg { width: 13px; height: 13px; }
 
 /* ③别名：小一号、弱一档 */
 .pf-alias {
-  min-width: 0; font-size: 10.5px; color: var(--text-dim);
+  min-width: 0; font-size: 12.5px; color: var(--text-dim); text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* ⑤⑥⑦状态区：竖排小字，紧跟在目录下面（信息在上一组、状态在下一组），
    中间不留空档；真正被压到底的是下面的操作按钮 */
 .pf-meta {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px;
   margin-top: 7px; padding-top: 7px;
   border-top: 1px dashed var(--border-soft);
   min-width: 0;
@@ -666,7 +675,7 @@ select.csel-native {
 /* ⑧操作：沉到卡片最底（margin-top:auto 把剩余空间全吃掉），一行两三个小按钮；
    hover 才完全显形 */
 .pf-ops {
-  display: flex; align-items: center; gap: 5px;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
   margin-top: auto;
   opacity: 0.55; transition: opacity 0.14s;
 }
@@ -843,7 +852,7 @@ select.csel-native {
 .card-head { padding: 13px 16px 10px; border-bottom: 1px solid var(--border-soft); }
 .card-head h2 { margin: 0; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; }
 .card-head p { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
-.card-body { padding: 15px 16px 4px; }
+.card-body { padding: 15px 16px 15px; }
 .card-danger { border-color: rgba(239, 85, 96, 0.22); }
 .card-danger::before { background: linear-gradient(180deg, var(--danger), transparent 70%); }
 .settings-wrap { max-width: 920px; }
@@ -1741,8 +1750,9 @@ html[data-theme="light"] .about-logo {
   display: flex; align-items: flex-start; gap: 10px;
   min-width: 240px; max-width: 400px;
   background: var(--panel-2); border: 1px solid var(--border);
-  border-left: 2px solid var(--accent);
-  border-radius: 9px; padding: 11px 14px; font-size: 12.5px; color: var(--text);
+  /* 左侧色条是全高的一整条，宽度给足才看得出「这条是提示的颜色」 */
+  border-left: 4px solid var(--accent);
+  border-radius: 9px; padding: 11px 14px 11px 13px; font-size: 12.5px; color: var(--text);
   box-shadow: var(--shadow);
   animation: toastIn 0.3s var(--ease);
 }
@@ -2051,16 +2061,29 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 /* 仓库信息 / 本地目录 / 文件链接合成一块；左侧竖条用平台主题色，
    一眼看出「现在编辑的是 GitHub 还是 CNB」 */
 .repo-module { position: relative; }
-/* 标题区左文右工具：给足横向间距，说明文字不要贴着右边的归档下拉 */
-.repo-module .card-head { display: flex; align-items: flex-start; gap: 12px 30px; flex-wrap: wrap; }
-.repo-module .card-head .head-main { flex: 1 1 300px; min-width: 220px; max-width: 560px; }
-.repo-module .card-head .head-main p { padding-right: 10px; }
-.repo-module .card-head .head-tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
+/* 卡头带右上角操作区时排成一行：标题说明在左、按钮顶到最右。
+   只对这种卡生效（:has 判定），其他卡头照旧是「标题 + 说明」上下两行 */
+.card-head:has(.head-tools) { display: flex; align-items: flex-start; gap: 12px 30px; flex-wrap: wrap; }
+.card-head:has(.head-tools) .head-main { flex: 1 1 300px; min-width: 220px; max-width: 620px; }
+.card-head:has(.head-tools) .head-main p { padding-right: 10px; }
+/* 卡片右上角的操作区（全部配置的导出 / 导入等） */
+.card-head .head-tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
+
+/* 平台行：左边「支持哪些平台」（纯展示，不可点），右边新建入口，
+   中间一道细分隔线。平台徽标用各自的品牌色，比一排灰按钮更有辨识度 */
+.plat-bar { display: flex; align-items: center; gap: 13px; }
+.plat-bar-sep { width: 1px; height: 20px; background: var(--border); flex: 0 0 auto; }
+.plat-brand { display: flex; align-items: center; gap: 11px; }
+.plat-brand-item { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; }
+.plat-brand-ico {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px;
+  display: grid; place-items: center;
+  color: #fff; box-shadow: 0 4px 12px -6px rgba(0, 0, 0, 0.6);
+}
+.plat-brand-x { font-size: 12px; color: var(--muted); font-weight: 400; }
+
 
 /* 归档配置下拉：紧贴「仓库」标题右侧 */
-.archive-pick { display: flex; align-items: center; gap: 7px; }
-.archive-pick .csel { min-width: 190px; }
-.archive-pick-label { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 
 /* 平台图层：外框 + 左侧主题色竖条 */
 .plat-frame {
@@ -2108,15 +2131,6 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 .plat-state.new { border-color: rgba(221, 162, 63, 0.36); background: rgba(221, 162, 63, 0.1); color: var(--warn); }
 
 /* 两个图层左右滑动：切换平台时旧图层滑出、新图层滑入 */
-.plat-layer { will-change: transform, opacity; }
-.plat-layer.slide-out-left { animation: platOutLeft 0.2s var(--ease) both; }
-.plat-layer.slide-in-right { animation: platInRight 0.26s var(--ease) both; }
-.plat-layer.slide-out-right { animation: platOutRight 0.2s var(--ease) both; }
-.plat-layer.slide-in-left { animation: platInLeft 0.26s var(--ease) both; }
-@keyframes platOutLeft { to { opacity: 0; transform: translateX(-26px); } }
-@keyframes platInRight { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
-@keyframes platOutRight { to { opacity: 0; transform: translateX(26px); } }
-@keyframes platInLeft { from { opacity: 0; transform: translateX(-26px); } to { opacity: 1; transform: none; } }
 
 /* 大模块里的二级小标题（仓库信息 / 本地目录 / 文件链接） */
 .mod-sec { margin-top: 18px; }
@@ -2695,3 +2709,116 @@ input, textarea, [contenteditable="true"] { cursor: text; }
   border-left: 1px solid var(--border-hover); border-top: 1px solid var(--border-hover);
 }
 
+
+/* ============================================================ 配置向导 */
+/*
+ * 一屏一个问题（见 lib/config-wizard.js）。宽一点、松一点：
+ * 上一版这些字段挤在「仓库设置」卡里，标签和输入框首尾相接，看着就累。
+ * 600px 是试出来的——够放下「选择文件夹 + 克隆」两个按钮不换行，
+ * 又不会宽到让一行字拉得老长。
+ */
+.modal.wz-modal { max-width: 600px; }
+.modal.wz-modal .modal-body { padding: 0; }
+
+.wz { display: flex; flex-direction: column; }
+
+/* 头部只显示「当前在填哪一项」+ 进度：七项标签排一行谁也看不清（挤成「用…」「仓…」），
+   更何况真正需要的是当下这一项的说明 */
+.wz-head { padding: 14px 20px 0; }
+.wz-head-row { display: flex; align-items: baseline; gap: 8px; }
+.wz-head-label { font-size: 11.5px; color: var(--accent); font-weight: 700; letter-spacing: 0.3px; }
+.wz-head-count { margin-left: auto; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wz-progress { margin-top: 9px; height: 2px; border-radius: 2px; background: var(--border-soft); overflow: hidden; }
+.wz-progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hi)); transition: width 0.3s var(--ease); }
+
+.wz-body { padding: 16px 20px 6px; }
+.wz-pane { animation: rise 0.3s var(--ease) both; }
+.wz-title { margin: 0 0 12px; font-size: 14px; font-weight: 700; letter-spacing: 0.2px; }
+.wz-note { margin: 7px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
+.wz-note code { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.wz-help {
+  margin-top: 11px; padding: 10px 12px; font-size: 11.5px; line-height: 1.85;
+  color: var(--muted); border: 1px solid var(--border-soft); border-radius: 9px; background: var(--bg-soft);
+}
+.wz-help a { color: var(--accent); text-decoration: none; }
+.wz-help a:hover { text-decoration: underline; }
+
+.wz-tokenrow, .wz-dirrow { display: flex; gap: 8px; }
+.wz-tokenrow input { flex: 1; min-width: 0; }
+.wz-dirrow input { flex: 1; min-width: 0; }
+.wz-dirrow .btn { flex: 0 0 auto; }
+
+.wz-adv { margin-top: 12px; border-top: 1px dashed var(--border-soft); padding-top: 10px; }
+.wz-adv summary { cursor: pointer; font-size: 12px; color: var(--text-dim); list-style: none; }
+.wz-adv summary::-webkit-details-marker { display: none; }
+.wz-adv summary::before { content: "▸ "; color: var(--muted); }
+.wz-adv[open] summary::before { content: "▾ "; }
+
+.wz-sync { margin-top: 14px; border-top: 1px dashed var(--border-soft); padding-top: 12px; }
+.wz-check { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.wz-check input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
+
+.wz-preview {
+  margin-top: 13px; padding: 10px 12px; border-radius: 9px;
+  background: var(--bg-soft); border: 1px solid var(--border-soft);
+}
+.wz-preview-label { font-size: 10.5px; color: var(--muted); letter-spacing: 0.4px; }
+.wz-preview-url {
+  display: block; margin-top: 5px; font-family: var(--mono); font-size: 11px;
+  color: var(--text-dim); word-break: break-all;
+}
+.wz-preview-copy { margin-top: 6px; font-size: 11px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+
+.wz-final .wz-sum { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
+.wz-final .wz-sum dt { font-size: 11.5px; color: var(--muted); }
+.wz-final .wz-sum dd { margin: 0; font-size: 12.5px; color: var(--text); min-width: 0; word-break: break-all; }
+
+.wz-checks { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.wz-check { display: flex; align-items: flex-start; gap: 9px; padding: 9px 11px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--border-soft); }
+.wz-check .mk { flex: 0 0 auto; width: 16px; text-align: center; font-size: 12px; }
+.wz-check.ok .mk { color: var(--ok); }
+.wz-check.bad { border-color: rgba(239, 85, 96, 0.28); }
+.wz-check.bad .mk { color: var(--danger); }
+.wz-check .tx { font-size: 11.5px; line-height: 1.7; color: var(--text-dim); min-width: 0; }
+.wz-check .tx b { color: var(--text); }
+.wz-check .tx em { display: block; font-style: normal; color: var(--danger); }
+
+.wz-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 13px 20px 15px; border-top: 1px solid var(--border-soft); margin-top: 12px;
+}
+.wz-foot .grow { flex: 1; font-size: 11.5px; color: var(--muted); min-width: 0; }
+.wz-foot .grow.bad { color: var(--warn); }
+
+/* 向导换页：往左推进 —— 当前屏向左滑出，下一屏从右侧登场（回退时反向） */
+@keyframes wzOutLeft { to { opacity: 0; transform: translateX(-24px); } }
+@keyframes wzInRight { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes wzOutRight { to { opacity: 0; transform: translateX(24px); } }
+@keyframes wzInLeft { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+.wz-pane { will-change: transform, opacity; }
+.wz-pane.wz-out-left { animation: wzOutLeft 0.17s var(--ease) both; }
+.wz-pane.wz-out-right { animation: wzOutRight 0.17s var(--ease) both; }
+.wz-pane.wz-in-right { animation: wzInRight 0.28s var(--ease) both; }
+.wz-pane.wz-in-left { animation: wzInLeft 0.28s var(--ease) both; }
+
+/* ============================================================ 文件管理：整页钉在窗口里
+ *
+ * 以前这页跟别的页一样是「内容多高就多高」，整块被 .content 推着往下滚 ——
+ * 文件一多，工具栏和状态栏都滚出去了，看着不像个桌面程序。
+ * 现在把它钉在窗口内：页头 / 工具栏 / 状态条固定，只有文件区（.mg-main）自己滚。
+ * 与边界的间隙沿用 .page 的 padding，不动。
+ */
+#page-manage.active {
+  display: flex; flex-direction: column;
+  height: 100%; min-height: 0; overflow: hidden;
+}
+#page-manage .mg-body {
+  flex: 1 1 auto; min-height: 0; /* 覆盖通用规则里的 min-height:480px，小窗口也要能收 */
+  overflow: hidden;
+}
+#page-manage .mg-side { min-height: 0; overflow-y: auto; }
+#page-manage .mg-main {
+  min-height: 0; overflow: auto;
+  /* 只有这一块滚动，滚动条别贴着内容 —— 留 2px 呼吸 */
+  padding-right: 11px;
+}

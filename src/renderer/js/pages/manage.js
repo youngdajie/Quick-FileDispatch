@@ -1,5 +1,6 @@
 /** 文件管理页：本地目录 / 云端仓库双源浏览，两边都能改名、移动、替换内容 */
 
+import { bytesToBase64 } from '../lib/bytes.js';
 import {
   $,
   err,
@@ -120,13 +121,7 @@ function absLocalPath(rel) {
  * 配了代理就在最前面走代理（GitHub raw 国内经常拉不动），失败再退回原直链。
  */
 function previewUrls(it) {
-  if (view.source === 'local') {
-    return { primary: window.cloudpic.localUrl(absLocalPath(it.path)), fallback: '' };
-  }
-  const raw = window.cloudpic.remoteUrl(it.path);
-  const proxy = CPLinks.buildProxyUrl(state.cfg, it.path);
-  if (proxy) return { primary: proxy, fallback: raw };
-  return { primary: it.downloadUrl || raw, fallback: raw };
+  return { primary: window.cloudpic.localUrl(absLocalPath(it.path)), fallback: '' };
 }
 
 function thumbSrc(it) {
@@ -150,7 +145,7 @@ function openPreview(it) {
   previewText({
     name: it.name || String(it.path).split('/').pop(),
     path: it.path,
-    source: view.source,
+    source: 'local',
     link: linkOf(it),
     onSaved: () => {
       load();
@@ -423,23 +418,23 @@ async function load() {
   showSkeleton();
   try {
     const cfg = state.cfg || {};
-    const wantLocal = view.source === 'local';
-    if (wantLocal && !cfg.localDir) {
-      view.source = 'remote';
-      syncSourceSeg();
-      warn('尚未配置本地目录，已切换到云端浏览');
+    if (!cfg.localDir) {
+      view.items = [];
+      view.loading = false;
+      renderGrid(
+        '<div class="big">还没绑定本地目录</div>' +
+        '文件管理读的是本机这份目录：先去设置里把本地目录绑定上（配置向导最后一步就能选）' +
+        '<div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="btnGotoSettings">前往设置</button></div>'
+      );
+      const go = $('#btnGotoSettings');
+      if (go) go.onclick = () => document.querySelector('.nav-item[data-page="settings"]').click();
+      return;
     }
 
-    const res = await window.cloudpic.cloud.list({ dir: view.dir, source: view.source });
+    const res = await window.cloudpic.cloud.list({ dir: view.dir, source: 'local' });
     view.items = res.items || [];
     view.localReady = !!res.localReady;
     view.shown = PAGE;
-
-    if (wantLocal && res.source === 'remote') {
-      view.source = 'remote';
-      syncSourceSeg();
-      warn('本地目录不可用（不存在或不是 Git 仓库），已切换到云端浏览');
-    }
   } catch (e) {
     view.items = [];
     err(e.message || String(e));
@@ -459,11 +454,8 @@ async function load() {
   refreshStats();
 }
 
-/** 左侧只保留「仓库根目录」+ 当前路径 + 状态 + 云端检测器，不再铺目录树 */
+/** 左侧只留「状态」+ 云端检测器：目录位置由面包屑负责，这里不再重复一遍 */
 async function loadSide() {
-  const root = $('#mgRootNode');
-  root.classList.toggle('active', view.dir === '');
-  $('#mgCurPath').textContent = view.dir || '仓库根目录';
   await refreshGitState();
   // 本地状态和云端比对并行不了：都要跑 git / 网络，串行更省事
   await refreshCloudDetect();
@@ -610,7 +602,7 @@ function renderCloudDetect(d) {
     'local-behind': { cls: 'bad', text: '云端更新 — 本地落后 ' + d.behind + ' 个提交', act: 'pull' },
     'local-ahead': { cls: 'bad', text: '本地更新 — 领先云端 ' + d.ahead + ' 个提交', act: 'push' },
     diverged: { cls: 'bad', text: '两边分叉：本地领先 ' + d.ahead + '、落后 ' + d.behind, act: '' },
-    'no-local': { cls: '', text: '这台电脑还没克隆仓库，只能浏览云端', act: '' },
+    'no-local': { cls: '', text: '这台电脑还没克隆仓库，先克隆下来才能管理文件', act: '' },
     unknown: { cls: 'bad', text: '提交历史比不出来' + (d.cloud && d.cloud.message ? '：' + d.cloud.message : ''), act: '' }
   };
   const st = MAP[d.relation] || MAP.unknown;
@@ -686,14 +678,14 @@ async function refreshStats() {
   const dirCount = view.items.filter((i) => i.type === 'dir').length;
   const bytes = view.items.reduce((a, b) => a + (b.size || 0), 0);
   const pills = [
-    '<span class="pill">' + (view.source === 'local' ? '本地目录' : '云端仓库') + '</span>',
+    '<span class="pill">本地目录</span>',
     '<span class="pill">当前目录 ' + dirCount + ' 个文件夹 / ' + fileCount + ' 个文件</span>',
     '<span class="pill">合计 ' + CPLinks.formatBytes(bytes) + '</span>'
   ];
   if (cfg.localDir) pills.push('<span class="pill">' + escapeHtml(cfg.localDir) + '</span>');
   bar.innerHTML = pills.join('') + '<span id="mgExtra" class="pill">统计中…</span>';
   try {
-    const st = await window.cloudpic.cloud.stats({ source: view.source });
+    const st = await window.cloudpic.cloud.stats({ source: 'local' });
     const extra = $('#mgExtra');
     if (extra) {
       extra.textContent =
@@ -870,12 +862,6 @@ function renderAll() {
   attachImageFallback();
 }
 
-function syncSourceSeg() {
-  document.querySelectorAll('#sourceSeg button').forEach((b) => {
-    b.classList.toggle('active', b.dataset.source === view.source);
-  });
-}
-
 function updateSelectionBar() {
   const bar = $('#mgSelection');
   const n = view.selected.size;
@@ -1003,11 +989,7 @@ function openRenameDialog(targets) {
         '<input type="text" id="mgEditName" value="' + escapeHtml(baseOf(first.path)) + '" /></label>') +
     '<div id="mgDirPick"></div>' +
     '<div class="callout" style="margin-bottom:0">' +
-    (view.source === 'local'
-      ? '本地目录会直接改名；改完后记得在左侧点「提交并推送」把改动同步到云端'
-      : ((state.cfg || {}).platform === 'cnb'
-          ? 'CNB 的写入通过本地 Git 提交推送完成，整批只产生一次提交'
-          : '云端会重新写一份内容并删除旧路径，整批只产生一次提交，是原子的')) +
+    '本地目录会直接改名；改完后记得在左侧点「提交并推送」把改动同步到云端' +
     '</div>';
 
   const handle = modal({
@@ -1199,8 +1181,7 @@ async function runRename(targets, multi, handle) {
     err('部分文件的目标路径和原路径相同，请改名或换目录');
     return;
   }
-  if (view.source === 'local') await renameLocal(items, handle);
-  else await renameRemote(items, handle);
+  await renameLocal(items, handle);
 }
 
 async function renameLocal(items, handle) {
@@ -1225,32 +1206,6 @@ async function renameLocal(items, handle) {
   if (failures.length) err(failures[0] + (failures.length > 1 ? '（另有 ' + (failures.length - 1) + ' 项失败）' : ''));
 }
 
-async function renameRemote(items, handle) {
-  try {
-    const res = await window.cloudpic.cloud.move({ items: items });
-    const list = res.results || [];
-    const okN = list.filter((r) => r.ok).length;
-    const failed = list.filter((r) => !r.ok);
-    if (okN) {
-      if (handle) handle.close();
-      ok('已移动 / 改名 ' + okN + ' 项');
-    }
-    if (failed.length) err(failed[0].error || '操作失败');
-    if (!list.length && res.message) err(res.message);
-    if (res.sync && !res.sync.skipped) {
-      if (res.sync.ok) toast('本地目录已同步', 'ok');
-      else warn('云端已更新，但本地同步失败：' + res.sync.message);
-    }
-    view.selected.clear();
-    await load();
-    window.dispatchEvent(new CustomEvent('cloudpic:changed'));
-  } catch (e) {
-    err(e.message || String(e));
-  }
-}
-
-/* ---------------------------------------------------------------- 替换内容 */
-
 function doReplace(target) {
   if (!target) {
     warn('请先选择一个文件');
@@ -1272,32 +1227,17 @@ async function applyReplace(target, file) {
       '）\n↓\n' +
       target.path +
       '\n\n' +
-      (view.source === 'local'
-        ? '本地文件会被直接覆盖，改动需要通过「提交并推送」同步到云端'
-        : '云端会写入一次新提交，旧内容仍可在 Git 历史里找回'),
+      '本地文件会被直接覆盖，改动需要通过「提交并推送」同步到云端',
     '确认替换'
   );
   if (!yes) return;
 
   try {
     const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    if (view.source === 'local') {
-      await window.cloudpic.fs.localWrite({ path: target.path, data: bytes });
-      ok('已在本地替换 ' + target.name);
-      toast('本地文件已改好，点左侧「提交并推送」才会同步到云端', 'warn', 6000);
-    } else {
-      const res = await window.cloudpic.cloud.replace({ path: target.path, data: bytes });
-      if (res && res.ok) ok('已替换 ' + target.path);
-      else {
-        err((res && res.message) || '替换失败');
-        return;
-      }
-      if (res.sync && !res.sync.skipped) {
-        if (res.sync.ok) toast('本地目录已同步', 'ok');
-        else warn('云端已更新，但本地同步失败：' + res.sync.message);
-      }
-    }
+    const data = await bytesToBase64(buf);
+    await window.cloudpic.fs.localWrite({ path: target.path, data: data });
+    ok('已在本地替换 ' + target.name);
+    toast('本地文件已改好，点左侧「提交并推送」才会同步到云端', 'warn', 6000);
     await load();
     window.dispatchEvent(new CustomEvent('cloudpic:changed'));
   } catch (e) {
@@ -1316,9 +1256,7 @@ async function removeOne(sel) {
       paths.slice(0, 8).join('\n') +
       (paths.length > 8 ? '\n… 以及另外 ' + (paths.length - 8) + ' 个' : '') +
       '\n\n' +
-      (view.source === 'local'
-        ? '本地文件会被删除，需要「提交并推送」才会同步到云端'
-        : '云端会写入一次删除提交，无法撤销（Git 历史里仍可找回）'),
+      '本地文件会被删除，需要「提交并推送」才会同步到云端',
     '确认删除'
   );
   if (!yes) return;
@@ -1330,28 +1268,15 @@ async function removeOne(sel) {
     btn.textContent = '删除中…';
   }
   try {
-    if (view.source === 'local') {
-      const res = await window.cloudpic.fs.localDelete({ paths: paths });
-      const list = res.results || [];
-      const okN = list.filter((r) => r.ok).length;
-      if (okN) {
-        ok('已在本地删除 ' + okN + ' 个文件');
-        toast('本地文件已删除，点左侧「提交并推送」才会同步到云端', 'warn', 6000);
-      }
-      const failed = list.filter((r) => !r.ok);
-      if (failed.length) err(failed[0].error || '部分删除失败');
-    } else {
-      const res = await window.cloudpic.cloud.remove({ paths: paths });
-      const list = res.results || [];
-      const okN = list.filter((r) => r.ok).length;
-      if (okN) ok('已删除 ' + okN + ' 个文件');
-      const failed = list.filter((r) => !r.ok);
-      if (failed.length) err('有 ' + failed.length + ' 个删除失败：' + failed[0].error);
-      if (res.sync && !res.sync.skipped) {
-        if (res.sync.ok) toast('本地目录已同步', 'ok');
-        else warn('本地同步失败：' + res.sync.message);
-      }
+    const res = await window.cloudpic.fs.localDelete({ paths: paths });
+    const list = res.results || [];
+    const okN = list.filter((r) => r.ok).length;
+    if (okN) {
+      ok('已在本地删除 ' + okN + ' 个文件');
+      toast('本地文件已删除，点左侧「提交并推送」才会同步到云端', 'warn', 6000);
     }
+    const failed = list.filter((r) => !r.ok);
+    if (failed.length) err(failed[0].error || '部分删除失败');
     view.selected.clear();
     await load();
     window.dispatchEvent(new CustomEvent('cloudpic:changed'));
@@ -1409,22 +1334,12 @@ async function pullLatest() {
 /* ---------------------------------------------------------------- 事件 */
 
 function bind() {
-  document.querySelectorAll('#sourceSeg button').forEach((b) => {
-    b.onclick = () => {
-      if (view.source === b.dataset.source) return;
-      view.source = b.dataset.source;
-      view.dir = '';
-      syncSourceSeg();
-      load();
-    };
-  });
-
+  const detectBtn = $('#btnMgDetect');
+  if (detectBtn) detectBtn.onclick = () => refreshCloudDetect(true);
   $('#breadcrumb').addEventListener('click', (e) => {
     const b = e.target.closest('.bc-item');
     if (b) navigate(b.dataset.path);
   });
-
-  $('#mgRootNode').onclick = () => navigate('');
 
   $('#mgSearch').addEventListener(
     'input',
@@ -1442,8 +1357,6 @@ function bind() {
   };
   $('#btnMgRefresh').onclick = () => load();
   $('#btnMgPull').onclick = pullLatest;
-  const detectBtn = $('#btnMgDetect');
-  if (detectBtn) detectBtn.onclick = () => refreshCloudDetect(true);
 
   const head = $('#mgListHead');
   if (head) {
@@ -1651,22 +1564,10 @@ export default {
     $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
     $('#btnMgGrid').classList.add('active');
     bind();
-    syncSourceSeg();
   },
 
   onEnter() {
-    const cfg = state.cfg || {};
-    if (cfg.localDir) {
-      window.cloudpic.git.status().then((s) => {
-        view.source = s.isRepo ? 'local' : 'remote';
-        syncSourceSeg();
-        load();
-      });
-    } else {
-      view.source = 'remote';
-      syncSourceSeg();
-      load();
-    }
+    load();
   },
 
   onConfigChanged() {
@@ -1679,11 +1580,6 @@ export default {
       lastIdentity = key;
     } else if (key !== lastIdentity) {
       lastIdentity = key;
-      view.source = state.cfg && state.cfg.localDir ? 'local' : 'remote';
-      // 换了仓库，检测器的结论作废，重来一次
-      view.cloud = null;
-      lastDetectAt = 0;
-      syncSourceSeg();
       navigate('');
     }
   },

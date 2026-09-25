@@ -116,6 +116,9 @@ func (h *handler) bridgeJS(w http.ResponseWriter, r *http.Request) {
 
 /* ------------------------------------------------------------ IPC */
 
+// maxIPCPayloadBytes：单个 IPC 请求体的上限（见 ipc 里的说明）。
+const maxIPCPayloadBytes = 512 << 20 // 512MB
+
 type ipcRequest struct {
 	Channel string          `json:"channel"`
 	Payload json.RawMessage `json:"payload"`
@@ -137,9 +140,19 @@ func (h *handler) ipc(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "只接受 POST", http.StatusMethodNotAllowed)
 		return
 	}
+	// 请求体封顶：没有上限的话，一个几十 MB 的文件（base64 后还要再大 33%）
+	// 会以 JSON 的形式整块灌进来，解码时内存直接见底。
+	// 上限取 512MB —— 比两个平台的单文件红线（CNB 200MB / GitHub 100MB）
+	// 都留出富余，正常用撞不到，真撞到了也给一句人话而不是 OOM。
+	r.Body = http.MaxBytesReader(w, r.Body, maxIPCPayloadBytes)
+
 	var req ipcRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeJSON(w, ipcResponse{OK: false, Error: "请求体不是合法 JSON：" + err.Error()})
+		msg := "请求体不是合法 JSON：" + err.Error()
+		if err.Error() == "http: request body too large" {
+			msg = "这次要传的东西太大了（超过 512MB），拆成几批再来"
+		}
+		h.writeJSON(w, ipcResponse{OK: false, Error: msg})
 		return
 	}
 	if req.Channel == "" {

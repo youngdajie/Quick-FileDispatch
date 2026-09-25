@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/cloud"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dialog"
@@ -482,7 +483,9 @@ func Register(r *Registry, env *Env) {
 				}
 			}
 		}
-		dst := filepath.Join(bgDir, "custom"+ext)
+		// 文件名带时间戳：换图时如果还是 custom.jpg 这个老名字，
+		// 页面里那张 <url> 被浏览器缓存住，看着就是「设了没反应」
+		dst := filepath.Join(bgDir, fmt.Sprintf("custom-%d%s", time.Now().UnixNano(), ext))
 		if err := copyFile(picked, dst); err != nil {
 			return nil, fmt.Errorf("背景图复制失败：%w", err)
 		}

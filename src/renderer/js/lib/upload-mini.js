@@ -22,6 +22,7 @@
  * 上传仍走 window.cloudpic.cloud.upload({ files, dir })，没改任何 cloud 接口。
  */
 
+import { bytesToBase64 } from './bytes.js';
 import { $, toast, err, ok, warn, escapeHtml, friendlyError, previewImage, paintRange } from './dom.js';
 import state from './state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from './compress.js';
@@ -499,11 +500,13 @@ async function doUpload() {
   });
   updateSummary();
 
-  const files = ready.map((it) => {
-    const u8 = new Uint8Array(it.outBuffer);
+  // 同上：字节走 base64，别让 JSON 把 Uint8Array 炸开
+  const files = [];
+  for (const it of ready) {
+    const data = await bytesToBase64(it.outBuffer);
     it.outBuffer = null; // 交出去之后本弹窗不再留一份
-    return { name: it.outName, data: u8 };
-  });
+    files.push({ name: it.outName, data: data });
+  }
   const dir = CPLinks.normalizePath(($('#miniDir', wrap) && $('#miniDir', wrap).dataset.dir) || '');
 
   try {

@@ -102,7 +102,7 @@
           <span class="ut-repo mono" id="utRepo">未配置仓库</span>
           <span class="ut-spacer"></span>
           <span class="ut-state" id="utState"></span>
-          <button class="btn btn-ghost btn-sm" id="btnUtSettings">更换仓库</button>
+          <button class="btn btn-ghost btn-sm" id="btnUtSettings">更换配置</button>
         </div>
 
         <div class="dropzone" id="dropzone">
@@ -160,7 +160,7 @@
               <span class="field-label">目标目录 <span class="hint">留空 = 仓库根目录</span></span>
               <div class="dir-input-row">
                 <input type="text" id="upDir" placeholder="留空 = 仓库根目录，如 blog/2026" />
-                <button type="button" class="btn btn-ghost btn-sm" id="btnUpDirPick" title="浏览云端仓库里现有的目录">浏览云端…</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnUpDirPick" title="浏览本地目录里现有的子目录">浏览目录...</button>
               </div>
             </div>
             <label class="field">
@@ -312,13 +312,10 @@
         <div class="page-head">
           <div>
             <h1>文件管理</h1>
-            <p class="page-desc">本地目录与云端仓库是同一份东西，两边都能直接改名、移动、替换内容</p>
+            <p class="page-desc">直接读本机这份目录：改名、移动、替换内容都在本地改，改完点「提交并推送」同步回仓库</p>
           </div>
           <div class="head-actions">
-            <div class="seg" id="sourceSeg">
-              <button data-source="local" class="active">本地目录</button>
-              <button data-source="remote">云端仓库</button>
-            </div>
+            <span class="pill" id="mgSourcePill">本地目录</span>
           </div>
         </div>
 
@@ -364,15 +361,6 @@
 
         <div class="mg-body">
           <aside class="mg-side" id="mgSide">
-            <div class="side-head">位置</div>
-            <button class="side-node" id="mgRootNode" data-path="">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5-9 4.5z"/><path d="M3 12.5 12 17l9-4.5"/></svg>
-              <span>仓库根目录</span>
-            </button>
-            <div class="side-sep"></div>
-            <div class="side-head">当前目录</div>
-            <div class="side-path" id="mgCurPath">仓库根目录</div>
-            <div class="side-sep"></div>
             <div class="side-head">状态</div>
             <div class="side-git" id="mgGitState">—</div>
             <div class="side-sep"></div>
@@ -413,8 +401,6 @@
           </div>
           <div class="head-actions">
             <button class="btn btn-ghost" id="btnRerunGuide">重看新手指引</button>
-            <button class="btn btn-ghost" id="btnTest">测试连接</button>
-            <button class="btn btn-primary" id="btnSave">保存</button>
           </div>
         </div>
 
@@ -429,7 +415,7 @@
             </span>
             <div class="gc-text">
               <b>一份配置 = 仓库信息 + 本地目录 + 文件链接</b>
-              <span>三样东西合成一份配置，验证通过后归档保存；右上角「归档配置」里随时切换</span>
+              <span>三样东西合成一份配置，验证通过后归档保存；归档好的都收在下面的「全部配置」里，点一下就切换</span>
             </div>
           </section>
 
@@ -437,148 +423,39 @@
           <section class="card repo-module">
             <div class="card-head">
               <div class="head-main">
-                <h2>仓库设置 <span class="prof-count" id="profCount" hidden></span></h2>
-              </div>
-              <div class="head-tools">
-                <div class="archive-pick">
-                  <span class="archive-pick-label">归档配置</span>
-                  <select id="profilePick" class="mini-select" title="选择一份归档配置"></select>
-                  <button class="btn btn-ghost btn-sm" id="btnProfNew" title="新建一份空白配置">＋ 新建</button>
-                  <button class="btn btn-ghost btn-sm" id="btnProfExport" title="把归档配置导出成 JSON 文件（含 Token，不含本地路径）">导出</button>
-                  <button class="btn btn-ghost btn-sm" id="btnProfImport" title="从 JSON 文件导入归档配置">导入</button>
-                </div>
+                <h2>新建配置</h2>
+                <p>仓库信息、本地目录、文件链接一次填完；保存时会自动验证一遍</p>
               </div>
             </div>
             <div class="card-body">
 
-              <div class="seg seg-lg" id="cfgPlatform">
-                <button data-platform="github" class="active">GitHub</button>
-                <button data-platform="cnb">CNB</button>
+              <!-- 支持的平台（只是展示，不可点）+ 新建入口 -->
+              <div class="plat-bar">
+                <div class="plat-brand" id="platBrand" title="两个平台都支持，新建时在向导第一步选"></div>
+                <span class="plat-bar-sep" aria-hidden="true"></span>
+                <button type="button" class="btn btn-primary btn-sm" id="btnProfNew" title="打开向导，一步步新建一份配置">＋ 新建配置</button>
               </div>
 
               <!-- 平台图层：切平台时整块左右滑动，左边竖条是该平台的主题色 -->
-              <div class="plat-frame plat-layer" id="repoPane" data-platform="github" style="margin-top:13px">
-                <div class="plat-head">
-                  <span class="plat-badge" id="platBadge">
-                    <span class="pb-ico" id="platBadgeIcon"></span><span id="platBadgeText">GitHub</span>
-                  </span>
-                  <span class="plat-state" id="platState"></span>
-                  <span class="hint" id="platHint"></span>
-                  <button type="button" class="btn btn-ghost btn-sm" id="btnSetActive" hidden>设为当前使用</button>
-                </div>
+            </div>
+          </section>
 
-                <!-- 一、仓库信息 -->
-                <div class="mod-sec">
-                  <div class="mod-sec-head">
-                    <h3>仓库信息</h3>
-                    <span class="hint">远端仓库地址与访问凭据</span>
-                  </div>
-
-                  <div class="grid-2">
-                    <label class="field">
-                      <span class="field-label">用户名 / 组织名（owner）</span>
-                      <input type="text" id="cfgOwner" placeholder="your-name" />
-                    </label>
-                    <label class="field">
-                      <span class="field-label">仓库名（repo）</span>
-                      <input type="text" id="cfgRepo" placeholder="my-files" />
-                    </label>
-                  </div>
-
-                  <label class="field">
-                    <span class="field-label">分支 <span class="hint">默认 main，新建仓库基本都是它</span></span>
-                    <input type="text" id="cfgBranch" placeholder="main" />
-                  </label>
-
-                  <label class="field">
-                    <span class="field-label">
-                      访问令牌（Token）
-                      <span class="hint" id="tokenHint"></span>
-                    </span>
-                    <div class="input-row">
-                      <input type="password" id="cfgToken" placeholder="粘贴 Token，留空表示不修改" autocomplete="off" />
-                      <button class="btn btn-ghost btn-sm" id="btnToggleToken">显示</button>
-                      <button class="btn btn-ghost btn-sm" id="btnClearToken">清除</button>
-                    </div>
-                  </label>
-
-                  <div class="callout" id="tokenHelp"></div>
-
-                  <label class="field">
-                    <span class="field-label">接口地址 <span class="hint">留空即官方地址；仅 GitHub Enterprise / 私有部署需要改</span></span>
-                    <input type="text" id="cfgApiBase" placeholder="https://api.github.com" />
-                  </label>
-                </div>
-
-                <!-- 二、本地目录 -->
-                <div class="mod-sec">
-                  <div class="mod-sec-head">
-                    <h3>本地目录</h3>
-                    <span class="hint">和上面的仓库绑定在一起 —— 换配置时本地目录会跟着一起换</span>
-                  </div>
-
-                  <div class="input-row">
-                    <input type="text" id="cfgLocalDir" placeholder="例如 D:\my-files" />
-                    <button class="btn btn-ghost btn-sm" id="btnChooseDir">选择…</button>
-                    <button class="btn btn-ghost btn-sm" id="btnClone">克隆到此处</button>
-                  </div>
-                  <div class="git-status" id="gitStatus"></div>
-                  <div class="grid-2">
-                    <label class="field checkbox-field">
-                      <input type="checkbox" id="cfgAutoPull" />
-                      <span class="field-label">上传 / 删除后自动对齐本地</span>
-                    </label>
-                    <label class="field">
-                      <span class="field-label">同步策略</span>
-                      <select id="cfgSyncStrategy">
-                        <option value="pull">常规 pull（本地有改动会提示）</option>
-                        <option value="reset">强制对齐云端（丢弃本地改动）</option>
-                      </select>
-                    </label>
-                  </div>
-                </div>
-
-                <!-- 三、文件链接 -->
-                <div class="mod-sec">
-                  <div class="mod-sec-head">
-                    <h3>文件链接</h3>
-                    <span class="hint">同一个文件可以按不同规则生成链接</span>
-                  </div>
-
-                  <label class="field">
-                    <span class="field-label">链接规则</span>
-                    <select id="cfgLinkRule"></select>
-                  </label>
-                  <p class="rule-desc" id="linkRuleDesc"></p>
-                  <label class="field" id="customDomainField" hidden>
-                    <span class="field-label">自定义域名 / 前缀 <span class="hint">用 {path} 代表文件路径</span></span>
-                    <input type="text" id="cfgCustomDomain" placeholder="https://files.example.com/{path}" />
-                  </label>
-                  <label class="field">
-                    <span class="field-label">默认复制格式</span>
-                    <select id="cfgLinkFormat"></select>
-                  </label>
-                  <div class="link-preview" id="linkPreview"></div>
-
-                  <div class="sub-sep"></div>
-                  <label class="field">
-                    <span class="field-label">预览代理域名 <span class="hint">可选 · 只影响程序内的预览加载</span></span>
-                    <input type="text" id="cfgProxyUrl" placeholder="https://cdn.yangjie.site" />
-                  </label>
-                  <p class="rule-desc" id="proxyDesc"></p>
-                </div>
-
-                <!-- 归档动作 -->
-                <div class="sub-sep"></div>
-                <div class="prof-actions">
-                  <button class="btn btn-primary btn-sm" id="btnProfArchive">验证并归档</button>
-                  <span class="hint" id="profHint"></span>
-                </div>
-
-                <div class="prof-list" id="profileList"></div>
-                <div class="prof-empty" id="profileEmpty" hidden>
-                  还没有归档的配置。把上面三块填好，点「验证并归档」——验证通过后会出现在这里，以后一键切换
-                </div>
+          <!-- ============ 全部配置：归档好的配置卡片（点一下即切换） ============ -->
+          <section class="card">
+            <div class="card-head">
+              <div class="head-main">
+                <h2>全部配置 <span class="prof-count" id="profCount" hidden></span></h2>
+                <p>点卡片直接切换；要改内容点卡片上的「修改」，保存时自动验证一遍</p>
+              </div>
+              <div class="head-tools">
+                <button class="btn btn-ghost btn-sm" id="btnProfExport" title="把归档配置导出成 JSON 文件（含 Token，不含本地路径）">导出</button>
+                <button class="btn btn-ghost btn-sm" id="btnProfImport" title="从 JSON 文件导入归档配置">导入</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="prof-list" id="profileList"></div>
+              <div class="prof-empty" id="profileEmpty" hidden>
+                还没有归档的配置。把上面填好，点「验证并归档」——验证通过后会出现在这里，点一下卡片就能切换
               </div>
             </div>
           </section>

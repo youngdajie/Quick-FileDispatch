@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dialog"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dpapi"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/ipc"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
@@ -207,6 +208,20 @@ func openAppWindow(base, cfgDir string, debugPort int, bg uint32) error {
 		os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
 			fmt.Sprintf("--remote-debugging-port=%d", debugPort))
 	}
+
+	// 把主窗口句柄交给原生对话框：没有宿主窗口，选文件夹 / 选文件对话框会
+	// 开在主窗口**背后**，用户以为点了没反应，反复点就会点出一堆窗口。
+	// 窗口是在 wvhost.Run 里建的（那之后就一直阻塞在消息循环里），
+	// 所以这里起一个短轮询等句柄出现。
+	go func() {
+		for i := 0; i < 150; i++ {
+			if h := wvhost.Hwnd(); h != 0 {
+				dialog.SetOwner(h)
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
 
 	return wvhost.Run(wvhost.Options{
 		URL:         base,

@@ -3,6 +3,7 @@
 import { $, $$, toast, err, ok, warn, modal, previewImage, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
 import state from '../lib/state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from '../lib/compress.js';
+import { bytesToBase64 } from '../lib/bytes.js';
 import { openColorPicker, closeColorPicker, normalizeHex } from '../lib/colorpicker.js';
 // 前后对比（含 OUT_MIME / canCompare / openCompare）已提到共享模块，
 // 主上传页与「上传到此文件夹」mini 弹窗共用一份
@@ -389,11 +390,13 @@ async function doUpload() {
     updateItem(it);
   });
 
-  const files = ready.map((it) => {
-    const u8 = new Uint8Array(it.outBuffer);
+  // 字节走 base64：直接塞 Uint8Array 会被 JSON 炸成每字节一个键（见 lib/bytes.js）
+  const files = [];
+  for (const it of ready) {
+    const data = await bytesToBase64(it.outBuffer);
     it.outBuffer = null;
-    return { name: it.outName, data: u8 };
-  });
+    files.push({ name: it.outName, data: data });
+  }
   const dir = CPLinks.normalizePath($('#upDir').value || '');
 
   try {
@@ -693,10 +696,10 @@ function renderWmPresets() {
   ).join('');
 }
 
-/* ---------------------------------------------------------------- 云端目录选择 */
+/* ---------------------------------------------------------------- 目标目录选择 */
 
 /**
- * 目标目录不该靠手打。点「浏览云端…」直接列出现有目录，逐层点进去，
+ * 目标目录不该靠手打。点「浏览目录...」直接列出本地现有目录，逐层点进去，
  * 选中的路径写回 #upDir —— 和手动输入完全等价（同一个 input）。
  */
 let pickDir = '';
@@ -729,24 +732,11 @@ async function dpLoad(dir) {
   body.innerHTML = '<div class="dir-pick-empty">读取中…</div>';
   if (msg) msg.textContent = '';
   try {
-    // 优先用本地仓库列目录（和云端同步时是一致的，而且秒出）；
-    // 本地没配/不是仓库时主进程会自动回退到远端接口。
-    let res = await window.cloudpic.cloud.list({ dir: pickDir, source: 'local' });
-    let dirs = (res.items || []).filter((i) => i.type === 'dir');
-
-    // 本地这一层是空的，不代表云端也是空的（可能还没 pull）—— 再问一次远端兜底
-    if (!dirs.length && res.source === 'local' && res.localReady) {
-      try {
-        const remote = await window.cloudpic.cloud.list({ dir: pickDir });
-        const rdirs = (remote.items || []).filter((i) => i.type === 'dir');
-        if (rdirs.length) {
-          res = remote;
-          dirs = rdirs;
-        }
-      } catch (e2) {
-        /* 远端拿不到就按本地结果展示 */
-      }
-    }
+    // 只读本机这份目录 —— 不再去问远端。
+    // 原来本地这一层为空时会再查一次云端兜底，结果「点浏览目录 = 发网络请求」，
+    // 既慢（等一轮 REST）又让人以为这程序离不开网络；本地仓库本来就是同一份东西。
+    const res = await window.cloudpic.cloud.list({ dir: pickDir, source: 'local' });
+    const dirs = (res.items || []).filter((i) => i.type === 'dir');
 
     if (!dirs.length) {
       body.innerHTML =
@@ -767,8 +757,7 @@ async function dpLoad(dir) {
     }
     if (msg) {
       msg.textContent =
-        (res.source === 'local' ? '本地仓库' : '云端仓库') + ' · ' + (pickDir || '根目录') +
-        ' · ' + dirs.length + ' 个子目录';
+        '本地目录 · ' + (pickDir || '根目录') + ' · ' + dirs.length + ' 个子目录';
     }
   } catch (e) {
     body.innerHTML = '<div class="dir-pick-empty">' + escapeHtml(friendlyError(e && e.message)) + '</div>';
@@ -796,7 +785,7 @@ function openDirPicker() {
     '</span>' +
     '</div>';
 
-  const dlg = modal({ title: '选择云端目录', node: wrap, buttons: false });
+  const dlg = modal({ title: '选择目标目录', node: wrap, buttons: false });
 
   const close = () => dlg.close();
 
@@ -1042,7 +1031,7 @@ export default {
     $('#upDir').addEventListener('input', persistQuickOptions);
     $('#btnUpDirPick').onclick = () => {
       if (!state.configured) {
-        warn('还没配好仓库和 Token，先去设置里填一下才能列出云端目录');
+        warn('还没配好仓库，先去设置里走一遍配置才能列出本地目录');
         return;
       }
       openDirPicker();

@@ -100,7 +100,7 @@ func commonDialog(save bool, title, defaultName string, filters []Filter) (strin
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	hr, _, _ := procCoInitializeEx.Call(0, coInitAPartmentThreaded)
+	hr, _, _ := procCoInitializeEx.Call(0, coInitApartmentThreaded)
 	if hr == 0 || hr == 1 {
 		defer procCoUninitialize.Call()
 	}
@@ -138,7 +138,9 @@ func commonDialog(save bool, title, defaultName string, filters []Filter) (strin
 	}
 
 	ofn := openFileName{
-		lStructSize:     uint32(unsafe.Sizeof(openFileName{})),
+		lStructSize: uint32(unsafe.Sizeof(openFileName{})),
+		// 宿主窗口：不设它，对话框会开在主窗口背后，用户以为点了没反应
+		hwndOwner:       ownerOrActive(),
 		lpstrFilter:     filterPtr,
 		lpstrFile:       uintptr(unsafe.Pointer(&fileBuf[0])),
 		nMaxFile:        bufLen,
