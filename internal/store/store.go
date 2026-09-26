@@ -389,17 +389,7 @@ func nonEmpty(v any) bool {
 	return ok && s != ""
 }
 
-// hasAnyToken 只回答「有没有」，不解密 —— 给不需要真值的地方用
-// （比如判断要不要提示用户去填 Token）。
-func hasAnyToken(m map[string]any) bool {
-	for _, k := range []string{"_tokenEnc", "_tokenPlain", "token"} {
-		if v, ok := m[k].(string); ok && v != "" {
-			return true
-		}
-	}
-	return false
-}
-
+// profileLabel 取显示名：name 优先，否则 owner/repo，否则「未命名配置」。
 func profileLabel(p map[string]any) string {
 	if name, _ := p["name"].(string); name != "" {
 		return name

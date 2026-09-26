@@ -31,7 +31,10 @@ import (
 
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dialog"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dpapi"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/ipc"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/lfs"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/progress"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/webui"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/wvhost"
@@ -39,7 +42,7 @@ import (
 
 // 版本号规则：3.0.0 起去掉 -go 后缀（2.8.1~2.9.0 的 -go 是
 // 与 Electron 时代 v* 标签区分发布线的过渡写法）。
-const version = "3.2.0"
+const version = "3.3.0"
 
 // appName 沿用 Electron 时代定下的 userData 目录名（appData + 应用名）：
 // 两边对不上就会各自读一份配置，看起来像「配置丢了」——老用户升级到 Go 版
@@ -93,6 +96,10 @@ func run(headless, check, dev bool, port int, profile string, debugPort int) err
 		static = os.DirFS("src/renderer")
 	}
 
+	// 上传进度中心：把后端「传到哪了」实时推给界面（SSE）。
+	// 一个进程一个，所有上传任务共用。
+	hub := progress.NewHub()
+
 	env := &ipc.Env{
 		Store:     st,
 		Version:   version,
@@ -100,15 +107,24 @@ func run(headless, check, dev bool, port int, profile string, debugPort int) err
 		TmpRoot:   filepath.Join(cfgDir, "cnb-work"),
 		// 主题切换时窗口底色跟着换（页面没铺满前露出的一瞬就是它）
 		OnBackground: wvhost.SetBackground,
+		Progress:     hub,
 	}
 	reg := ipc.New()
 	ipc.Register(reg, env)
+
+	// git-lfs 如果已经装过（上次用过 LFS 上传），启动时就把它挂进
+	// git 子进程的 PATH —— 这样用户不必先触发一次上传才能用。
+	// 没装的话这里什么都不做，等真正勾选 LFS 时再下载。
+	if binDir := lfs.InstalledBinDir(cfgDir); binDir != "" {
+		git.SetExtraPath(binDir)
+	}
 
 	// 两个闭包捕获的是 env 这个指针变量，调用时才取值 ——
 	// 所以哪怕这里 env 还没用完也不影响（切仓库后读到的也是最新配置）
 	handler := webui.New(reg, static, bridgeJS,
 		func(abs string) bool { return env.AllowsLocal(abs) },
 		func(rel string) ([]byte, string, error) { return env.FetchRemote(rel) },
+		hub,
 	)
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))

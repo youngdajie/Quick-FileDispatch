@@ -18,6 +18,8 @@ var known = []string{
 	// 应用
 	"app:info",
 	"app:fonts",
+	"app:lfsStatus",
+	"app:lfsInstall",
 	"ui:setBackground",
 
 	// 配置

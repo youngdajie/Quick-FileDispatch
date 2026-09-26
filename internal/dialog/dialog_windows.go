@@ -28,10 +28,9 @@ import (
 )
 
 var (
-	ole32    = syscall.NewLazyDLL("ole32.dll")
-	shell32  = syscall.NewLazyDLL("shell32.dll")
-	user32   = syscall.NewLazyDLL("user32.dll")
-	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	ole32   = syscall.NewLazyDLL("ole32.dll")
+	shell32 = syscall.NewLazyDLL("shell32.dll")
+	user32  = syscall.NewLazyDLL("user32.dll")
 
 	procCoInitializeEx  = ole32.NewProc("CoInitializeEx")
 	procCoUninitialize  = ole32.NewProc("CoUninitialize")
@@ -39,7 +38,6 @@ var (
 	procCoTaskMemFree   = ole32.NewProc("CoTaskMemFree")
 	procSHCreateItem    = shell32.NewProc("SHCreateItemFromParsingName")
 	procGetActiveWindow = user32.NewProc("GetActiveWindow")
-	procGetLastError    = kernel32.NewProc("GetLastError")
 )
 
 // coInitApartmentThreaded：COM 单线程套间。
@@ -237,11 +235,3 @@ func ChooseDir(title, defaultPath string) (string, error) {
 	return utf16PtrToString(namePtr), nil
 }
 
-// lastError 取最近一次 Win32 错误，用于诊断「为什么对话框没弹出来」。
-func lastError() error {
-	code, _, _ := procGetLastError.Call()
-	if code == 0 {
-		return nil
-	}
-	return syscall.Errno(code)
-}

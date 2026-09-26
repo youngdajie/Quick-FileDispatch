@@ -174,13 +174,31 @@ func (c *Client) headers(raw bool) http.Header {
 
 // req 发一次请求并解析 JSON。body 为 nil 表示 GET。
 func (c *Client) req(method, path string, query url.Values, body any) (any, error) {
+	return c.reqProgress(method, path, query, body, nil)
+}
+
+// reqProgress 与 req 完全一样，额外支持**上传请求体时上报进度**。
+//
+// 为什么能拿到进度：Go 的 http.Client 是通过 io.Reader 拉取 body 的，
+// 每次 Read 就对应「这一批字节交给了内核发送缓冲」。把它包一层计数，
+// 就得到了真实的传输进度 —— 既不需要平台支持分块上传，
+// 也不需要客户端实现分片协议。
+//
+// onProgress 收到的是 **body 字节**（base64 + JSON 包装之后的），
+// 不是用户概念里的文件大小。换算由调用方负责（见 write.go 的 createBlob）。
+func (c *Client) reqProgress(method, path string, query url.Values, body any,
+	onProgress func(sent, total int64)) (any, error) {
 	var payload io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("序列化请求体失败：%w", err)
 		}
-		payload = bytes.NewReader(buf)
+		if onProgress != nil {
+			payload = newProgressReader(bytes.NewReader(buf), int64(len(buf)), onProgress)
+		} else {
+			payload = bytes.NewReader(buf)
+		}
 	}
 
 	u := c.APIBase + path
@@ -221,6 +239,46 @@ func (c *Client) req(method, path string, query url.Values, body any) (any, erro
 		return nil, &ApiError{Message: "接口返回的不是合法 JSON", Status: res.StatusCode}
 	}
 	return out, nil
+}
+
+/* ------------------------------------------------------------ 传输进度 */
+
+// progressReader 包装一个 Reader，在每次 Read 时上报已读字节。
+//
+// 它是「GitHub 单文件上传进度」的全部魔法：Go 的 http.Client 在发送
+// 请求体时会反复从这个 Reader 拿数据（每次几十 KB），所以 Read 的
+// 累计量就是**已经交给网络栈的字节**。
+//
+// 两个必须注意的点：
+//
+//   - **要节流**。一个 100MB 的 body 会被读几千次，每次都往上回调会
+//     把进度事件灌爆（progress 包里虽然还有一层 100ms 节流，但先在这里
+//     挡掉大部分更省事）。
+//   - **它是"已交付内核"，不是"对端已收到"**。大文件的末尾会有一小段
+//     滞后（内核缓冲里的数据还没发完，Read 就已经读到 EOF 了）。
+//     对本场景够用 —— 用户要看的是"在动"，不是精确的字节账。
+type progressReader struct {
+	r          io.Reader
+	total      int64
+	sent       int64
+	last       time.Time
+	onProgress func(sent, total int64)
+}
+
+func newProgressReader(r io.Reader, total int64, onProgress func(sent, total int64)) *progressReader {
+	return &progressReader{r: r, total: total, onProgress: onProgress, last: time.Now()}
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.sent += int64(n)
+		if now := time.Now(); now.Sub(p.last) >= 100*time.Millisecond {
+			p.last = now
+			p.onProgress(p.sent, p.total)
+		}
+	}
+	return n, err
 }
 
 // reqRaw 取原始字节（不解析 JSON），用于缩略图代理与文本预览。

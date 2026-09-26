@@ -3,11 +3,14 @@
 import { $, $$, toast, err, ok, warn, modal, previewImage, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
 import state from '../lib/state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from '../lib/compress.js';
-import { bytesToBase64 } from '../lib/bytes.js';
 import { openColorPicker, closeColorPicker, normalizeHex } from '../lib/colorpicker.js';
 // 前后对比（含 OUT_MIME / canCompare / openCompare）已提到共享模块，
 // 主上传页与「上传到此文件夹」mini 弹窗共用一份
 import { canCompare, openCompare } from '../lib/compare.js';
+// 上传流程与 mini 弹窗共用一份（进度、base64、结果映射、同步提示都在里面）
+import { runUpload, uploadResultMessage } from '../lib/upload-run.js';
+// LFS 开关的共享逻辑（与 mini 上传弹窗共用同一套判断和记忆）
+import * as LFS from '../lib/lfs.js';
 
 const CPLinks = window.CPLinks;
 
@@ -373,6 +376,47 @@ function resultUrl(it) {
   return CPLinks.buildUrl(state.cfg, it.path);
 }
 
+/** 当前平台是不是 CNB（只有它支持把文件放进对象存储）。 */
+function isCNBPlatform() {
+  return LFS.isCNBPlatform(state.cfg);
+}
+
+/**
+ * LFS 开关只在 CNB 下出现，并且恢复上次的勾选。
+ *
+ * GitHub 走 Git Data API 直接建 blob，没有「对象存储」这个独立计费项，
+ * 显示出来只会让用户困惑（勾了也没用）。
+ */
+function syncLfsRow() {
+  LFS.syncLfsUI(state.cfg, { row: $('#upLfsRow'), box: $('#upLfs') });
+  syncLfsHint();
+}
+
+/** 首次使用会下载 git-lfs，勾上时才提醒（不勾就别吓人）。 */
+function syncLfsHint() {
+  const hint = $('#upLfsHint');
+  if (!hint) return;
+  const box = $('#upLfs');
+  hint.hidden = !isCNBPlatform() || !(box && box.checked);
+}
+
+/** 读 LFS 开关；非 CNB 恒 false。 */
+function lfsEnabled() {
+  return LFS.lfsEnabled(state.cfg, $('#upLfs'));
+}
+
+/**
+ * 进度条的元素 id。共享模块按 id 找元素，所以这里只是「这份界面把进度条
+ * 放在了哪几个节点上」的声明 —— 结构本身在 index.html 里。
+ */
+const UPLOAD_PROGRESS_IDS = {
+  prog: 'upProgress',
+  bar: 'upProgressBar',
+  label: 'upProgressLabel',
+  detail: 'upProgressDetail',
+  pct: 'upProgressPct'
+};
+
 async function doUpload() {
   if (!state.configured) {
     err('请先在「设置」里完成仓库与 Token 配置');
@@ -385,55 +429,53 @@ async function doUpload() {
   }
   running = true;
   $('#btnUpload').disabled = true;
+  // 全部先标「等待」而不是「上传中」—— 分批上传时同一时刻只有一批在传，
+  // 一次性全标「上传中」会让用户以为十个文件同时在跑。
   ready.forEach((it) => {
-    it.status = 'uploading';
+    it.status = 'pending';
     updateItem(it);
   });
 
-  // 字节走 base64：直接塞 Uint8Array 会被 JSON 炸成每字节一个键（见 lib/bytes.js）
-  const files = [];
-  for (const it of ready) {
-    const data = await bytesToBase64(it.outBuffer);
-    it.outBuffer = null;
-    files.push({ name: it.outName, data: data });
-  }
   const dir = CPLinks.normalizePath($('#upDir').value || '');
 
   try {
-    const res = await window.cloudpic.cloud.upload({ files: files, dir: dir });
-    const byName = new Map();
-    (res.results || []).forEach((r) => byName.set(r.name, r));
-
-    ready.forEach((it) => {
-      const r = byName.get(it.outName);
-      if (r && r.ok) {
-        it.status = 'done';
-        it.path = r.path;
-        it.url = resultUrl(it);
-        it.error = '';
-      } else {
-        it.status = 'error';
-        it.error = (r && r.error) || '上传失败';
+    // 上传流程与 mini 弹窗**共用一份**（lib/upload-run.js）：
+    // 分批、转 base64、开进度、调接口、结果映射、同步提示、广播事件都在那边。
+    // 这里只负责「上传页该怎么显示」—— 条目状态、总计、结果面板。
+    const res = await runUpload({
+      ready: ready,
+      dir: dir,
+      useLFS: lfsEnabled(),
+      progressIds: UPLOAD_PROGRESS_IDS,
+      // 一批开始前，把这一批标成「上传中」（其余仍是「等待」）
+      onBatch: (items) => {
+        items.forEach((it) => {
+          it.status = 'uploading';
+          updateItem(it);
+        });
+      },
+      onItem: (it, r) => {
+        if (r.ok) {
+          it.status = 'done';
+          it.path = r.path;
+          it.url = resultUrl(it);
+          it.error = '';
+        } else {
+          it.status = 'error';
+          it.error = r.error;
+        }
+        updateItem(it);
+      },
+      onSummary: () => {
+        refreshTotals();
+        renderResults();
       }
-      updateItem(it);
     });
-    refreshTotals();
-    renderResults();
 
-    if (res.uploaded) ok('成功上传 ' + res.uploaded + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''));
-    else err('上传失败，请查看下方结果里的错误信息');
-
-    if (res.sync && !res.sync.skipped) {
-      if (res.sync.ok) toast('本地目录已同步：' + res.sync.message, 'ok');
-      else warn('云端已更新，但本地同步失败：' + res.sync.message);
-    }
-    window.dispatchEvent(new CustomEvent('cloudpic:changed'));
+    const m = uploadResultMessage(res, '张');
+    if (m.ok) ok(m.text);
+    else err(m.text);
   } catch (e) {
-    ready.forEach((it) => {
-      it.status = 'error';
-      it.error = e.message || String(e);
-      updateItem(it);
-    });
     err(e.message || String(e));
   } finally {
     running = false;
@@ -929,6 +971,17 @@ export default {
     fillOptions();
     bindResultActions();
 
+    // LFS 开关：勾选状态记进 localStorage（下次默认带上），
+    // 并同步「首次会下载 git-lfs」那句提醒的显隐
+    const lfsBox = $('#upLfs');
+    if (lfsBox) {
+      lfsBox.addEventListener('change', () => {
+        LFS.rememberLfs(lfsBox.checked);
+        syncLfsHint();
+      });
+    }
+    syncLfsRow();
+
     $('#resultFormat').innerHTML = CPLinks.LINK_FORMATS.map((f) => '<option value="' + f.id + '">' + f.name + '</option>').join('');
     $('#resultFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
     $('#resultFormat').onchange = () => {
@@ -1084,9 +1137,12 @@ export default {
 
   onEnter() {
     fillOptions();
+    syncLfsRow();
   },
 
   onConfigChanged() {
     fillOptions();
+    // 换平台（GitHub ↔ CNB）时 LFS 开关要跟着显示 / 隐藏
+    syncLfsRow();
   }
 };

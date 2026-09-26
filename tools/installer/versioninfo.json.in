@@ -1,0 +1,26 @@
+{
+  "_comment": "exe 的图标与版本信息资源模板。build.sh 把 @XXX@ 占位符换成真实版本号后交给 goversioninfo 生成 .syso，go build 会自动把它嵌进 exe。",
+  "FixedFileInfo": {
+    "FileVersion": { "Major": @VER_MAJOR@, "Minor": @VER_MINOR@, "Patch": @VER_PATCH@, "Build": 0 },
+    "ProductVersion": { "Major": @VER_MAJOR@, "Minor": @VER_MINOR@, "Patch": @VER_PATCH@, "Build": 0 },
+    "FileFlagsMask": "3f",
+    "FileFlags ": "00",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "CompanyName": "小杰",
+    "FileDescription": "快捷文件分发服务@JIE",
+    "FileVersion": "@VERSION_NUM@",
+    "InternalName": "QuickFileDispatch",
+    "LegalCopyright": "Copyright (c) 2026 小杰",
+    "OriginalFilename": "QuickFileDispatch.exe",
+    "ProductName": "快捷文件分发服务@JIE",
+    "ProductVersion": "@VERSION@"
+  },
+  "VarFileInfo": {
+    "Translation": { "LangID": "0804", "CharsetID": "04B0" }
+  },
+  "IconPath": "build/icon.ico"
+}

@@ -250,6 +250,64 @@ var nothingRe = regexp.MustCompile(`(?i)nothing to commit`)
 
 func nothingToCommit(s string) bool { return nothingRe.MatchString(s) }
 
+// ProgressFunc 是进度回调。
+//
+// task 由上报方指定；phase 用 progress 包的常量；bytes/total 累计已传/总量
+// （total<=0 表示未知）；msg 是一句人话（可为空）。
+//
+// 它是函数而不是接口，是为了让 internal/cnb 那一层不必依赖 progress 包 ——
+// 桥接（回调 → 广播中心）留给 ipc 层做，那一层本来就两边都认识。
+type ProgressFunc func(phase string, bytes, total int64, msg string)
+
+// CommitAndPushStream 与 CommitAndPush 行为完全一致，区别只在 push 阶段
+// 会**边跑边报进度**。
+//
+// 为什么单独开一个函数而不是给 CommitAndPush 加个可空回调：
+// 绝大多数调用点（删文件、改名、推本地目录）都是几秒钟的事，
+// 而且用户没在等进度条 —— 给它们都加个参数是纯噪音。
+// 只有「用户点了上传、盯着进度条看」这一条链路需要实时反馈。
+func CommitAndPushStream(ctx context.Context, p CommitParams, onProgress ProgressFunc) OpResult {
+	if !IsRepo(ctx, p.Dir) {
+		return OpResult{Message: "本地目录不是一个 Git 仓库"}
+	}
+	branch := p.Branch
+	if branch == "" {
+		branch = "main"
+	}
+	msg := p.Message
+	if strings.TrimSpace(msg) == "" {
+		msg = "update"
+	}
+	url := AuthURL(p.Platform, p.Owner, p.Repo, p.Token)
+	args := baseArgs()
+
+	run(ctx, append(args, "add", "-A"), p.Dir, 2*time.Minute)
+	c := run(ctx, append(args, "commit", "-m", msg), p.Dir, time.Minute)
+	if !c.Ok && !nothingToCommit(c.Stdout+c.Stderr) {
+		return OpResult{Message: CleanError(c)}
+	}
+
+	// push 走流式：git 把进度写在 stderr（Writing objects: 45%…），
+	// RunStream 会按 \r 切行，解析后交给 FoldPushProgress 折叠成
+	// 「用户看得懂的一条进度」（只让真正上传的那一段带百分比，
+	// 详见那个函数的注释）。
+	sr := RunStream(ctx, append(args, "push", url, "HEAD:"+branch), p.Dir, 5*time.Minute, func(line string) {
+		if onProgress == nil {
+			return
+		}
+		pp, ok := ParsePushLine(line)
+		if !ok {
+			return
+		}
+		phase, bytes, total, msg := FoldPushProgress(pp)
+		onProgress(phase, bytes, total, msg)
+	})
+	if !sr.Ok {
+		return OpResult{Message: CleanError(sr.toResult())}
+	}
+	return OpResult{OK: true, Message: "已推送到云端"}
+}
+
 /* ------------------------------------------------------------ 同步检测器 */
 
 // FetchRef 把云端分支抓成本地的 FETCH_HEAD。

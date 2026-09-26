@@ -150,7 +150,17 @@
               </button>
             </div>
           </div>
-          <div class="progress" id="upProgress" hidden><div class="progress-bar" id="upProgressBar"></div></div>
+          <!-- 上传进度：百分比 + 已传/总量 + 速度。数据来自后端的 SSE 流
+               （/ipc/events），不是前端自己估的 —— git push 走 CNB 时
+               进度只有 git 自己知道。 -->
+          <div class="up-progress" id="upProgress" hidden>
+            <div class="up-progress-head">
+              <span class="up-progress-label" id="upProgressLabel">上传中</span>
+              <span class="up-progress-detail" id="upProgressDetail"></span>
+              <span class="up-progress-pct" id="upProgressPct"></span>
+            </div>
+            <div class="progress"><div class="progress-bar" id="upProgressBar"></div></div>
+          </div>
           <div class="queue-list" id="queueList"></div>
         </div>
 
@@ -176,6 +186,23 @@
               <input type="text" id="upPrefix" placeholder="如 cover-" />
             </label>
           </div>
+
+          <!-- CNB 专属：把文件内容存进对象存储（LFS），仓库里只留一个指针。
+               只在平台是 CNB 时出现（GitHub 走 Git Data API，没有这个选项）。
+               好处写在文案里 —— 用户不知道「对象存储」和「仓库存储」是两笔账。 -->
+          <label class="up-lfs" id="upLfsRow" hidden>
+            <input type="checkbox" id="upLfs" />
+            <span class="up-lfs-text">
+              <b>用 LFS 对象存储</b>
+              <span class="hint">
+                文件内容存进 CNB 对象存储（独立 100GiB 免费额度），仓库里只留一个指针。
+                大文件推荐开启 —— 不占仓库额度，别人 clone 时也不会把大文件一起拖下来。
+              </span>
+            </span>
+          </label>
+          <p class="field-note" id="upLfsHint" hidden>
+            首次使用会自动下载 git-lfs（约 6MB），之后就不再需要了。
+          </p>
 
           <!-- 图片设置：压缩 + 水印全部集中在这里（原设置页两块卡整体迁入），
                可折叠 —— 日常只改目录/文件名/前缀，这些低频参数收起来不占地方 -->
@@ -527,7 +554,53 @@
                   <input type="range" id="cfgBgBlur" min="0" max="24" step="0.1" />
                 </label>
                 <p class="field-note">给顶栏、侧栏和卡片加上背景模糊，让背景图在面板后面透出来又不抢正文</p>
+
+                <!-- 智能推荐：分析背景图后给出 blur 推荐值 + 文字风格提示，
+                     点一下就让按钮一行出来，不动现有滑块逻辑 -->
+                <div class="bg-box-head" style="margin-top:14px;margin-bottom:8px">
+                  <span class="bg-box-title">智能调整</span>
+                  <span class="hint" id="cfgAdaptiveHint">点右边的按钮分析背景图</span>
+                  <button type="button" class="btn btn-primary btn-sm" id="btnBgAdaptive"
+                    style="margin-left:auto;flex:0 0 auto">分析背景图</button>
+                </div>
+                <div class="adaptive-result" id="adaptiveResult" hidden>
+                  <div class="adaptive-row">
+                    <span class="k">亮度</span><span class="v" id="arLum">—</span>
+                    <span class="k">饱和度</span><span class="v" id="arSat">—</span>
+                    <span class="k">对比度</span><span class="v" id="arContrast">—</span>
+                    <span class="k">色彩</span><span class="v" id="arBias">—</span>
+                  </div>
+                  <div class="adaptive-row">
+                    <span class="k">推荐 blur</span><span class="v" id="arBlur">—</span>
+                    <span class="k">推荐字重</span><span class="v" id="arWeight">—</span>
+                  </div>
+                  <div class="adaptive-actions">
+                    <button type="button" class="btn btn-sm" id="btnApplyBlur">应用推荐 blur</button>
+                    <span class="hint" id="adaptiveOk"></span>
+                  </div>
+                </div>
               </div>
+            </div>
+          </section>
+
+          <!-- git-lfs：CNB 的「对象存储」（LFS）靠它工作。
+               提前把状态摆出来，用户不用等到上传失败才发现缺东西；
+               也确实能省一次失败的等待（首次装要下 6MB）。 -->
+          <section class="card">
+            <div class="card-head">
+              <h2>大文件上传（git-lfs）</h2>
+              <p>上传时勾选「用 LFS 对象存储」才会用到它。装一次就一直有效</p>
+            </div>
+            <div class="card-body">
+              <div class="lfs-row">
+                <span class="lfs-dot" id="lfsDot"></span>
+                <span class="lfs-text" id="lfsText">检查中…</span>
+                <button type="button" class="btn btn-sm" id="btnLfsInstall" hidden>立即安装</button>
+              </div>
+              <p class="field-note">
+                CNB 的对象存储与仓库存储是<b>两笔独立额度</b>（各 100 GiB）。
+                大文件走 LFS 不占仓库额度，别人 clone 时也不会把大文件一起拖下来。
+              </p>
             </div>
           </section>
 

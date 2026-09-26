@@ -17,6 +17,7 @@ import (
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/cloud"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dialog"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/progress"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/winfont"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/wvhost"
@@ -38,6 +39,10 @@ type Env struct {
 	// 那圈颜色必须跟着页面走。由 main 注入 wvhost.SetBackground；为 nil
 	// 时（--headless / --check）跳过。
 	OnBackground func(color uint32)
+
+	// Progress 是上传进度的广播中心。为 nil 时所有上报静默丢弃
+	// （progress.Hub.Task 支持 nil receiver），所以自检场景不用特殊处理。
+	Progress *progress.Hub
 
 	cache *repoCache
 	roots *rootGuard
@@ -201,6 +206,19 @@ func Register(r *Registry, env *Env) {
 	// 慢一步界面就晚一步上主题色。
 	r.Handle("app:fonts", func(json.RawMessage) (any, error) {
 		return winfont.Families(), nil
+	})
+
+	// git-lfs 状态与安装。只在 CNB 用 LFS 上传时才是必需的，但设置页
+	// 提前把状态摆出来，用户不用等到上传失败了才发现缺东西。
+	//
+	// 注意这个查询**不触发下载** —— 只是看本地有没有。
+	// 真正的安装是 lfsInstall（可能几十秒，带进度事件）。
+	r.Handle("app:lfsStatus", func(json.RawMessage) (any, error) {
+		return env.lfsStatus(), nil
+	})
+
+	r.Handle("app:lfsInstall", func(json.RawMessage) (any, error) {
+		return env.lfsInstall()
 	})
 
 	/* ---------------------------------------------------------- 配置 */
@@ -641,21 +659,6 @@ func Register(r *Registry, env *Env) {
 		}
 		return env.fsLocalDelete(obj)
 	})
-}
-
-// repoKey 是仓库的身份串：换仓库 / 换分支 / 换本地目录都会变，
-// 拿它当缓存键，配置一改缓存自然失效（对齐 main.js 的 repoKey()）。
-func repoKey(cfg map[string]any) string {
-	get := func(k, def string) string {
-		if v, ok := cfg[k].(string); ok && v != "" {
-			return v
-		}
-		return def
-	}
-	return strings.Join([]string{
-		get("platform", "github"), get("owner", ""), get("repo", ""),
-		get("branch", "main"), get("localDir", ""),
-	}, "|")
 }
 
 /* ------------------------------------------------------------ 参数解码 */

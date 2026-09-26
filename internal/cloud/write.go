@@ -28,22 +28,32 @@ type MoveItem struct {
 
 /* ------------------------------------------------------------ 上传 */
 
-// UploadBatch 批量上传。
+// ProgressFunc 上报「已处理 / 共多少字节」。
+//
+// 单独定义在 cloud 包而不是复用 git 包的同名类型：语义虽然一样，
+// 但强行合并会让 cloud 为了一个函数类型去依赖 git 包（它现在只依赖
+// 标准库 + 自己的 read.go），不值得。
+type ProgressFunc func(done, total int64)
+
+// UploadBatch 批量上传。onProgress 可为 nil。
 //
 // GitHub 用 Git Data API 把整批文件合成**一次提交** —— 传 20 张图
 // 在仓库里只出现一条提交记录，而不是 20 条。
 // CNB 没有提交接口，直接拒绝（调用方应分流到 internal/cnb）。
-func (c *Client) UploadBatch(files []File, message string) ([]Result, error) {
+//
+// 进度是**连续**的：不只是「每传完一个文件跳一格」，单个大文件
+// 内部也有进度（靠包装请求体读取实现，见 createBlob 的注释）。
+func (c *Client) UploadBatch(files []File, message string, onProgress ProgressFunc) ([]Result, error) {
 	if len(files) == 0 {
 		return []Result{}, nil
 	}
 	if c.IsCNB() {
 		return nil, ErrCNBWrite
 	}
-	return c.uploadGitData(files, message)
+	return c.uploadGitData(files, message, onProgress)
 }
 
-func (c *Client) uploadGitData(files []File, message string) ([]Result, error) {
+func (c *Client) uploadGitData(files []File, message string, onProgress ProgressFunc) ([]Result, error) {
 	refPath := "/repos/" + c.Owner + "/" + c.Repo + "/git/ref/heads/" + url.PathEscape(c.Branch)
 	parentSHA, err := c.refSHA(refPath)
 	if err != nil {
@@ -54,13 +64,32 @@ func (c *Client) uploadGitData(files []File, message string) ([]Result, error) {
 		return nil, err
 	}
 
-	tree := make([]map[string]any, 0, len(files))
+	var totalBytes int64
 	for _, f := range files {
-		blob, err := c.createBlob(f.Buff)
+		totalBytes += int64(len(f.Buff))
+	}
+
+	tree := make([]map[string]any, 0, len(files))
+	var done int64 // 前面几个文件已传完的字节
+	for _, f := range files {
+		buf := f.Buff
+		sz := int64(len(buf))
+		blob, err := c.createBlob(buf, func(fileSent, _ int64) {
+			if onProgress != nil {
+				// 整批进度 = 已完成文件 + 当前文件的内部进度
+				onProgress(done+fileSent, totalBytes)
+			}
+		})
 		if err != nil {
 			return nil, err
 		}
 		tree = append(tree, map[string]any{"path": f.Path, "mode": "100644", "type": "blob", "sha": blob})
+		done += sz
+		// 文件之间也补一次「已整份传完」，这样即使没有中间回调
+		// （小文件一次 Read 就读完了），进度也不会漏掉这一段。
+		if onProgress != nil {
+			onProgress(done, totalBytes)
+		}
 	}
 	if err := c.pushCommit(refPath, parentSHA, baseTree, tree, message); err != nil {
 		return nil, err
@@ -147,7 +176,8 @@ func (c *Client) MoveBatch(items []MoveItem, message string) ([]Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		blob, err := c.createBlob(buf)
+		// 改名 / 移动没有进度条（用户没在等），回调传 nil
+		blob, err := c.createBlob(buf, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -206,11 +236,28 @@ func (c *Client) commitTree(commitSHA string) (string, error) {
 }
 
 // createBlob 造一个 blob，返回它的 SHA。
-func (c *Client) createBlob(b []byte) (string, error) {
-	data, err := c.req("POST", "/repos/"+c.Owner+"/"+c.Repo+"/git/blobs", nil, map[string]any{
-		"content":  b64encode(b),
-		"encoding": "base64",
-	})
+//
+// onProgress 收到的是**原始文件的字节**进度，不是请求体字节。
+// 为什么要换算：body 是 base64 + JSON 包装（比原文件大 33% 还有额外开销），
+// 直接把 body 数字显示给用户，会看到「9 MB 的文件传了 12 MB」这种
+// 一眼假的数字。换算系数就是两者长度之比，JSON 包装那几十字节可忽略。
+//
+// 这是 GitHub 侧唯一能拿到「单个大文件传到一半」的地方 ——
+// Git Data API 一个文件一次 POST，本来是没有中间进度的，
+// 靠 reqProgress 包装请求体读取才拿得到（见 cloud.go 的 progressReader）。
+func (c *Client) createBlob(b []byte, onProgress func(sent, total int64)) (string, error) {
+	n := int64(len(b))
+	data, err := c.reqProgress("POST", "/repos/"+c.Owner+"/"+c.Repo+"/git/blobs", nil,
+		map[string]any{
+			"content":  b64encode(b),
+			"encoding": "base64",
+		},
+		func(bodySent, bodyTotal int64) {
+			if onProgress == nil || bodyTotal <= 0 {
+				return
+			}
+			onProgress(bodySent*n/bodyTotal, n)
+		})
 	if err != nil {
 		return "", err
 	}

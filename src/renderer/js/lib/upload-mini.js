@@ -19,14 +19,25 @@
  * 文件名与主上传页走**同一套改名规则**（cfg.rename 的 mode / prefix / hashLength，
  * 复用 compress.js 的 buildFileName）—— 同一产品两个上传入口，行为必须一致。
  *
- * 上传仍走 window.cloudpic.cloud.upload({ files, dir })，没改任何 cloud 接口。
+ * **上传流程本身也共用**：本文件只负责「弹窗这一份界面怎么显示」，
+ * 转 base64 / 开进度 / 调 cloud.upload / 结果映射 / 同步提示 / 广播事件
+ * 全部走 lib/upload-run.js —— 与主上传页是同一份代码。
+ * （2026-09-26 抽出去的：之前两处各写一份，很快就出现了
+ *  「主页面有进度条、弹窗没有」这类偏差。）
+ *
+ * LFS 开关的显隐与记忆走 lib/lfs.js，同样与主上传页共用 ——
+ * 连 localStorage 的键都是同一个，在哪边勾的另一个入口都认。
  */
 
-import { bytesToBase64 } from './bytes.js';
-import { $, toast, err, ok, warn, escapeHtml, friendlyError, previewImage, paintRange } from './dom.js';
+import { $, err, ok, warn, escapeHtml, friendlyError, previewImage, paintRange } from './dom.js';
 import state from './state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from './compress.js';
 import { canCompare, openCompare } from './compare.js';
+// 与主上传页**共用一份**上传流程与 LFS 开关逻辑。
+// 两个入口对用户来说是同一件事，行为必须一致 —— 各写一份的话
+// 「主页面有进度条、右键弹窗没有」这类偏差迟早出现。
+import { runUpload, uploadResultMessage } from './upload-run.js';
+import * as LFS from './lfs.js';
 
 const CPLinks = window.CPLinks;
 
@@ -480,6 +491,21 @@ function addFiles(fileList) {
 
 /* ---------------------------------------------------------------- 上传 */
 
+/**
+ * 进度条的元素 id（与 build() 生成的结构一一对应）。
+ *
+ * 共享的 startProgressBar 按 id 找元素 —— 这里只声明「本弹窗把进度条
+ * 放在哪几个节点上」，DOM 结构本身在 build() 里。这样两个上传入口
+ * 共用同一套进度渲染逻辑，只是挂在不同节点上。
+ */
+const MINI_PROGRESS_IDS = {
+  prog: 'miniProgress',
+  bar: 'miniProgressBar',
+  label: 'miniProgressLabel',
+  detail: 'miniProgressDetail',
+  pct: 'miniProgressPct'
+};
+
 async function doUpload() {
   if (running) return;
   if (!state.configured) {
@@ -494,55 +520,52 @@ async function doUpload() {
   running = true;
   const start = $('#miniStart', wrap);
   if (start) start.disabled = true;
+  // 全部先标「等待」：分批上传时同一时刻只有一批在传
   ready.forEach((it) => {
-    it.status = 'uploading';
+    it.status = 'pending';
     updateItem(it);
   });
   updateSummary();
 
-  // 同上：字节走 base64，别让 JSON 把 Uint8Array 炸开
-  const files = [];
-  for (const it of ready) {
-    const data = await bytesToBase64(it.outBuffer);
-    it.outBuffer = null; // 交出去之后本弹窗不再留一份
-    files.push({ name: it.outName, data: data });
-  }
   const dir = CPLinks.normalizePath(($('#miniDir', wrap) && $('#miniDir', wrap).dataset.dir) || '');
 
   try {
-    const res = await window.cloudpic.cloud.upload({ files: files, dir: dir });
-    const byName = new Map();
-    (res.results || []).forEach((r) => byName.set(r.name, r));
-    ready.forEach((it) => {
-      const r = byName.get(it.outName);
-      if (r && r.ok) {
-        it.status = 'done';
-        it.path = r.path;
-        it.error = '';
-      } else {
-        it.status = 'error';
-        it.error = (r && r.error) || '上传失败';
-      }
-      updateItem(it);
+    // 与主上传页**共用一份**上传流程（lib/upload-run.js）：
+    // 分批、转 base64、开进度、调接口、结果映射、同步提示、广播事件都在那边。
+    // 这里只负责本弹窗的显示差异（列表项 + 汇总行）。
+    const res = await runUpload({
+      ready: ready,
+      dir: dir,
+      useLFS: LFS.lfsEnabled(state.cfg, $('#miniLfs', wrap)),
+      progressIds: MINI_PROGRESS_IDS,
+      // 一批开始前标成「上传中」（其余仍是「等待」）
+      onBatch: (items) => {
+        items.forEach((it) => {
+          it.status = 'uploading';
+          updateItem(it);
+        });
+      },
+      onItem: (it, r) => {
+        if (r.ok) {
+          it.status = 'done';
+          it.path = r.path;
+          it.error = '';
+        } else {
+          it.status = 'error';
+          it.error = r.error;
+        }
+        updateItem(it);
+      },
+      onSummary: updateSummary
     });
-    updateSummary();
+
+    // 有文件成功 → 通知调用方（文件管理页据此刷新列表）
     if (ready.some((it) => it.status === 'done')) uploaded = true;
 
-    if (res.uploaded) ok('成功上传 ' + res.uploaded + ' 个' + (res.failed ? '，失败 ' + res.failed + ' 个' : ''));
-    else err('上传失败，请查看列表里的错误信息');
-
-    if (res.sync && !res.sync.skipped) {
-      if (res.sync.ok) toast('本地目录已同步：' + res.sync.message, 'ok');
-      else warn('云端已更新，但本地同步失败：' + res.sync.message);
-    }
-    window.dispatchEvent(new CustomEvent('cloudpic:changed'));
+    const m = uploadResultMessage(res, '个');
+    if (m.ok) ok(m.text);
+    else err(m.text);
   } catch (e) {
-    ready.forEach((it) => {
-      it.status = 'error';
-      it.error = e.message || String(e);
-      updateItem(it);
-    });
-    updateSummary();
     err(e.message || String(e));
   } finally {
     running = false;
@@ -568,6 +591,24 @@ function build() {
     '<input type="file" id="miniInput" multiple hidden />' +
     '</div>' +
     '<div id="miniDecision"></div>' +
+    // LFS 开关。复用主上传页的 .up-lfs 样式 —— 两个入口长得一样，
+    // 用户才认得出「这是同一个功能」。
+    '<label class="up-lfs" id="miniLfsRow" hidden>' +
+    '<input type="checkbox" id="miniLfs" />' +
+    '<span class="up-lfs-text">' +
+    '<b>用 LFS 对象存储</b>' +
+    '<span class="hint">文件内容存进 CNB 对象存储（独立额度），仓库里只留一个指针。首次使用会自动下载 git-lfs。</span>' +
+    '</span>' +
+    '</label>' +
+    // 实时进度。与主上传页同一套结构和样式（.up-progress）。
+    '<div class="up-progress" id="miniProgress" hidden>' +
+    '<div class="up-progress-head">' +
+    '<span class="up-progress-label" id="miniProgressLabel">上传中</span>' +
+    '<span class="up-progress-detail" id="miniProgressDetail"></span>' +
+    '<span class="up-progress-pct" id="miniProgressPct"></span>' +
+    '</div>' +
+    '<div class="progress"><div class="progress-bar" id="miniProgressBar"></div></div>' +
+    '</div>' +
     '<div class="mini-list" id="miniList"></div>' +
     '</div>' +
     '<div class="modal-foot">' +
@@ -583,6 +624,14 @@ function wire(target) {
   const dirEl = $('#miniDir', wrap);
   dirEl.textContent = target || '仓库根目录';
   dirEl.dataset.dir = target || '';
+
+  // LFS 开关：与主上传页共用同一套「按平台显隐 + 记住选择」的逻辑，
+  // 连 localStorage 的键都是同一个 —— 在主页面勾了，这里打开也是勾上的。
+  const lfsBox = $('#miniLfs', wrap);
+  LFS.syncLfsUI(state.cfg, { row: $('#miniLfsRow', wrap), box: lfsBox });
+  if (lfsBox) {
+    lfsBox.addEventListener('change', () => LFS.rememberLfs(lfsBox.checked));
+  }
 
   const drop = $('#miniDrop', wrap);
   const input = $('#miniInput', wrap);

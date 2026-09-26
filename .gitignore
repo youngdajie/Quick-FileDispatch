@@ -8,6 +8,11 @@ dist/
 dist-win/
 dist-go/
 
+# 构建中间产物：goversioninfo 生成的 exe 图标/版本资源。
+# build.sh 用完会删，但中途失败时会残留在工作区 —— 忽略掉，
+# 免得被当成源码提交（它是二进制，还会让 diff 变脏）。
+resource.syso
+
 # 界面截图（自检生成）
 .shots/
 

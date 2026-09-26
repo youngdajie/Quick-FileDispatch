@@ -1,0 +1,63 @@
+# 行尾规则。
+#
+# 这件事 2026-09-26 实踩过：build.sh 在 Windows 上被写成了 CRLF，
+# 本地 Git Bash 跑得好好的，一上 CNB 的 Linux 节点就报
+# `$'\r': command not found`，整个构建起不来。
+#
+# 根因不是「谁不小心」——而是**没有规则**：Windows 编辑器默认 CRLF，
+# 而流水线是 Linux。用 .gitattributes 定死，Git 在 checkout 时自动规整，
+# 不依赖任何人记得。
+#
+# 规则分三类：
+#   1. 会被 Linux 执行的 → 必须 LF
+#   2. 跨平台文本       → 统一 LF（免得 review 时满屏 ^M）
+#   3. Windows 专用工具链 → 保持 CRLF
+
+# ---------------------------------------------------------------- 必须 LF
+
+# Shell 脚本：Linux 上直接 exec，CRLF 会报 `$'\r': command not found`
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# 流水线配置：script: | 块里是**嵌入的 shell 脚本**，
+# 文件是 CRLF 的话那些脚本同样是 CRLF，一样起不来
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# 跨平台脚本（Windows / Linux / macOS 都可能跑）
+*.py    text eol=lf
+*.mjs   text eol=lf
+
+# ---------------------------------------------------------------- 统一 LF
+
+# Go 源码与前端资源。浏览器和 Go 工具链都容忍 CRLF，
+# 但统一成 LF 的好处是 diff 干净、不会出现「整文件重写」的假改动。
+*.go    text eol=lf
+*.js    text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# ---------------------------------------------------------------- 保持 CRLF
+
+# NSIS 脚本是 Windows 工具链的：文件头必须是 UTF-8 **BOM**
+#（见 tools/installer/installer.nsi 顶部的说明），行尾也按它的习惯留 CRLF。
+*.nsi   text eol=crlf
+
+# ---------------------------------------------------------------- 二进制
+
+# 别让 Git 碰这些 —— 加 text 属性会被换行符转换搞坏
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.svg   text eol=lf
+*.dll   binary
+*.exe   binary
+*.syso  binary
+
+# 构建中间产物（goversioninfo 生成的资源文件）
+resource.syso binary

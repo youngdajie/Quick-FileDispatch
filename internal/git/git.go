@@ -20,10 +20,28 @@ import (
 	"time"
 )
 
+// extraPath 是追加到 git 子进程 PATH **最前面**的目录。
+//
+// 它存在的唯一理由是 git-lfs：git 执行 filter 时会去找名叫 git-lfs
+// 的可执行文件（filter.lfs.clean = "git-lfs clean -- %f"），找的地方就是
+// PATH。程序自动装的 git-lfs 放在配置目录里（不动系统、不要管理员权限），
+// 所以每次起 git 子进程都得把这个目录塞进 PATH。
+//
+// 只影响**子进程**的环境，不改用户的系统 PATH —— 这是刻意的：
+// 改注册表级别的 PATH 是侵入性的，而且某些情况下要提权。
+var extraPath string
+
+// SetExtraPath 设置 git 子进程 PATH 的追加目录（放 git-lfs.exe）。
+// 由 main 在启动时调用一次；传空串表示不需要。
+func SetExtraPath(dir string) { extraPath = dir }
+
 // GIT_ENV：一律非交互。没有这组环境变量，凭据缺失时 git 会弹一个
 // 谁也看不见的凭据框，进程就那么挂着（Electron 版当年踩过）。
 func gitEnv() []string {
 	env := os.Environ()
+	if extraPath != "" {
+		env = prependPath(env, extraPath)
+	}
 	env = append(env,
 		"GIT_TERMINAL_PROMPT=0",
 		"GCM_INTERACTIVE=never",
@@ -33,12 +51,62 @@ func gitEnv() []string {
 	return env
 }
 
+// prependPath 把 dir 插到环境变量里 PATH 的最前面。
+//
+// 不能简单 append 一个 "PATH=..."：Windows 的环境块里可能已经有一个
+// "Path=..."（大小写不同），两个同名项同时存在时哪个生效是不确定的，
+// 表现出来就是「有时能找到 git-lfs，有时找不到」。所以这里遍历替换，
+// 保留原有的键名大小写。
+func prependPath(env []string, dir string) []string {
+	const key = "PATH="
+	sep := string(os.PathListSeparator)
+	for i, kv := range env {
+		if len(kv) >= len(key) && strings.EqualFold(kv[:len(key)], key) {
+			// 用 kv[:len(key)] 而不是 key —— 保留系统原来的写法（Path= / PATH=）
+			env[i] = kv[:len(key)] + dir + sep + kv[len(key):]
+			return env
+		}
+	}
+	return append(env, key+dir)
+}
+
 type result struct {
 	Ok     bool
 	Stdout string
 	Stderr string
 	Err    error
 }
+
+/* ------------------------------------------------------------ 给兄弟包用 */
+
+// OpResult 已经在 ops.go 定义（{ok, message}），这里复用。
+
+// Run 执行一条 git 命令，把结果收敛成人话。
+//
+// 它是 run() 的导出形式，给 internal/lfs 这类兄弟包用 ——
+// 那些包要调 git 但又不想各自复制一套「找 git、设环境、藏窗口」的逻辑。
+func Run(ctx context.Context, dir string, timeout time.Duration, args ...string) OpResult {
+	r := run(ctx, args, dir, timeout)
+	if r.Ok {
+		return OpResult{OK: true, Message: strings.TrimSpace(r.Stdout)}
+	}
+	return OpResult{Message: CleanError(r)}
+}
+
+// SetConfig 写一条**仓库级** git 配置（等价 git config <key> <value>）。
+//
+// 忽略错误：配置写不进去时后续操作会自己报错，这里再报一次只是噪音。
+func SetConfig(ctx context.Context, dir, key, value string) {
+	run(ctx, []string{"config", key, value}, dir, 20*time.Second)
+}
+
+// HideWindow 是 hideWindow 的导出形式，给兄弟包（internal/lfs）复用。
+//
+// 不直接把 hideWindow 改名导出，是为了不动这里已有的十来个调用点 ——
+// 那属于「为了整洁去改一堆没坏的东西」，风险不值。
+func HideWindow(cmd *exec.Cmd) { hideWindow(cmd) }
+
+/* ------------------------------------------------------------ 基础执行 */
 
 func run(ctx context.Context, args []string, dir string, timeout time.Duration) result {
 	if _, err := exec.LookPath("git"); err != nil {

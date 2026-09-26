@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<!--
+  毛玻璃 + 智能自适应 算法独立 Demo
+
+  打开方式：直接双击这个 HTML（不需要服务器）。
+  它把整套算法从 Quick-FileDispatch 里抽出来独立演示：
+    - 上传图片 → 多点采样 → 计算亮度/饱和度/对比度/色偏
+    - 智能决定 模糊度/白纱浓度/饱和度/字体色 + 字重 + 阴影 + 字距
+    - 4 个滑块（手动覆盖算法值），拖动时实时预览
+    - 一屏展示 4 张预设背景图（亮/暗/暖/冷），点击瞬切
+
+  算法放在 <script type="module"> 里（glass-adaptive.js），
+  这里只放 UI + 控制。HTML 文件可以独立复制，不依赖项目代码。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>毛玻璃 + 智能自适应 算法 Demo</title>
+  <style>
+    /* ============================================================
+       CSS 变量：所有数值都在这里，UI 通过 var() 读取。
+       滑块实时改的是这组变量；玻璃层通过 transition 平滑过渡。
+       ============================================================ */
+    :root {
+      /* 主题变量（浅色基底）—— 仅作 demo 默认值；切图后算法会改这些 */
+      --bg: #eef1f6;
+      --panel: #ffffff;
+      --panel-2: #f1f5fa;
+      --border: #cfd9e6;
+      --text: #16202e;
+      --text-dim: #44546b;
+      --muted: #7a8a9e;
+
+      /* 玻璃参数 —— 滑块和算法直接改这些 */
+      --blur: 12px;
+      --tint: 0.50;       /* 白纱浓度 */
+      --saturate: 1.20;   /* 饱和度增强 */
+      --edge: 0;          /* 边缘提亮 0-1 */
+
+      /* 文字（算法也会改） */
+      --text-color: #16202e;
+      --text-weight: 400;
+      --text-shadow: none;
+      --text-tracking: 0;
+
+      /* 平台色 */
+      --accent: #2f7fd6;
+      --accent-hi: #1f6dc2;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei UI", sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      min-height: 100vh;
+      /* 文字变化平滑过渡，避免滑块拖动时一闪一闪 */
+      transition: color 0.18s ease, font-weight 0.18s ease;
+    }
+
+    /* ============================================================
+       背景层：图片 + 模糊版（用于预览缩略图）
+       ============================================================ */
+    .bg-stack {
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none;
+    }
+    .bg-source {
+      position: absolute; inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-color: var(--bg); /* 没图时纯色兜底 */
+      transition: background-image 0.3s ease;
+    }
+    /* 模糊预览层：拖动滑块能直接看模糊度变化 */
+    .bg-blurred {
+      position: absolute; inset: 0;
+      background-size: cover;
+      background-position: center;
+      filter: blur(var(--blur)) saturate(var(--saturate));
+      transition: filter 0.22s linear, opacity 0.2s;
+      opacity: 1;
+    }
+
+    /* ============================================================
+       顶栏：玻璃效果 + 自适应文字
+       ============================================================ */
+    .topbar {
+      position: relative; z-index: 2;
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 22px;
+      /* 关键：背景 = 白纱 + 模糊后的背景图，两个图层叠加 */
+      background:
+        linear-gradient(rgba(255,255,255, calc(1 - var(--tint))),
+                         rgba(255,255,255, calc(1 - var(--tint)))),
+        var(--bg-blur-img, none);
+      background-size: auto, 100vw 100vh;
+      background-position: 0 0, calc(0px - var(--gx, 0px)) calc(0px - var(--gy, 0px));
+      background-attachment: scroll, fixed;
+      backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+      border-bottom: 1px solid var(--border);
+      color: var(--text-color);
+      font-weight: var(--text-weight);
+      letter-spacing: calc(var(--text-tracking) * 1px);
+      text-shadow: var(--text-shadow);
+      transition:
+        background 0.22s linear,
+        color 0.18s ease,
+        border-color 0.18s ease,
+        font-weight 0.18s ease,
+        letter-spacing 0.18s ease,
+        text-shadow 0.18s ease;
+    }
+    .topbar b {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .topbar .pill {
+      background: rgba(255,255,255,0.5);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 3px 11px;
+      font-size: 11px;
+      font-family: var(--mono, ui-monospace, monospace);
+      color: var(--text-dim);
+    }
+
+    /* ============================================================
+       主区：左右两栏
+       左：滑块控制 + 预设图
+       右：玻璃效果预览（多张半透明卡片叠在背景图上）
+       ============================================================ */
+    .layout {
+      position: relative; z-index: 1;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 20px;
+      padding: 20px 22px 28px;
+    }
+
+    .panel {
+      background:
+        linear-gradient(rgba(255,255,255, calc(1 - var(--tint))),
+                         rgba(255,255,255, calc(1 - var(--tint)))),
+        var(--bg-blur-img, none);
+      background-size: auto, 100vw 100vh;
+      background-attachment: scroll, fixed;
+      background-position: 0 0, calc(0px - var(--gx, 0px)) calc(0px - var(--gy, 0px));
+      backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px 22px;
+      box-shadow: 0 8px 28px -16px rgba(0,0,0,0.18);
+      color: var(--text-color);
+      font-weight: var(--text-weight);
+      letter-spacing: calc(var(--text-tracking) * 1px);
+      text-shadow: var(--text-shadow);
+      transition:
+        background 0.22s linear,
+        color 0.18s ease,
+        border-color 0.18s ease,
+        font-weight 0.18s ease,
+        letter-spacing 0.18s ease,
+        text-shadow 0.18s ease,
+        box-shadow 0.22s ease;
+    }
+
+    .panel h2 {
+      margin: 0 0 4px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .panel p {
+      margin: 0 0 18px;
+      font-size: 12px;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+
+    /* 滑块通用样式（自绘，避免不同浏览器差异） */
+    .slider-row { margin-bottom: 16px; }
+    .slider-row .lbl {
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: var(--text-dim);
+      font-family: ui-monospace, monospace;
+      margin-bottom: 6px;
+    }
+    .slider-row .lbl .val {
+      color: var(--text);
+      font-weight: 600;
+    }
+    input[type="range"] {
+      width: 100%; height: 18px;
+      -webkit-appearance: none; appearance: none;
+      background: transparent; cursor: pointer;
+      --fill: 0%;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 5px; border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent) 0 var(--fill), rgba(0,0,0,0.12) var(--fill) 100%);
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 15px; height: 15px; margin-top: -5px;
+      border-radius: 50%; background: #fff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    input[type="range"]::-moz-range-track { height: 5px; border-radius: 999px; background: rgba(0,0,0,0.12); }
+    input[type="range"]::-moz-range-thumb {
+      width: 13px; height: 13px; border-radius: 50%; background: #fff; border: 2px solid var(--accent);
+    }
+
+    /* 预设图 */
+    .presets {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+      margin-top: 14px;
+    }
+    .preset {
+      aspect-ratio: 1; border-radius: 7px; cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.15s, transform 0.12s;
+      background-size: cover; background-position: center;
+    }
+    .preset:hover { transform: scale(1.04); }
+    .preset.on { border-color: var(--accent); }
+
+    .actions {
+      display: flex; gap: 8px; margin-top: 12px;
+    }
+    .btn {
+      flex: 1; padding: 8px 12px; border-radius: 7px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.5);
+      cursor: pointer; font: inherit;
+      color: var(--text);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn:hover { background: var(--panel-2); border-color: var(--accent); }
+    .btn.primary {
+      background: linear-gradient(180deg, var(--accent), var(--accent-hi));
+      border-color: var(--accent-hi); color: #fff; font-weight: 600;
+    }
+
+    /* 预览卡片区 */
+    .preview-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background:
+        linear-gradient(rgba(255,255,255, calc(1 - var(--tint) - 0.06)),
+                         rgba(255,255,255, calc(1 - var(--tint) - 0.06))),
+        var(--bg-blur-img, none);
+      background-size: auto, 100vw 100vh;
+      background-attachment: scroll, fixed;
+      background-position: 0 0, calc(0px - var(--gx, 0px)) calc(0px - var(--gy, 0px));
+      backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      transition: all 0.22s ease;
+      color: var(--text-color);
+      font-weight: var(--text-weight);
+      text-shadow: var(--text-shadow);
+      letter-spacing: calc(var(--text-tracking) * 1px);
+    }
+    .card h3 { margin: 0 0 6px; font-size: 13px; }
+    .card p { margin: 0; font-size: 12px; color: var(--text-dim); font-weight: 400; }
+
+    /* 字体颜色/字重/阴影/字距过渡 */
+    .preview-text {
+      padding: 24px;
+      color: var(--text-color);
+      font-weight: var(--text-weight);
+      letter-spacing: calc(var(--text-tracking) * 1px);
+      text-shadow: var(--text-shadow);
+      transition: all 0.2s ease;
+    }
+    .preview-text h4 { margin: 0 0 8px; font-size: 18px; }
+    .preview-text .meta {
+      font-family: ui-monospace, monospace; font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* 算法分析结果面板 */
+    .analysis {
+      font-family: ui-monospace, monospace; font-size: 11px;
+      line-height: 1.8;
+      color: var(--text-dim);
+      background: rgba(255,255,255,0.4);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-top: 6px;
+    }
+    .analysis b { color: var(--text); }
+    .analysis .num { color: var(--accent-hi); font-weight: 600; }
+
+    /* 自动 / 手动模式标记 */
+    .mode-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+    .mode-toggle input { margin: 0; }
+  </style>
+</head>
+<body>
+
+<!-- 背景层 -->
+<div class="bg-stack" aria-hidden="true">
+  <div class="bg-source" id="bgSource"></div>
+  <div class="bg-blurred" id="bgBlurred"></div>
+</div>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <b>毛玻璃 + 智能自适应 算法 Demo</b>
+  <span class="pill" id="statusPill">未上传图片</span>
+  <div style="flex:1"></div>
+  <span class="pill" id="algoBadge">算法：就绪</span>
+</header>
+
+<!-- 主区 -->
+<main class="layout">
+
+  <!-- 左侧控制面板 -->
+  <aside class="panel">
+    <h2>控制台</h2>
+    <p>上传图后自动分析参数；可手动覆盖，<b>覆写模式</b>下算法停止接管。</p>
+
+    <div class="mode-toggle">
+      <label><input type="checkbox" id="autoMode" checked /> 算法自动接管</label>
+    </div>
+
+    <div class="slider-row">
+      <div class="lbl">模糊度 <span class="val" id="vBlur">12</span> px</div>
+      <input type="range" id="sBlur" min="0" max="24" step="0.5" value="12" />
+    </div>
+    <div class="slider-row">
+      <div class="lbl">白纱浓度 <span class="val" id="vTint">50</span>%</div>
+      <input type="range" id="sTint" min="0" max="100" step="1" value="50" />
+    </div>
+    <div class="slider-row">
+      <div class="lbl">饱和度增强 <span class="val" id="vSat">120</span>%</div>
+      <input type="range" id="sSat" min="50" max="180" step="1" value="120" />
+    </div>
+    <div class="slider-row">
+      <div class="lbl">字重 <span class="val" id="vWeight">400</span></div>
+      <input type="range" id="sWeight" min="300" max="700" step="100" value="400" />
+    </div>
+
+    <div class="slider-row" style="margin-top:18px">
+      <div class="lbl">预设图（点击瞬切）</div>
+    </div>
+    <div class="presets" id="presets">
+      <!-- JS 注入 4 张 SVG dataURL -->
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="btnUpload">上传图片</button>
+      <button class="btn" id="btnReset">重置</button>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" hidden />
+
+    <div class="slider-row" style="margin-top:18px">
+      <div class="lbl">算法分析结果</div>
+      <div class="analysis" id="analysis">上传图后显示</div>
+    </div>
+  </aside>
+
+  <!-- 右侧预览区 -->
+  <section class="preview-text">
+    <h4>智能文字效果预览</h4>
+    <p style="font-size:14px">
+      这是普通正文。算法会根据背景图的亮度自动调整颜色和字重，
+      保证文字始终清晰通透。
+    </p>
+    <p class="meta" style="margin-top:14px">
+      小字号提示文字 — 12px。容易糊在背景上，需要算法配合加深颜色或加阴影。
+    </p>
+    <div class="preview-grid" style="margin-top:18px">
+      <div class="card"><h3>卡片标题</h3><p>这是卡片描述文字，验证在不同背景下是否清晰。</p></div>
+      <div class="card"><h3>另一张卡片</h3><p>对照观察玻璃效果是否自然。</p></div>
+      <div class="card"><h3>第三张卡片</h3><p>更多对比样本。</p></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 算法模块：智能分析 + 自适应参数 -->
+<script type="module">
+import { analyzeImage, computeAdaptive, applyAdaptive, paintRange } from './glass-adaptive.js';
+
+// ============================================================
+// 状态
+// ============================================================
+const state = {
+  /** 是否有自定义图片覆盖了算法 */
+  manual: false,
+  /** 当前 image 对象（Image 或 null） */
+  img: null,
+  /** 算法分析结果 */
+  analysis: null,
+};
+
+// ============================================================
+// 预设图：用 SVG dataURL 模拟 4 种典型背景
+// ============================================================
+const presets = [
+  // 偏暗暖色（模拟夕阳照片）
+  svgPreset('linear-gradient(135deg,#3a1f0e,#a04a18 50%,#f3a35e)', '暗·暖'),
+  // 偏亮冷色（模拟天空照片）
+  svgPreset('linear-gradient(180deg,#dde8f3 0%,#9bb8d4 60%,#4a6e94)', '亮·冷'),
+  // 中等饱和绿色（模拟森林）
+  svgPreset('linear-gradient(160deg,#1f4f2c,#3d7a45 50%,#6eae5b)', '中·绿'),
+  // 高对比夜景
+  svgPreset('radial-gradient(circle at 30% 40%,#3a4a8c 0%,#0d1228 70%)', '高对比·夜'),
+];
+
+function svgPreset(bg, label) {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><defs><pattern id='p' width='6' height='6' patternUnits='userSpaceOnUse'><rect width='6' height='6' fill='rgba(255,255,255,0.05)'/><circle cx='3' cy='3' r='0.6' fill='rgba(255,255,255,0.18)'/></pattern></defs><rect width='200' height='200' fill='${bg}'/><rect width='200' height='200' fill='url(%23p)'/></svg>`;
+  return `data:image/svg+xml;utf8,${svg.replace(/\n/g, '')}`;
+}
+
+document.getElementById('presets').innerHTML = presets.map((p, i) =>
+  `<div class="preset" data-i="${i}" style="background-image:url('${p}')" title="${['暗暖','亮冷','中绿','夜对比'][i]}"></div>`
+).join('');
+
+document.querySelectorAll('.preset').forEach((el, i) => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.preset').forEach(p => p.classList.remove('on'));
+    el.classList.add('on');
+    loadImage(presets[i], '预设 ' + ['暗暖','亮冷','中绿','夜对比'][i]);
+  });
+});
+
+// ============================================================
+// 上传图片
+// ============================================================
+document.getElementById('btnUpload').addEventListener('click', () => {
+  document.getElementById('fileInput').click();
+});
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  document.querySelectorAll('.preset').forEach(p => p.classList.remove('on'));
+  loadImage(url, f.name);
+});
+
+// ============================================================
+// 重置
+// ============================================================
+document.getElementById('btnReset').addEventListener('click', () => {
+  state.manual = false;
+  document.getElementById('autoMode').checked = true;
+  // 清掉背景图，回到默认底色
+  document.getElementById('bgSource').style.backgroundImage = '';
+  document.getElementById('bgBlurred').style.backgroundImage = '';
+  document.documentElement.style.removeProperty('--bg-blur-img');
+  state.img = null;
+  state.analysis = null;
+  document.getElementById('statusPill').textContent = '未上传图片';
+  document.getElementById('analysis').textContent = '上传图后显示';
+  // 重置变量到默认
+  applyAdaptive({
+    blur: 12, tint: 0.5, saturate: 1.2,
+    textColor: '#16202e', fontWeight: 400,
+    textShadow: 'none', textTracking: 0,
+  });
+  // 同步滑块
+  syncSliders({ blur: 12, tint: 0.5, saturate: 1.2, fontWeight: 400 });
+});
+
+// ============================================================
+// 自动模式开关
+// ============================================================
+document.getElementById('autoMode').addEventListener('change', (e) => {
+  state.manual = !e.target.checked;
+  if (!state.manual && state.img) {
+    // 回到算法自动
+    reapplyFromImage();
+  }
+});
+
+// ============================================================
+// 滑块手动覆盖
+// ============================================================
+['Blur', 'Tint', 'Sat', 'Weight'].forEach((k) => {
+  const slider = document.getElementById('s' + k);
+  slider.addEventListener('input', () => {
+    if (state.auto) {} // 占位
+    // 用户一动滑块 → 立刻关掉自动模式
+    if (document.getElementById('autoMode').checked) {
+      document.getElementById('autoMode').checked = false;
+      state.manual = true;
+    }
+    applyFromSliders();
+    paintRange(slider);
+  });
+});
+
+// 初始化滑块填充
+document.querySelectorAll('input[type="range"]').forEach(paintRange);
+
+// ============================================================
+// 加载图片（主入口）
+// ============================================================
+function loadImage(url, label) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    state.img = img;
+    state.analysis = analyzeImage(img);
+    // 设到背景层
+    const bgUrl = `url("${img.src}")`;
+    document.getElementById('bgSource').style.backgroundImage = bgUrl;
+    document.getElementById('bgBlurred').style.backgroundImage = bgUrl;
+    document.documentElement.style.setProperty('--bg-blur-img', bgUrl);
+    document.getElementById('statusPill').textContent = label + ' · ' +
+      Math.round(img.naturalWidth) + '×' + Math.round(img.naturalHeight);
+    // 应用算法结果
+    reapplyFromImage();
+  };
+  img.onerror = () => {
+    document.getElementById('statusPill').textContent = '加载失败';
+  };
+  img.src = url;
+}
+
+// 重新跑算法并应用
+function reapplyFromImage() {
+  if (!state.img) return;
+  const analysis = analyzeImage(state.img);
+  state.analysis = analysis;
+  const params = computeAdaptive(analysis);
+  applyAdaptive(params);
+  syncSliders(params);
+  showAnalysis(analysis, params);
+}
+
+// 从滑块读取 → 应用
+function applyFromSliders() {
+  const blur = +document.getElementById('sBlur').value;
+  const tint = +document.getElementById('sTint').value / 100;
+  const saturate = +document.getElementById('sSat').value / 100;
+  const fontWeight = +document.getElementById('sWeight').value;
+  // 文字颜色 / 阴影根据字重 + 当前 tint 推断（避免突兀）
+  const params = inferTextStyle({ blur, tint, saturate, fontWeight }, state.analysis);
+  applyAdaptive(params);
+  syncSliders({ blur, tint, saturate, fontWeight });
+  if (state.analysis) showAnalysis(state.analysis, params);
+}
+
+// 同步滑块显示
+function syncSliders({ blur, tint, saturate, fontWeight }) {
+  document.getElementById('vBlur').textContent = Number.isInteger(blur) ? blur : blur.toFixed(1);
+  document.getElementById('sBlur').value = blur;
+  document.getElementById('vTint').textContent = Math.round(tint * 100);
+  document.getElementById('sTint').value = tint * 100;
+  document.getElementById('vSat').textContent = Math.round(saturate * 100);
+  document.getElementById('sSat').value = saturate * 100;
+  document.getElementById('vWeight').textContent = fontWeight;
+  document.getElementById('sWeight').value = fontWeight;
+  document.querySelectorAll('input[type="range"]').forEach(paintRange);
+}
+
+// 显示算法分析
+function showAnalysis(a, p) {
+  document.getElementById('analysis').innerHTML =
+    `L (亮度) = <span class="num">${a.lum.toFixed(2)}</span><br>` +
+    `S (饱和度) = <span class="num">${a.sat.toFixed(2)}</span><br>` +
+    `C (对比度) = <span class="num">${a.contrast.toFixed(2)}</span><br>` +
+    `色彩倾向 = <span class="num">${a.colorBias}</span><br>` +
+    `────────────────<br>` +
+    `→ blur=<span class="num">${p.blur.toFixed(1)}px</span>　tint=<span class="num">${(p.tint*100).toFixed(0)}%</span><br>` +
+    `→ saturate=<span class="num">${p.saturate.toFixed(2)}</span><br>` +
+    `→ text=<span class="num">${p.textColor}</span>　weight=<span class="num">${p.fontWeight}</span>`;
+}
+
+// 在手动覆盖时，根据滑块值 + 已有 analysis 推断文字样式
+function inferTextStyle({ blur, tint, saturate, fontWeight }, analysis) {
+  // 没 analysis 时用默认浅色主题值
+  if (!analysis) {
+    return {
+      blur, tint, saturate, fontWeight,
+      textColor: '#16202e', textShadow: 'none', textTracking: 0,
+    };
+  }
+  // 用滑块 tint 反推亮度（假设白纱后变得压平、但原图色偏仍在）
+  // 启发式：tint 越高 → 越接近白底 → 文字越深
+  // 但保留对饱和暖色图的微调
+  let textColor, textShadow;
+  const lum = analysis.lum;
+  // 白纱后画面偏向"白"，所以文字统一用深色，仅在最亮场景用最强对比
+  if (lum < 0.4 || tint < 0.3) {
+    // 原图偏暗（说明白纱不足以压暗）→ 文字深+阴影
+    textColor = '#0a1322';
+    textShadow = '0 1px 2px rgba(255,255,255,0.4)';
+  } else if (lum < 0.65) {
+    textColor = '#1a2538';
+    textShadow = 'none';
+  } else {
+    // 原图已经很亮
+    textColor = '#0d1726';
+    textShadow = 'none';
+  }
+  // 字距：暗背景（高 tint 不足）字距略宽，让字呼吸
+  const textTracking = lum < 0.5 ? 0.2 : 0;
+  return { blur, tint, saturate, fontWeight, textColor, textShadow, textTracking };
+}
+
+// 初始化：默认无图状态
+syncSliders({ blur: 12, tint: 0.5, saturate: 1.2, fontWeight: 400 });
+applyAdaptive({ blur: 12, tint: 0.5, saturate: 1.2, textColor: '#16202e', fontWeight: 400, textShadow: 'none', textTracking: 0 });
+
+</script>
+
+</body>
+</html>

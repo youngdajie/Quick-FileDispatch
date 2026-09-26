@@ -84,6 +84,15 @@
   --hl-esc: #56c8d8;
   --hl-reg: #56c8d8;
   --hl-head: #63aef5;
+
+  /* 毛玻璃：浅色 + 已设自定义背景图时启用，强度由设置页滑块写进 --glass-blur。
+     初始值给的是「关」状态：blur 12px、wash 0.42 都是窗口默认值，
+     JS 真正启用玻璃效果时会根据滑块位置把 --glass-blur / --glass-alpha 改掉。 */
+  --glass-blur: 12px;
+  --glass-alpha: 0;
+  --glass-img: none;
+  --glass-wash: 0.42;
+  --glass-wash-soft: 0.36;
 }
 
 /* ============================================================
@@ -554,17 +563,8 @@ select.csel-native {
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
 .grid-2 > .span-2 { grid-column: 1 / -1; }
 
-/* 字段下方的帮助说明：比 .hint 更完整，允许换行、能做重点标注 */
-.field-help {
-  margin: -4px 0 15px; padding-left: 10px;
-  border-left: 2px solid var(--border);
-  font-size: 11.5px; line-height: 1.85; color: var(--muted);
-}
-.field-help b { color: var(--text-dim); font-weight: 600; }
-.field-help code { font-family: var(--mono); color: var(--accent-hi); }
-
 /* 普通说明文字（不给左侧竖线 / 不做引用块）：补充一句「会怎样、为什么」，
-   比 .field-help 更轻，紧贴上面的控件，不抢视觉 */
+   紧贴上面的控件，不抢视觉 */
 .field-note {
   margin: 7px 0 0;
   font-size: 11.5px; line-height: 1.75; color: var(--muted);
@@ -581,9 +581,6 @@ select.csel-native {
 .prof-count.is-warn {
   color: var(--warn); border-color: rgba(221, 162, 63, 0.3); background: rgba(221, 162, 63, 0.1);
 }
-
-.prof-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; }
-.prof-actions .hint { margin-left: auto; font-family: var(--mono); text-align: right; }
 
 /* 归档配置：正方形卡片网格（杰哥定的版式）。内容竖排分层：
    ①平台 + 使用中 ②仓库 ③别名 ④目录 ⑤徽章 ⑥验证日期 ⑦链接规则 ⑧操作。
@@ -808,6 +805,53 @@ select.csel-native {
 .bg-ops { display: flex; gap: 8px; flex-wrap: wrap; }
 .bg-box .field { margin-bottom: 0; }
 
+/* ------------------------------------------------ 智能调整结果展示 */
+.adaptive-result {
+  margin-top: 4px; padding: 10px 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  font-family: var(--mono); font-size: 11.5px;
+  color: var(--text-dim);
+  animation: techFade 0.24s var(--ease) both;
+}
+.adaptive-row {
+  display: grid; grid-template-columns: 84px 1fr 84px 1fr 84px 1fr 84px 1fr;
+  gap: 4px 8px; align-items: center;
+  padding: 3px 0;
+}
+.adaptive-row .k { color: var(--muted); }
+.adaptive-row .v { color: var(--text); font-weight: 600; }
+.adaptive-actions {
+  display: flex; align-items: center; gap: 9px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+/* ------------------------------------------------ git-lfs 状态行（设置页） */
+.lfs-row {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 12.5px; color: var(--text-dim);
+}
+.lfs-row .lfs-text { flex: 1; min-width: 0; }
+.lfs-row .btn { flex: 0 0 auto; }
+
+/* 状态圆点：灰=检查中、绿=就绪、红=缺失、蓝=进行中（呼吸） */
+.lfs-dot {
+  flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted);
+}
+.lfs-dot.ok { background: var(--ok); }
+.lfs-dot.bad { background: var(--warn); }
+.lfs-dot.busy {
+  background: var(--accent);
+  animation: lfsPulse 1s var(--ease) infinite;
+}
+@keyframes lfsPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
 /* ------------------------------------------------ 数字输入框：干掉原生角标，自绘步进 */
 .numfield { position: relative; display: flex; align-items: center; }
 .numfield input[type="number"] { width: 100%; padding-right: 28px; }
@@ -886,18 +930,6 @@ select.csel-native {
 .callout a { color: var(--accent); text-decoration: none; }
 .callout a:hover { text-decoration: underline; }
 .rule-desc { margin: -5px 0 13px; font-size: 12px; color: var(--muted); }
-.link-preview {
-  font-family: var(--mono); font-size: 11.5px; color: var(--text-dim);
-  background: var(--bg-soft); border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm); padding: 9px 11px; margin-bottom: 13px;
-  word-break: break-all; line-height: 1.7;
-}
-.git-status {
-  font-family: var(--mono); font-size: 11.5px; color: var(--muted);
-  padding: 8px 0 11px; line-height: 1.85;
-}
-.git-status .ok { color: var(--ok); }
-.git-status .bad { color: var(--danger); }
 
 /* ============================================================ 上传页 */
 
@@ -993,8 +1025,6 @@ html[data-theme="light"] .dropzone {
 .dropzone.over { background: var(--panel-2); transform: scale(1.005); }
 .dropzone.over .dz-dash-rect { stroke: var(--accent-hi); animation-duration: 0.5s; }
 .dropzone.over::after { opacity: 1; }
-/* dashoffset 位移一个 dash 周期（11px）：蚂蚁线无缝循环 */
-@keyframes dashFlow { to { stroke-dashoffset: -11px; } }
 
 .dz-inner { position: relative; z-index: 1; }
 .dz-icon { color: var(--accent); margin-bottom: 10px; animation: float 3.4s ease-in-out infinite; }
@@ -1127,8 +1157,6 @@ html[data-theme="light"] .dropzone {
 .up-imgset input[type="checkbox"]:disabled::after { opacity: 0; }
 .up-imgset input[type="checkbox"]:disabled + .uis-block-title,
 .up-imgset input[type="checkbox"]:disabled + .field-label { color: var(--muted); }
-/* 整行都能点；hover 只反馈在复选框自己身上，**文字不许变色**（杰哥点的） */
-.upc-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 /* 关掉开关时把参数区淡下去：视线立刻知道它不参与干活（压缩 / 水印各管各的） */
 .uis-block .grid-2 { transition: opacity 0.2s ease; }
 .uis-block:has(#upCompress:not(:checked)) .grid-2,
@@ -1166,6 +1194,54 @@ html[data-theme="light"] .dropzone {
   animation: stripes 0.65s linear infinite;
 }
 @keyframes stripes { to { background-position-x: 28px; } }
+
+/* 不确定态（后端还没算出总量 —— 典型是 git 正在枚举对象）：
+   条纹本身滑动表示「在动」，但宽度不表达进度。硬画一个 0% 会让人
+   以为卡死了，所以这时绝不显示确定的百分比。 */
+.progress-bar.indeterminate {
+  width: 32% !important;
+  transition: none;
+  animation: indetSlide 1.25s var(--ease) infinite;
+}
+.progress-bar.indeterminate::after { display: none; }
+@keyframes indetSlide {
+  from { margin-left: -32%; }
+  to { margin-left: 100%; }
+}
+
+/* ------------------------------------------------ 上传进度（阶段 + 字节 + 速度） */
+.up-progress { margin-top: 12px; }
+.up-progress-head {
+  display: flex; align-items: baseline; gap: 9px;
+  margin-bottom: 7px; font-size: 12px;
+}
+.up-progress-label { flex: 0 0 auto; color: var(--text); font-weight: 600; }
+.up-progress-detail {
+  flex: 1; min-width: 0;
+  color: var(--muted); font-family: var(--mono); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.up-progress-pct {
+  flex: 0 0 auto; color: var(--accent-hi);
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  /* 等宽数字：百分比跳动时右侧不跟着抖 */
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------ LFS 开关（仅 CNB） */
+.up-lfs {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 13px; padding: 11px 13px;
+  border: 1px solid var(--border-soft); border-radius: 9px;
+  background: var(--bg-soft); cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.up-lfs:hover { border-color: var(--border); }
+.up-lfs:has(input:checked) { border-color: var(--accent-line); background: var(--accent-soft); }
+.up-lfs input[type="checkbox"] { margin-top: 2px; flex: 0 0 auto; }
+.up-lfs-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.up-lfs-text b { font-size: 12.5px; color: var(--text); font-weight: 600; }
+.up-lfs-text .hint { line-height: 1.65; }
 
 .queue-list { max-height: 420px; overflow-y: auto; }
 .q-item {
@@ -1876,8 +1952,6 @@ html[data-theme="light"] .about-logo {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.loading-line { display: flex; align-items: center; gap: 10px; padding: 26px; color: var(--muted); font-size: 12.5px; justify-content: center; }
-
 /* ============================================================ 新手指引 */
 
 /* 引导期间主界面退到后面去，但不清空布局（避免回来时重新渲染） */
@@ -2180,12 +2254,6 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 }
 
 /* ============================================================ 导入体检报告 */
-.imp-report { max-height: 52vh; overflow-y: auto; }
-.imp-group { margin-bottom: 14px; }
-.imp-group > .ig-title {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 12.5px; font-weight: 700; margin-bottom: 8px;
-}
 .imp-item {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 9px 11px; border-radius: 8px; margin-bottom: 7px;
@@ -2254,7 +2322,6 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
      同一张按视口对齐的图 —— 视觉上就是「透过玻璃看背景」。
      面板自身底色转透明，白纱在层里统一给，正文对比度由白纱透明度控制。
    ============================================================ */
-:root { --glass-blur: 12px; --glass-alpha: 0; --glass-img: none; --glass-wash: 0.42; --glass-wash-soft: 0.36; }
 
 .glass-layer { display: none; }
 
@@ -2387,11 +2454,6 @@ html[data-theme="dark"] .card { background: rgba(14, 22, 34, 0.88); }
 @keyframes theme-icon-pop {
   from { transform: rotate(-35deg) scale(0.6); opacity: 0.35; }
   to { transform: none; opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  #btnTheme.ripple::before,
-  #btnTheme.ripple::after,
-  #btnTheme.ripple svg { animation: none; }
 }
 
 /* ============================================================

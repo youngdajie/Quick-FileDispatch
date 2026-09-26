@@ -2,7 +2,7 @@ package ipc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -13,8 +13,10 @@ import (
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/cloud"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/cnb"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/lfs"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/local"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/paths"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/progress"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/textenc"
 )
 
@@ -36,12 +38,6 @@ func (e *Env) conn() (map[string]any, *cloud.Client, error) {
 	apiBase, _ := cfg["apiBase"].(string)
 	client := cloud.New(strOf(cfg["platform"]), owner, repo, branch, token, apiBase)
 	return cfg, client, nil
-}
-
-// mustClient 取客户端，缺配置时报错。
-// 分离出这个薄封装只是为了让每个通道里少写三行相同的判空。
-func (e *Env) mustClient() (map[string]any, *cloud.Client, error) {
-	return e.conn()
 }
 
 func strOf(v any) string {
@@ -98,7 +94,7 @@ func (e *Env) cloudVerify() (any, error) {
 		// 单独记一步，让用户看得出「Token 是好的，只是没这个仓库的权限」。
 		addStep("仓库访问", false, friendly(err))
 		out["steps"] = steps
-		out["ok"] = false
+		// out["ok"] 末尾统一算（line 120），这里不用再赋 false
 		return out, nil
 	}
 	out["repo"] = repo
@@ -233,8 +229,15 @@ func (e *Env) cloudUpload(payload map[string]any) (any, error) {
 	if len(files) == 0 {
 		return map[string]any{"ok": false, "message": "没有待上传的文件"}, nil
 	}
+	// 勾了「用 LFS 存储」才走对象存储；没勾就是原来的行为（内容进 git 仓库）。
+	useLFS := boolOf(payload["useLFS"])
+	// 进度上报器。Progress 没接上时是 nil，而 Reporter 的所有方法都是
+	// nil-safe，所以下面一行判空都不用写。
+	rep := e.Progress.Task("upload")
+
 	cfg, client, err := e.conn()
 	if err != nil {
+		rep.Fail(err)
 		return nil, err
 	}
 	platform := cloud.NormalizePlatform(strOf(cfg["platform"]))
@@ -276,15 +279,31 @@ func (e *Env) cloudUpload(payload map[string]any) (any, error) {
 		var batch []map[string]any
 		var batchErr error
 		if isCNB(cfg) {
-			batch, batchErr = cnb.UploadBatch(context.Background(), e.cnbConn(cfg), e.TmpRoot, toCNBFiles(accepted), msg)
+			// 勾了 LFS 才需要 git-lfs。它可能要现下载（约 6MB），
+			// 所以**先准备好再开始传** —— 失败就直接返回，
+			// 不让用户白等一轮压缩和克隆。
+			if useLFS {
+				if err := e.ensureLFS(rep); err != nil {
+					rep.Fail(err)
+					return nil, err
+				}
+			}
+			batch, batchErr = cnb.UploadBatch(context.Background(), e.cnbConn(cfg), e.TmpRoot,
+				toCNBFiles(accepted), msg, cnb.UploadOptions{
+					UseLFS:     useLFS,
+					OnProgress: gitProgressBridge(rep),
+				})
 		} else {
 			var rs []cloud.Result
-			rs, batchErr = client.UploadBatch(accepted, msg)
+			rs, batchErr = client.UploadBatch(accepted, msg, func(done, total int64) {
+				rep.Report(progress.PhaseUpload, done, total, "")
+			})
 			for _, r := range rs {
 				batch = append(batch, map[string]any{"path": r.Path, "ok": r.OK, "error": r.Error})
 			}
 		}
 		if batchErr != nil {
+			rep.Fail(batchErr)
 			// 整批失败：给每条都记上同一个原因，界面上才知道是「一个都没传上去」
 			for _, f := range accepted {
 				results = append(results, map[string]any{
@@ -319,6 +338,13 @@ func (e *Env) cloudUpload(payload map[string]any) (any, error) {
 			}
 		}
 	}
+	// 进度条的终态。成功/失败都要明确推一次 —— 否则前端会一直停在
+	// 「上传中 87%」，直到用户自己刷新页面。
+	if uploaded > 0 {
+		rep.Done(fmt.Sprintf("已上传 %d 个文件", uploaded))
+	} else if len(results) > 0 {
+		rep.Fail(errors.New("一个文件都没传上去"))
+	}
 	var sync any
 	if uploaded > 0 {
 		sync = e.syncLocal("upload")
@@ -327,6 +353,90 @@ func (e *Env) cloudUpload(payload map[string]any) (any, error) {
 		"ok": uploaded > 0, "results": results, "sync": sync,
 		"uploaded": uploaded, "failed": len(results) - uploaded,
 	}, nil
+}
+
+/* ------------------------------------------------------------ git-lfs */
+
+// lfsStatus 报告 git-lfs 的可用状态。
+//
+// **不触发下载** —— 设置页一打开就问一下，不该因此产生网络流量。
+// 真正的安装是 lfsInstall（可能几十秒，带进度事件）。
+func (e *Env) lfsStatus() map[string]any {
+	exe, _, ok := lfs.Find(e.ConfigDir)
+	ownPath := lfs.ExePath(e.ConfigDir)
+	out := map[string]any{
+		"available": ok,
+		"path":      exe,
+		// 程序内置要装的版本（界面上说明「点安装会装哪个版本」）
+		"shipsVersion": lfs.Version,
+		// 是不是程序自己装的那一份（false = 用的是用户系统里已有的）
+		"managed": ok && exe == ownPath,
+	}
+	if ok {
+		out["version"] = lfs.InstalledVersion(context.Background(), exe)
+	}
+	return out
+}
+
+// lfsInstall 下载并安装 git-lfs，带进度事件。
+//
+// 幂等：已经装过时 lfs.Ensure 会直接返回，不会重复下载。
+// 所以前端不用「先查再调」，无脑调它就对了。
+func (e *Env) lfsInstall() (any, error) {
+	rep := e.Progress.Task("lfs-install")
+	binDir, err := lfs.Ensure(context.Background(), e.ConfigDir, func(status string) {
+		rep.Report(progress.PhaseLFS, 0, 0, status)
+	})
+	if err != nil {
+		rep.Fail(err)
+		return nil, err
+	}
+	if binDir != "" {
+		// 装完立刻生效，不用重启程序
+		git.SetExtraPath(binDir)
+	}
+	rep.Done("git-lfs 已就绪")
+	return map[string]any{"ok": true, "path": lfs.ExePath(e.ConfigDir)}, nil
+}
+
+/* ------------------------------------------------------------ 上传辅助 */
+
+// ensureLFS 确保 git-lfs 可用（没装就自动下载安装）。
+//
+// 装好后必须把 bin 目录注入 git 子进程的 PATH：git 执行 filter.lfs.clean
+// 时要找名叫 git-lfs 的可执行文件，找不到的话 `git add` 会直接报错 ——
+// 而且报的是「git-lfs: command not found」这种用户完全看不懂的话。
+func (e *Env) ensureLFS(rep *progress.Reporter) error {
+	binDir, err := lfs.Ensure(context.Background(), e.ConfigDir, func(status string) {
+		rep.Report(progress.PhaseLFS, 0, 0, status)
+	})
+	if err != nil {
+		return err
+	}
+	if binDir != "" {
+		git.SetExtraPath(binDir)
+	}
+	return nil
+}
+
+// gitProgressBridge 把 git 包的进度回调接到上传上报器上。
+//
+// 两层之间用函数类型桥接而不是直接互相引用：cnb / git 那一层不需要知道
+// 「进度最终去了 SSE 还是别处」，ipc 这一层本来就两边都认识。
+func gitProgressBridge(rep *progress.Reporter) git.ProgressFunc {
+	if rep == nil {
+		return nil
+	}
+	return func(phase string, bytes, total int64, msg string) {
+		rep.Report(phase, bytes, total, msg)
+	}
+}
+
+// boolOf 取布尔值，取不到给 false。渲染层传上来的 JSON 里，
+// 字段缺失是常态（老版本前端不会传 useLFS）。
+func boolOf(v any) bool {
+	b, _ := v.(bool)
+	return b
 }
 
 // fileTooBigMsg：文件超限的提示跟着平台走 ——
@@ -471,7 +581,8 @@ func (e *Env) cloudReplace(payload map[string]any) (any, error) {
 			return nil, err
 		}
 	} else {
-		rs, err2 := client.UploadBatch([]cloud.File{{Path: rel, Buff: buf}}, "chore: 替换 "+rel)
+		// 替换是单个文件、用户没在等进度条，所以回调传 nil
+		rs, err2 := client.UploadBatch([]cloud.File{{Path: rel, Buff: buf}}, "chore: 替换 "+rel, nil)
 		if err2 != nil {
 			return nil, err2
 		}
@@ -1099,15 +1210,21 @@ func min(a, b int) int {
 	return b
 }
 
-// decodeBase64 解 base64，容忍 URL 安全变体和缺失的填充。
+// decodeBase64 解一段 base64 字符串。
+//
+// 渲染层走 src/renderer/js/lib/bytes.js 的 FileReader.readAsDataURL，
+// 产物是**带 padding 的标准 base64**（+ 和 /）。这里用 base64.StdEncoding：
+//
+//   - 标准字符集（不认 - / _ 的 URL 安全变体）
+//   - 必须有 padding（=）—— FileReader 总是给
+//
+// 旧实现走 json.Marshal + json.Unmarshal 凑效，是因为 base64 字符集
+// 恰好没有 JSON 需要转义的字符 —— 看起来"碰巧能行"，但没有任何
+// 注释说明意图，新人改 base64 解码时极易引入回归。
 func decodeBase64(s string) ([]byte, error) {
-	jsonBytes, err := json.Marshal(s)
+	out, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return nil, err
-	}
-	var out []byte
-	if err := json.Unmarshal(jsonBytes, &out); err != nil {
-		return nil, BadPayload("这段不是合法的 base64")
+		return nil, BadPayload("这段不是合法的 base64：" + err.Error())
 	}
 	return out, nil
 }

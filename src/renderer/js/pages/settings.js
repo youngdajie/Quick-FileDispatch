@@ -26,6 +26,9 @@ import {
 } from '../lib/appearance.js';
 import { brandIcon, BRAND_TILE } from '../lib/brandicons.js';
 import { openConfigWizard } from '../lib/config-wizard.js';
+import { analyzeImage, computeAdaptive } from '../lib/glass-adaptive.js';
+// git-lfs 安装进度走 SSE（与上传进度同一条流，靠 task 字段区分）
+import { openProgressStream } from '../lib/progress.js';
 
 const CPLinks = window.CPLinks;
 
@@ -444,6 +447,133 @@ function fillGlobal() {
   fillBgPreview();
 }
 
+/* ---------------- 智能调整（adaptive glass） ----------------
+   用户主动触发：拿当前 bgImage，调算法，把推荐值显示在按钮下方。
+   完全不改现状 —— 必须用户再点「应用」才落盘。 */
+
+const BIAS_NAME = { warm: '暖', cool: '冷', green: '绿', neutral: '中性' };
+
+/** 分析当前背景图 + 显示推荐值 */
+async function runAdaptive() {
+  const hint = $('#cfgAdaptiveHint');
+  const result = $('#adaptiveResult');
+  hint.textContent = '分析中…';
+  result.hidden = true;
+
+  const img = (state.cfg && state.cfg.ui && state.cfg.ui.bgImage) || '';
+  if (!img) {
+    hint.textContent = '还没选背景图，先「选择图片…」';
+    return;
+  }
+  // 用主进程代理 URL 加载（私有目录 /__local 才能读）
+  const url = window.cloudpic.localUrl(img);
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.onload = () => {
+    const a = analyzeImage(image);
+    const p = computeAdaptive(a);
+    $('#arLum').textContent = a.lum.toFixed(2);
+    $('#arSat').textContent = a.sat.toFixed(2);
+    $('#arContrast').textContent = a.contrast.toFixed(2);
+    $('#arBias').textContent = BIAS_NAME[a.colorBias] || a.colorBias;
+    $('#arBlur').textContent = p.blur + 'px';
+    $('#arWeight').textContent = String(p.fontWeight);
+    hint.textContent = '分析完成';
+    result.hidden = false;
+    $('#adaptiveOk').textContent = '';
+    // 暂存到 dataset，apply 时读
+    result.dataset.recommendedBlur = String(p.blur);
+  };
+  image.onerror = () => {
+    hint.textContent = '加载图片失败，请检查图片是否还在原位置';
+    result.hidden = true;
+  };
+  image.src = url;
+}
+
+/** 应用推荐 blur：动滑块 + 触发现有 onBlur（落盘 + 重算玻璃） */
+async function applyAdaptiveBlur() {
+  const result = $('#adaptiveResult');
+  const recommended = result.dataset.recommendedBlur;
+  if (!recommended) return;
+  const v = Number(recommended);
+  const slider = $('#cfgBgBlur');
+  const valEl = $('#cfgBgBlurVal');
+  if (slider) {
+    slider.value = v;
+    // 触发现有 input 事件 → onBlur → applyGlass + saveBlur
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  if (valEl) valEl.textContent = fmtBlur(v);
+  $('#adaptiveOk').textContent = '已应用，再拖滑块可继续微调';
+}
+
+/* ---------------- git-lfs 状态与安装 ---------------- */
+
+/**
+ * 刷新 git-lfs 状态。
+ *
+ * 查询**不触发下载**（后端只是看本地有没有），所以可以在页面初始化时
+ * 顺手调一次 —— 不会因为用户打开设置页就产生 6MB 流量。
+ */
+async function refreshLfsStatus() {
+  const dot = $('#lfsDot');
+  const text = $('#lfsText');
+  const btn = $('#btnLfsInstall');
+  if (!text) return;
+  try {
+    const st = await window.cloudpic.app.lfsStatus();
+    if (st && st.available) {
+      dot.className = 'lfs-dot ok';
+      const ver = st.version ? ' v' + st.version : '';
+      const from = st.managed ? '程序安装' : '系统已有';
+      text.textContent = '已就绪' + ver + ' · ' + from;
+      btn.hidden = true;
+    } else {
+      dot.className = 'lfs-dot bad';
+      text.textContent = '未安装 —— 上传时勾选 LFS 会自动装，也可以现在装';
+      btn.hidden = false;
+    }
+  } catch (e) {
+    dot.className = 'lfs-dot bad';
+    text.textContent = '状态检查失败：' + (e.message || String(e));
+    btn.hidden = false;
+  }
+}
+
+/**
+ * 安装 git-lfs。
+ *
+ * 安装过程要下 6MB，必须有反馈 —— 进度从 /ipc/events 的 SSE 流来
+ * （事件 task 为 lfs-install）。这里只订阅、不改别的。
+ */
+async function installLfs() {
+  const dot = $('#lfsDot');
+  const text = $('#lfsText');
+  const btn = $('#btnLfsInstall');
+  if (btn) btn.disabled = true;
+  if (dot) dot.className = 'lfs-dot busy';
+  if (text) text.textContent = '正在安装…';
+
+  const stop = openProgressStream((ev) => {
+    if (ev && ev.task === 'lfs-install' && ev.message && text) {
+      text.textContent = ev.message;
+    }
+  });
+
+  try {
+    await window.cloudpic.app.lfsInstall();
+    ok('git-lfs 安装完成');
+    await refreshLfsStatus();
+  } catch (e) {
+    err(e.message || String(e));
+    await refreshLfsStatus();
+  } finally {
+    stop();
+    if (btn) btn.disabled = false;
+  }
+}
+
 /* ---------------------------------------------------------------- 页面 */
 
 export default {
@@ -503,6 +633,15 @@ export default {
     // 外观：自定义背景图（仅浅色生效）
     $('#btnBgPick').onclick = pickBgImage;
     $('#btnBgClear').onclick = clearBgImage;
+
+    // 外观：智能调整背景图参数
+    $('#btnBgAdaptive').onclick = runAdaptive;
+    $('#btnApplyBlur').onclick = applyAdaptiveBlur;
+
+    // git-lfs：状态查询 + 一键安装
+    const lfsBtn = $('#btnLfsInstall');
+    if (lfsBtn) lfsBtn.onclick = installLfs;
+    refreshLfsStatus();
 
     // 外观：毛玻璃强度。拖动时本地立刻重算整套玻璃状态，不等落盘往返
     const blurInput = $('#cfgBgBlur');

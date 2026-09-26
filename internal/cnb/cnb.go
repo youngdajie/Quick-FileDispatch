@@ -27,7 +27,9 @@ import (
 	"time"
 
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/lfs"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/paths"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/progress"
 )
 
 // Conn 是写入一条 CNB 仓库所需的全部信息。
@@ -72,11 +74,34 @@ func remoteMatches(remote, platform, owner, repo string) bool {
 	return strings.Contains(u, host) && strings.Contains(u, tail)
 }
 
+// UploadOptions 是 CNB 上传的可选项。
+//
+// 用 options 结构而不是给 UploadBatch 加若干个参数：上传这条链路以后
+// 大概率还会加东西（并发、重试、分片），参数列表一路加下去会变成
+// 一串谁也不敢动的 bool。
+type UploadOptions struct {
+	// UseLFS 为 true 时这批文件走 Git LFS（CNB 侧计入「对象存储」额度，
+	// 与「仓库存储」分开计费）。**调用方负责确保 git-lfs 已安装** ——
+	// 安装是耗时且可能失败的操作，应该由上层在开始前就准备好。
+	UseLFS bool
+	// OnProgress 是进度回调，可为 nil。
+	OnProgress git.ProgressFunc
+}
+
 // withWorkspace 在一个可用的 Git 工作区里执行 fn，用完清理临时工作区。
 //
 // fn 的返回值会原样透出，所以调用方能拿到 git 通道的真实结果
 // （成功 / 失败原因），不至于被这一层吞掉。
-func withWorkspace(ctx context.Context, c Conn, tmpRoot string, fn func(dir string) (git.OpResult, error)) (*Workspace, git.OpResult, error) {
+//
+// onStatus 用来上报「正在准备仓库」这类无百分比的阶段信息（可为 nil）。
+// 它主要给上传链路用 —— 临时克隆大仓库要几十秒，不给反馈就像卡死了。
+func withWorkspace(ctx context.Context, c Conn, tmpRoot string, onStatus func(string), fn func(dir string) (git.OpResult, error)) (*Workspace, git.OpResult, error) {
+	say := func(s string) {
+		if onStatus != nil {
+			onStatus(s)
+		}
+	}
+
 	bound := strings.TrimSpace(c.LocalDir)
 	if bound != "" {
 		if st, err := os.Stat(bound); err == nil && st.IsDir() && git.IsRepo(ctx, bound) {
@@ -84,6 +109,7 @@ func withWorkspace(ctx context.Context, c Conn, tmpRoot string, fn func(dir stri
 			remote, _ := sum["remote"].(string)
 			if remoteMatches(remote, c.Platform, c.Owner, c.Repo) {
 				git.ConfigureIdentity(ctx, bound)
+				say("已在本地目录就位")
 				res, err := fn(bound)
 				return &Workspace{Used: "local", Dir: bound}, res, err
 			}
@@ -97,6 +123,7 @@ func withWorkspace(ctx context.Context, c Conn, tmpRoot string, fn func(dir stri
 	}
 
 	tmp := filepath.Join(tmpRoot, "w"+time.Now().Format("150405.000")+randSuffix())
+	say("正在准备临时工作区（克隆仓库）…")
 	cr := git.Clone(ctx, git.CloneParams{
 		Platform: c.Platform, Owner: c.Owner, Repo: c.Repo,
 		Branch: c.Branch, Token: c.Token, Dir: tmp,
@@ -108,14 +135,19 @@ func withWorkspace(ctx context.Context, c Conn, tmpRoot string, fn func(dir stri
 	// 留在用户磁盘上就是一堆没人认领的垃圾
 	defer removeDir(tmp)
 
+	say("仓库已就位，开始写入")
 	res, err := fn(tmp)
 	return &Workspace{Used: "temp", Dir: tmp}, res, err
 }
 
-// removeDir 删掉临时工作区。删不掉就算了 ——
-// 只是收尾清理，别因为清理失败让主流程报错（下次启动可以再清）。
+// removeDir 删掉临时工作区。删不掉就在 stderr 打一条 ——
+// 不打用户会被「磁盘越堆越满」咬到，但**仍**不返回 error：
+// 主流程已经成功了，再因为清理失败让前端看到一条红提示会让人以为
+// 上传出问题，下次启动可以再清（或用户手动删）。
 func removeDir(dir string) {
-	_ = os.RemoveAll(dir)
+	if err := os.RemoveAll(dir); err != nil {
+		fmt.Fprintf(os.Stderr, "[cnb] 清理临时工作区失败：%v（%s）\n", err, dir)
+	}
 }
 
 var seq int64
@@ -185,13 +217,6 @@ func movePaths(dir string, items []MoveItem) error {
 	return nil
 }
 
-// commit 在工作区里提交并推送。
-func (c *Conn) commit(ctx context.Context, dir, message string) (git.OpResult, error) {
-	return git.CommitAndPush(ctx, git.CommitParams{
-		Platform: c.Platform, Owner: c.Owner, Repo: c.Repo,
-		Branch: c.Branch, Token: c.Token, Dir: dir, Message: message,
-	}), nil
-}
 
 /* ------------------------------------------------------------ 对外 */
 
@@ -199,7 +224,10 @@ func (c *Conn) commit(ctx context.Context, dir, message string) (git.OpResult, e
 //
 // 整批是一次提交：20 个文件在仓库里只出现一条提交记录，
 // 和 GitHub 的 Git Data API 效果对齐（界面上不会看出两个平台的差别）。
-func UploadBatch(ctx context.Context, c Conn, tmpRoot string, files []File, message string) ([]map[string]any, error) {
+//
+// opts.UseLFS 为 true 时，这批文件会被 Git LFS 跟踪 —— 内容进 CNB 的
+// 对象存储（免费 100GiB，与仓库存储分开算），仓库里只留一个指针。
+func UploadBatch(ctx context.Context, c Conn, tmpRoot string, files []File, message string, opts UploadOptions) ([]map[string]any, error) {
 	if len(files) == 0 {
 		return []map[string]any{}, nil
 	}
@@ -207,11 +235,38 @@ func UploadBatch(ctx context.Context, c Conn, tmpRoot string, files []File, mess
 	if strings.TrimSpace(msg) == "" {
 		msg = "chore: 通过 JIE 分发服务上传"
 	}
-	ws, res, err := withWorkspace(ctx, c, tmpRoot, func(dir string) (git.OpResult, error) {
+	onStatus := func(s string) {
+		if opts.OnProgress != nil {
+			opts.OnProgress(progress.PhasePrepare, 0, 0, s)
+		}
+	}
+	ws, res, err := withWorkspace(ctx, c, tmpRoot, onStatus, func(dir string) (git.OpResult, error) {
+		// LFS 必须**在写文件之前**启用：git add 时才会走 filter.lfs.clean
+		// 把内容交给 git-lfs 存起来。反过来做的话，文件已经以普通 blob
+		// 进过暂存区了，再 track 也救不回来。
+		if opts.UseLFS {
+			if opts.OnProgress != nil {
+				opts.OnProgress(progress.PhaseLFS, 0, 0, "正在启用 LFS 跟踪…")
+			}
+			paths := make([]string, 0, len(files))
+			for _, f := range files {
+				paths = append(paths, f.Path)
+			}
+			if e := lfs.EnableInRepo(ctx, lfs.EnableParams{
+				RepoDir:   dir,
+				Paths:     paths,
+				RemoteURL: git.RemoteDir(c.Platform, c.Owner, c.Repo),
+			}); e != nil {
+				return git.OpResult{Message: e.Error()}, nil
+			}
+		}
 		if e := writeFiles(dir, files); e != nil {
 			return git.OpResult{Message: e.Error()}, nil
 		}
-		return c.commit(ctx, dir, msg)
+		return git.CommitAndPushStream(ctx, git.CommitParams{
+			Platform: c.Platform, Owner: c.Owner, Repo: c.Repo,
+			Branch: c.Branch, Token: c.Token, Dir: dir, Message: msg,
+		}, opts.OnProgress), nil
 	})
 	if err != nil {
 		return nil, err
@@ -240,9 +295,12 @@ func DeleteBatch(ctx context.Context, c Conn, tmpRoot string, rels []string, mes
 	if strings.TrimSpace(msg) == "" {
 		msg = "chore: 删除文件"
 	}
-	ws, res, err := withWorkspace(ctx, c, tmpRoot, func(dir string) (git.OpResult, error) {
+	ws, res, err := withWorkspace(ctx, c, tmpRoot, nil, func(dir string) (git.OpResult, error) {
 		deletePaths(dir, rels)
-		return c.commit(ctx, dir, msg)
+		return git.CommitAndPush(ctx, git.CommitParams{
+			Platform: c.Platform, Owner: c.Owner, Repo: c.Repo,
+			Branch: c.Branch, Token: c.Token, Dir: dir, Message: msg,
+		}), nil
 	})
 	if err != nil {
 		return nil, err
@@ -267,11 +325,14 @@ func MoveBatch(ctx context.Context, c Conn, tmpRoot string, items []MoveItem, me
 	if strings.TrimSpace(msg) == "" {
 		msg = fmt.Sprintf("chore: 移动 %d 个文件", len(items))
 	}
-	ws, res, err := withWorkspace(ctx, c, tmpRoot, func(dir string) (git.OpResult, error) {
+	ws, res, err := withWorkspace(ctx, c, tmpRoot, nil, func(dir string) (git.OpResult, error) {
 		if e := movePaths(dir, items); e != nil {
 			return git.OpResult{Message: e.Error()}, nil
 		}
-		return c.commit(ctx, dir, msg)
+		return git.CommitAndPush(ctx, git.CommitParams{
+			Platform: c.Platform, Owner: c.Owner, Repo: c.Repo,
+			Branch: c.Branch, Token: c.Token, Dir: dir, Message: msg,
+		}), nil
 	})
 	if err != nil {
 		return nil, err
@@ -293,11 +354,14 @@ func ReplaceFile(ctx context.Context, c Conn, tmpRoot, rel string, buff []byte, 
 	if strings.TrimSpace(msg) == "" {
 		msg = "chore: 替换 " + rel
 	}
-	_, res, err := withWorkspace(ctx, c, tmpRoot, func(dir string) (git.OpResult, error) {
+	_, res, err := withWorkspace(ctx, c, tmpRoot, nil, func(dir string) (git.OpResult, error) {
 		if e := writeFiles(dir, []File{{Path: rel, Buff: buff}}); e != nil {
 			return git.OpResult{Message: e.Error()}, nil
 		}
-		return c.commit(ctx, dir, msg)
+		return git.CommitAndPush(ctx, git.CommitParams{
+			Platform: c.Platform, Owner: c.Owner, Repo: c.Repo,
+			Branch: c.Branch, Token: c.Token, Dir: dir, Message: msg,
+		}), nil
 	})
 	if err != nil {
 		return err
