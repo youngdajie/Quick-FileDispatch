@@ -102,13 +102,32 @@ $:
             cat /tmp/resp.json; echo
             # 同一个 tag 重跑会撞「版本已存在」，那不算错；除此之外的失败
             # 必须把流水线搞红 —— 2xx 就继续吞，下次发版又是静默空页面
+            # 409 = 这个 tag 的版本页已经在了。
+            #
+            # 2026-09-26 实踩：tag 推早了一步，旧代码先跑出一版流水线，
+            # 而那时 .cnb.yml 里还没有「构建」，于是它直接建出了一个**空的**
+            # 版本页。等代码补上再重跑，POST 就撞 409。
+            #
+            # 注意服务端回的是 {"errcode":409,"errmsg":"conflict"} ——
+            # 里面**没有**"已存在"字样，只 grep 文案会漏判、把流水线搞红。
+            #
+            # 这里不直接放行，而是**删掉重建**：已存在的那份可能是空的、
+            # 正文也是旧的；重建能保证正文用的是当前 docs/releases/<tag>.md。
+            if [ "$CODE" = "409" ] || grep -qE "已存在|already exist|conflict" /tmp/resp.json; then
+              echo "版本已存在，删掉重建（保证正文是当前的）"
+              RID=$(curl -sS "$URL?pageSize=100"                 -H "Authorization: Bearer ${CNB_TOKEN}"                 -H "Accept: application/vnd.cnb.api+json"                 | jq -r --arg t "$CNB_BRANCH" '.[] | select(.tag_name==$t) | .id' | head -1)
+              if [ -n "$RID" ] && [ "$RID" != "null" ]; then
+                curl -sS -o /dev/null -X DELETE "$URL/$RID"                   -H "Authorization: Bearer ${CNB_TOKEN}"                   -H "Accept: application/vnd.cnb.api+json"
+                echo "  已删除旧的版本页 id=$RID"
+              fi
+              CODE=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST "$URL"                 -H "Authorization: Bearer ${CNB_TOKEN}"                 -H "Content-Type: application/json"                 -H "Accept: application/vnd.cnb.api+json"                 -d "$PAYLOAD")
+              echo "  重建 -> HTTP $CODE"
+            fi
+
             case "$CODE" in
               2*) echo "版本已就绪"; exit 0 ;;
             esac
-            if grep -qE "已存在|already exist" /tmp/resp.json; then
-              echo "版本已存在，忽略"; exit 0
-            fi
-            echo "创建版本失败（HTTP $CODE）"; exit 1
+            echo "创建版本失败（HTTP $CODE）"; cat /tmp/resp.json; exit 1
 
         # ---------------------------------------------------------- 3. 挂附件
         #
