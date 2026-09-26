@@ -216,15 +216,32 @@ async function main() {
     check(cnb.hasBox, 'LFS 复选框存在');
     check(cnb.hintHidden === true, '未勾选时不显示「首次会下载」提醒');
 
-    // 勾上它，提醒应该出现
+    // 勾上它，应该弹确认窗；点「继续」后保持勾选，且提醒出现
     await js(`(() => {
       const b = document.getElementById('upLfs');
       if (b) { b.checked = true; b.dispatchEvent(new Event('change', { bubbles: true })); }
       return 1;
     })()`);
     await sleep(300);
-    const afterCheck = await js(`(() => ({ hintHidden: (document.getElementById('upLfsHint') || {}).hidden }))()`);
-    check(afterCheck.hintHidden === false, '勾选后出现「首次会下载 git-lfs」提醒');
+    const modalAppeared = await js(`(() => {
+      const t = document.querySelector('.modal .mh-title');
+      return { title: t ? t.textContent : '', hasFoot: !!document.querySelector('.modal-foot') };
+    })()`);
+    check((modalAppeared.title || '').indexOf('LFS') >= 0, '勾选弹出「用 LFS 对象存储」确认窗', modalAppeared.title);
+    // 点最后一个按钮（继续）
+    await js(`(() => {
+      const btns = document.querySelectorAll('.modal-foot .btn');
+      const last = btns[btns.length - 1];
+      if (last) last.click();
+      return 1;
+    })()`);
+    await sleep(300);
+    const afterCheck = await js(`(() => ({
+      hintHidden: (document.getElementById('upLfsHint') || {}).hidden,
+      checked: (document.getElementById('upLfs') || {}).checked
+    }))()`);
+    check(afterCheck.hintHidden === false, '确认后出现「首次会下载 git-lfs」提醒');
+    check(afterCheck.checked === true, '确认后保持勾选');
 
     // 切回 GitHub，开关应隐藏
     await js(`(async () => {
@@ -353,24 +370,41 @@ async function main() {
     // 当前平台是 github，所以 mini 的 LFS 行也该是隐藏的
     check(mini.rowHidden === true, 'GitHub 下 mini 的 LFS 开关也隐藏（与主页面一致）');
 
-    console.log('\n=== 7. LFS 勾选跨界面共享（主页面 ↔ mini）===');
+    console.log('\n=== 7. LFS 默认不勾 + 取消回退 ===');
     // 切到 CNB，这样 LFS 开关才可见
     await js(`(async () => { await window.__state.patch({ platform: 'cnb' }); return 1; })()`);
     await sleep(800);
     await js(`(() => { const n = document.querySelector('.nav-item[data-page="upload"]'); if (n) n.click(); return 1; })()`);
     await sleep(600);
 
-    // 在主上传页勾上
+    // 主页面 LFS 应默认不勾（不再记住上次的选择）
+    const defaultUnchecked = await js(`(() => {
+      const b = document.getElementById('upLfs');
+      return b ? !b.checked : false;
+    })()`);
+    check(defaultUnchecked, 'LFS 默认不勾');
+
+    // 勾选 → 弹窗 → 点「取消」→ 回退为不勾
     await js(`(() => {
       const b = document.getElementById('upLfs');
       if (b) { b.checked = true; b.dispatchEvent(new Event('change', { bubbles: true })); }
       return 1;
     })()`);
     await sleep(300);
-    const stored = await js(`(() => { try { return localStorage.getItem('qfd-use-lfs'); } catch (e) { return null; } })()`);
-    check(stored === '1', '勾选后写进了 localStorage', String(stored));
+    await js(`(() => {
+      const btns = document.querySelectorAll('.modal-foot .btn');
+      const first = btns[0]; // 取消
+      if (first) first.click();
+      return 1;
+    })()`);
+    await sleep(300);
+    const afterCancel = await js(`(() => {
+      const b = document.getElementById('upLfs');
+      return b ? !b.checked : false;
+    })()`);
+    check(afterCancel, '取消后 LFS 回退为不勾');
 
-    // 重开 mini：应该继承这个勾选
+    // 重开 mini：应该也默认不勾
     await js(`(async () => {
       const m = await import('/js/lib/upload-mini.js');
       m.openMiniUpload('', function () {});
@@ -387,7 +421,7 @@ async function main() {
     })()`);
     console.log('   ', JSON.stringify(miniAfter));
     check(miniAfter.rowHidden === false, 'CNB 下 mini 的 LFS 开关可见');
-    check(miniAfter.boxChecked === true, 'mini 继承了主页面的勾选');
+    check(miniAfter.boxChecked === false, 'mini 打开时 LFS 也默认不勾');
 
     // 清掉弹窗，别影响后面的检查
     await js(`(() => { const w = document.getElementById('miniUpWrap'); if (w) w.remove(); return 1; })()`);

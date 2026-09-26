@@ -975,8 +975,12 @@ export default {
     // 并同步「首次会下载 git-lfs」那句提醒的显隐
     const lfsBox = $('#upLfs');
     if (lfsBox) {
-      lfsBox.addEventListener('change', () => {
-        LFS.rememberLfs(lfsBox.checked);
+      // 勾上先弹确认（对象存储无法 jsDelivr 加速），取消就回退不勾
+      lfsBox.addEventListener('change', async () => {
+        if (lfsBox.checked) {
+          const ok = await LFS.confirmLfsEnable();
+          if (!ok) lfsBox.checked = false;
+        }
         syncLfsHint();
       });
     }

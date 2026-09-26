@@ -244,13 +244,13 @@ func UploadBatch(ctx context.Context, c Conn, tmpRoot string, files []File, mess
 		// LFS 必须**在写文件之前**启用：git add 时才会走 filter.lfs.clean
 		// 把内容交给 git-lfs 存起来。反过来做的话，文件已经以普通 blob
 		// 进过暂存区了，再 track 也救不回来。
+		paths := make([]string, 0, len(files))
+		for _, f := range files {
+			paths = append(paths, f.Path)
+		}
 		if opts.UseLFS {
 			if opts.OnProgress != nil {
 				opts.OnProgress(progress.PhaseLFS, 0, 0, "正在启用 LFS 跟踪…")
-			}
-			paths := make([]string, 0, len(files))
-			for _, f := range files {
-				paths = append(paths, f.Path)
 			}
 			if e := lfs.EnableInRepo(ctx, lfs.EnableParams{
 				RepoDir:   dir,
@@ -259,6 +259,12 @@ func UploadBatch(ctx context.Context, c Conn, tmpRoot string, files []File, mess
 			}); e != nil {
 				return git.OpResult{Message: e.Error()}, nil
 			}
+		} else {
+			// 不勾 LFS：清掉这些路径的历史残留规则。
+			// 否则「以前勾过 LFS 传的同名文件」会在 .gitattributes 里留下
+			// 一条精确路径规则，把这次（本不该走 LFS 的）文件也拖进对象存储
+			// （2026-09-26 实踩，见 lfs.UntrackInRepo 的注释）。
+			lfs.UntrackInRepo(ctx, dir, paths)
 		}
 		if e := writeFiles(dir, files); e != nil {
 			return git.OpResult{Message: e.Error()}, nil
@@ -296,6 +302,10 @@ func DeleteBatch(ctx context.Context, c Conn, tmpRoot string, rels []string, mes
 		msg = "chore: 删除文件"
 	}
 	ws, res, err := withWorkspace(ctx, c, tmpRoot, nil, func(dir string) (git.OpResult, error) {
+		// 删文件的同时清掉 .gitattributes 里残留的 LFS 规则 ——
+		// 删文件不会自动删规则，留着的话以后同名文件会被迫走对象存储
+		// （见 lfs.UntrackInRepo 的注释）。
+		lfs.UntrackInRepo(ctx, dir, rels)
 		deletePaths(dir, rels)
 		return git.CommitAndPush(ctx, git.CommitParams{
 			Platform: c.Platform, Owner: c.Owner, Repo: c.Repo,

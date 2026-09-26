@@ -630,7 +630,13 @@ function wire(target) {
   const lfsBox = $('#miniLfs', wrap);
   LFS.syncLfsUI(state.cfg, { row: $('#miniLfsRow', wrap), box: lfsBox });
   if (lfsBox) {
-    lfsBox.addEventListener('change', () => LFS.rememberLfs(lfsBox.checked));
+    // 勾上先弹确认（对象存储无法 jsDelivr 加速），取消就回退不勾
+    lfsBox.addEventListener('change', async () => {
+      if (lfsBox.checked) {
+        const ok = await LFS.confirmLfsEnable();
+        if (!ok) lfsBox.checked = false;
+      }
+    });
   }
 
   const drop = $('#miniDrop', wrap);

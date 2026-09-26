@@ -51,6 +51,33 @@ function el() {
   return tipEl;
 }
 
+/**
+ * 取「气泡该对齐到哪里」的水平范围。
+ *
+ * 默认是整个元素；但像文件格的 `.tile-name` 这种块级元素占满整格、
+ * 文本却很短（"img"），按元素居中气泡会飘到格子中间、对不上文字。
+ * 这种时候改按文本实际范围对齐。
+ *
+ * 用 Range 选中内容节点再取 rect：单行文本拿到的就是文字本身的紧凑宽度，
+ * 左边缘正好是文字起点。
+ */
+function anchorRect(el) {
+  const box = el.getBoundingClientRect();
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const r = range.getBoundingClientRect();
+    // 文本明显比元素窄（说明是「宽格短字」）才按文本；否则（图标、整行链接、
+    // 文字占满）退回元素整体 —— 那本来就是居中正确的
+    if (r.width > 0 && r.width < box.width * 0.9) {
+      return { left: r.left, width: r.width };
+    }
+  } catch (e) {
+    /* 无文本内容的节点拿不到范围，退回元素 */
+  }
+  return { left: box.left, width: box.width };
+}
+
 /** 定到宿主正上方居中；越界夹进视口，贴顶就翻到下面 */
 function place(target) {
   const tip = el();
@@ -58,7 +85,8 @@ function place(target) {
   const w = tip.offsetWidth;
   const h = tip.offsetHeight;
   const r = target.getBoundingClientRect();
-  const cx = r.left + r.width / 2;
+  const a = anchorRect(target);
+  const cx = a.left + a.width / 2;
   let left = cx - w / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
   // 尾巴跟着目标中心走：气泡被视口夹回来后，尾巴不能傻站在气泡中点，

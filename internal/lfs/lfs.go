@@ -343,6 +343,24 @@ func EnableInRepo(ctx context.Context, p EnableParams) error {
 	return nil
 }
 
+// UntrackInRepo 移除一批路径的 LFS 跟踪规则。
+//
+// 为什么要显式 untrack：`git lfs track <路径>` 会把规则写进 .gitattributes，
+// 而那个文件**随提交永久留在仓库里**。删除文件并不会删规则 —— 于是出现过
+// 「删掉 1.avif 后，再传一个全新的 1.avif（没勾 LFS）也被迫走对象存储」
+// 的 BUG（2026-09-26 实踩）。所以删除文件、或明确不勾 LFS 上传时，
+// 都要把这些路径的残留规则清掉。
+//
+// untrack 一个本来就没被 track 的路径会返回非零，属正常情况，忽略即可。
+func UntrackInRepo(ctx context.Context, dir string, paths []string) {
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		runLFS(ctx, dir, 30*time.Second, "untrack", p)
+	}
+}
+
 // runLFS 执行 `git lfs <args>`。走 git 分发（而不是直接调 git-lfs.exe），
 // 这样行为和用户在命令行敲的一样，也能顺带验证 filter 注册是否成功。
 func runLFS(ctx context.Context, dir string, timeout time.Duration, args ...string) git.OpResult {
