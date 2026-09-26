@@ -161,9 +161,15 @@ function applyTone(lum) {
   const root = document.documentElement;
   const dark = lum < 0.5;
   root.classList.toggle('glass-dark', dark);
-  // 暗底：白纱 0.42 → 0.62（顶栏 0.36 → 0.52），灰字另由 .glass-dark 规则提亮
-  root.style.setProperty('--glass-wash', dark ? '0.62' : '0.42');
-  root.style.setProperty('--glass-wash-soft', dark ? '0.52' : '0.36');
+  // 越暗纱越厚：亮度 0.5（中间调）以下线性加厚，到近纯黑（0.15）封顶 0.82。
+  // 之前一刀切 0.62 对青蛙壁纸这种大面积纯黑的图远远不够 ——
+  // 面板白纱 = 1-(1-0.62)*0.89 ≈ 66%，剩下 34% 的纯黑透出来，
+  // 标题直接糊在图上（杰哥截图点名的）。0.82 封顶时白纱有 84%，正文才立得住。
+  const t = Math.max(0, Math.min(1, (0.5 - lum) / 0.35));
+  const wash = 0.42 + (0.82 - 0.42) * t;
+  const washSoft = 0.36 + (0.7 - 0.36) * t;
+  root.style.setProperty('--glass-wash', wash.toFixed(3));
+  root.style.setProperty('--glass-wash-soft', washSoft.toFixed(3));
 }
 
 function syncGlassLayers(on) {

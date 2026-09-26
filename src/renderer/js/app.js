@@ -150,6 +150,39 @@ function bindWindowControls() {
   if (typeof win.onMaximized === 'function') win.onMaximized(applyMax);
 }
 
+/**
+ * 关掉浏览器的表单自动填充。
+ *
+ * 「桌面程序」里最露馅的一刻：点进一个之前填过的输入框，Edge 弹一个
+ * 「已保存的内容」下拉，或者自动补一坨黄底蓝字 —— 一秒回到网页。
+ *
+ * 两层都堵上：
+ *   1. 给所有 input/textarea 打 autocomplete="off"（拦下拉保存框）
+ *   2. 用 MutationObserver 盯着动态插进来的输入框（重命名弹层、向导），
+ *      插一个补一个
+ *
+ * 黄底蓝字那一层在 app.css 里用 -webkit-autofill 的 box-shadow 盖掉。
+ */
+function installAutofillKiller() {
+  const kill = (root) => {
+    (root || document).querySelectorAll('input, textarea').forEach((el) => {
+      el.setAttribute('autocomplete', 'off');
+    });
+  };
+  kill(document);
+  const mo = new MutationObserver((muts) => {
+    muts.forEach((m) => {
+      m.addedNodes.forEach((n) => {
+        if (n.nodeType === 1) {
+          if (n.matches && n.matches('input, textarea')) n.setAttribute('autocomplete', 'off');
+          if (n.querySelectorAll) kill(n);
+        }
+      });
+    });
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
+}
+
 async function boot() {
   await state.init();
   /**
@@ -167,6 +200,9 @@ async function boot() {
 
   // 接管原生 title 提示（黑框系统小窗太突兀），换成自绘的云朵气泡
   installTooltips();
+
+  // 关掉浏览器的表单自动填充（保存的下拉框 / 黄底蓝字都是 Web 味）
+  installAutofillKiller();
 
   bindChrome();
   Object.keys(PAGES).forEach((k) => {

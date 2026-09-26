@@ -1,13 +1,6 @@
 /**
  * 毛玻璃智能自适应算法
  *
- * ⚠️ 本算法有两份**必须保持一致**的副本：
- *     - src/renderer/js/lib/glass-adaptive.js —— 程序运行时用
- *     - tools/glass-adaptive.js               —— 独立 demo 用
- *       （demo 要能单独复制给别人打开，所以不做成反向依赖 src/）
- *    改完任何一份，请把内容拷到另一份：
- *        cp src/renderer/js/lib/glass-adaptive.js tools/glass-adaptive.js
- *
  * 设计原则：
  *   1. 算法做"决策"，不做"覆盖" —— 用户随时可以拖滑块关掉算法。
  *   2. 玻璃参数 + 文字参数一起算（不要分两步） —— 暗图加大白纱的同时

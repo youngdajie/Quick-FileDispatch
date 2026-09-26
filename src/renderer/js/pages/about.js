@@ -194,7 +194,7 @@ function render() {
     '<div class="author">作者：<b>' + escapeHtml(AUTHOR) + '</b></div>' +
     '<div class="author-links">' +
     '<a href="#" data-ext="' + SITE + '" class="author-link" title="' + escapeHtml(SITE) + '">' + ICON_GLOBE +
-    escapeHtml(SITE.replace('https://', '')) + '</a> · ' +
+    escapeHtml(SITE.replace('https://', '')) + '</a>' +
     '<a href="#" data-ext="' + REPO + '" class="author-link" title="' + escapeHtml(REPO) + '">' + ICON_CODE +
     '项目地址</a></div>' +
     '</div>' +

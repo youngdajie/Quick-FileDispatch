@@ -102,12 +102,12 @@
    ============================================================ */
 html[data-theme="light"] {
   --bg: #eef1f6;
-  --bg-soft: #f7f9fc;
+  --bg-soft: #f7f9fc69;
   --panel: #ffffff;
   --panel-2: #f1f5fa;
   --panel-3: #e5ecf5;
   --border: #cfd9e6;
-  --border-soft: #e1e8f1;
+  --border-soft: #e1e8f178;
   --hair: rgba(30, 70, 130, 0.07);
 
   --text: #16202e;
@@ -390,6 +390,23 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 input::placeholder { color: var(--placeholder); }
+/*
+ * 禁用 Chromium 的自动填充「黄底蓝字」—— 那是 Web 味最浓的一处，
+ * 桌面程序里突然给你补一坨黄背景，一眼就露馅是网页。
+ * 用超大 inset box-shadow 盖掉（比改 background 可靠，background 会被
+ * 浏览器的 user-agent 样式盖回来），字色单独填回主题色。
+ */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--panel) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text);
+  transition: background-color 999999s ease-out 0s;
+}
 /*
  * 滑块：原生 range 的默认外观在不同机器上差别很大，这里整个自绘。
  * 已填充进度靠 JS 写入的 --fill（纯 CSS 跟着 value 走做不到）。
@@ -1700,11 +1717,22 @@ html[data-theme="light"] .about-logo {
 .about-hero .author b { color: var(--accent-hi); }
 /* 两个链接各占一行 */
 .about-hero .author-links {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  display: flex; flex-direction: row; align-items: center; gap: 15px;
   margin-top: 5px; font-size: 12.5px; color: var(--text-dim);
 }
-.about-hero .author-links a { color: var(--accent); text-decoration: none; }
-.about-hero .author-links a:hover { text-decoration: underline; }
+/* 链接做成「胶囊」：平时只露文字色，hover 用主色淡底 + 描边勾勒一圈，
+   不用下划线（下划线最像网页超链接，也是「Web 味」） */
+.about-hero .author-links a {
+  color: var(--accent); text-decoration: none;
+  padding: 3px 10px; border-radius: 7px;
+  border: 1px solid transparent;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.about-hero .author-links a:hover {
+  text-decoration: none;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}
 /* 带 SVG 前缀的链接：图标和文字垂直居中成一组，图标线宽已按粗体字重配过 */
 .about-hero .author-link {
   display: inline-flex; align-items: center; gap: 5px;
@@ -1823,18 +1851,24 @@ html[data-theme="light"] .about-logo {
 }
 .toast {
   pointer-events: auto;
+  position: relative; overflow: hidden;
   display: flex; align-items: flex-start; gap: 10px;
   min-width: 240px; max-width: 400px;
   background: var(--panel-2); border: 1px solid var(--border);
-  /* 左侧色条是全高的一整条，宽度给足才看得出「这条是提示的颜色」 */
-  border-left: 4px solid var(--accent);
-  border-radius: 9px; padding: 11px 14px 11px 13px; font-size: 12.5px; color: var(--text);
+  border-radius: 9px; padding: 11px 14px 11px 17px; font-size: 12.5px; color: var(--text);
   box-shadow: var(--shadow);
   animation: toastIn 0.3s var(--ease);
 }
-.toast.ok { border-left-color: var(--ok); }
-.toast.err { border-left-color: var(--danger); }
-.toast.warn { border-left-color: var(--warn); }
+/* 左侧竖条改成 ::before（和 .up-target::before 同一套版式）——
+   border-left 是一条「线」、圆角处还跟着弯；::before 是一条实打实的「面」，
+   颜色更饱满，和上传页那条主色竖条统一（杰哥：颜色还是太小了） */
+.toast::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--accent);
+}
+.toast.ok::before { background: var(--ok); }
+.toast.err::before { background: var(--danger); }
+.toast.warn::before { background: var(--warn); }
 .toast .msg { flex: 1; word-break: break-word; }
 @keyframes toastIn { from { opacity: 0; transform: translateX(22px) scale(0.97); } to { opacity: 1; transform: none; } }
 
@@ -2357,6 +2391,11 @@ html[data-theme="light"].glass-ready .glass-host::before { z-index: 2; }
 html[data-theme="light"].glass-ready .content {
   background: linear-gradient(180deg, rgba(247, 249, 252, 0.88) 0%, rgba(247, 249, 252, 0.62) 120px, rgba(247, 249, 252, 0) 240px);
 }
+/* 暗图时顶部渐变同步加厚 —— 页面标题就在这段渐变里，之前 240px 后全透，
+   青蛙壁纸那种纯黑图直接把标题吞了（杰哥截图点名的） */
+html[data-theme="light"].glass-dark .content {
+  background: linear-gradient(180deg, rgba(247, 249, 252, 0.95) 0%, rgba(247, 249, 252, 0.82) 150px, rgba(247, 249, 252, 0.38) 340px);
+}
 /* 背景图偏暗时（JS 采样后加 glass-dark）：白纱加厚，保证正文对比度。
    灰字（.hint / .field-note / .card-head p）在这种底上最容易糊，
    一并抬到 --text-dim —— 这就是「字体颜色跟着背景动」那一半 */
@@ -2876,4 +2915,8 @@ input, textarea, [contenteditable="true"] { cursor: text; }
   min-height: 0; overflow: auto;
   /* 只有这一块滚动，滚动条别贴着内容 —— 留 2px 呼吸 */
   padding-right: 11px;
+  /* 上下各留 12px 渐隐：内容滑到边缘时柔和淡出，而不是被硬切一刀
+     （杰哥：边界消失得太突然，滑动要温柔一点） */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
 }
