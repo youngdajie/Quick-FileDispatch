@@ -28,6 +28,10 @@
 *.py    text eol=lf
 *.mjs   text eol=lf
 
+# 构建模板（versioninfo.json.in 是交给 goversioninfo 的 json，
+# 后缀不是 .json，要单独写一条才不会被 autocrlf 转成 CRLF）
+*.in    text eol=lf
+
 # ---------------------------------------------------------------- 统一 LF
 
 # Go 源码与前端资源。浏览器和 Go 工具链都容忍 CRLF，
