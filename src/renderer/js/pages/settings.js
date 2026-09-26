@@ -369,11 +369,6 @@ function fillThemeCards() {
   });
 }
 
-function applyFontPreview(font) {
-  const el = $('#fontSample');
-  if (el) el.style.fontFamily = stackFor(font);
-}
-
 let fontsBuilt = false;
 
 /** 字体下拉：只列本机真装了的（枚举一次就够，之后靠缓存） */
@@ -401,7 +396,6 @@ function ensureFontOptions(cur) {
   }
   const has = Array.from(sel.options).some((o) => o.value === cur);
   sel.value = has ? cur : PRIMARY_FONT_NAME;
-  applyFontPreview(sel.value);
 }
 
 async function setTheme(theme) {
@@ -415,7 +409,6 @@ async function setTheme(theme) {
 async function setFont(font) {
   await state.patch({ ui: { font: font } });
   applyFont(font);
-  applyFontPreview(font);
 }
 
 /** 全局项：改动即存（目前只剩提交信息） */

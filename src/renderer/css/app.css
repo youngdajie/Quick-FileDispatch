@@ -633,7 +633,7 @@ select.csel-native {
 
 /* ③别名：小一号、弱一档 */
 .pf-alias {
-  min-width: 0; font-size: 12.5px; color: var(--text-dim); text-align: center;
+  min-width: 0; font-size: 18.5px; line-height: 1.3; color: var(--text-dim); text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -645,7 +645,7 @@ select.csel-native {
   border-top: 1px dashed var(--border-soft);
   min-width: 0;
 }
-.pf-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.pf-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; align-items: center; }
 .pf-rule {
   max-width: 100%;
   font-size: 10.5px; color: var(--muted);
@@ -2242,16 +2242,9 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 .tc-light i:nth-child(1) { width: 26%; background: #dbe3ee; border-right: 1px solid #c3cfdf; }
 .tc-light i:nth-child(2) { width: 74%; background: #ffffff; }
 
-/* 字体选择：右侧给个实时样例 */
+/* 字体选择 */
 .font-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .font-row .csel { flex: 1 1 260px; max-width: 340px; }
-.font-sample {
-  flex: 1 1 200px; min-width: 180px;
-  padding: 7px 11px; border-radius: 8px;
-  background: var(--panel-2); border: 1px solid var(--border-soft);
-  color: var(--text-dim); font-size: 13px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
 
 /* ============================================================ 导入体检报告 */
 .imp-item {
