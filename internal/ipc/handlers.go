@@ -712,6 +712,11 @@ func isSafeTarget(s string) bool {
 	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		return true
 	}
+	// mailto: 也放行 —— 关于页的「电子邮件」入口点了要能唤起系统邮件客户端。
+	// 它只能带起邮件程序，给不了命令执行面，所以放进白名单是安全的。
+	if strings.HasPrefix(lower, "mailto:") {
+		return true
+	}
 	// 本地路径：必须存在，避免拿它当任意命令的启动器
 	if strings.Contains(s, "://") {
 		return false
@@ -722,8 +727,14 @@ func isSafeTarget(s string) bool {
 
 func openExternal(target string) error {
 	if runtime.GOOS == "windows" {
-		// 空标题参数是为了让 start 把带引号的目标当成目标，而不是窗口标题
-		return exec.Command("cmd", "/c", "start", "", target).Start()
+		// 用 rundll32 走 ShellExecute 语义：http / https / mailto 都交给系统
+		// 注册的处理程序，行为等同于双击一个链接。
+		//
+		// 为什么不再用 `cmd /c start "" <target>`：start 对 mailto: 这种
+		// 「带冒号但不是路径」的目标解析不稳，实测点邮件地址会变成
+		// 浏览器开首页（杰哥反馈）。rundll32 url.dll,FileProtocolHandler
+		// 是 Windows 打开 URL / 协议的标准入口，对协议的处理更规矩。
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", target).Start()
 	}
 	if runtime.GOOS == "darwin" {
 		return exec.Command("open", target).Start()

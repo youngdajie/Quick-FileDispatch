@@ -9,6 +9,7 @@ const SITE = 'https://www.yangjie.site';
 const REPO = 'https://cnb.cool/youngdajie/Quick-FileDispatch';
 const BILI = 'https://space.bilibili.com/646325099';
 const TG = 'https://t.me/youngdajie';
+const MAIL = 'mailto:ok@yangjie.site';
 
 /**
  * hero 行两个链接的前缀图标（14px）。
@@ -34,6 +35,14 @@ const ICON_BILI =
 const ICON_TG =
   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M21 4 3 11l6 2.5L11.5 20l3-5.5L21 4z"/><path d="M21 4 9 13.5"/></svg>';
+
+/** 电子邮件：信封 */
+const ICON_MAIL =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.6 7.2 12 13l8.4-5.8"/></svg>';
+
+/** 链接之间的分隔点 */
+const SEP = '<span class="asep" aria-hidden="true">·</span>';
 
 /** 「展开看看」按钮的小箭头（展开时 CSS 把它转 180°） */
 const ICON_CHEVRON =
@@ -208,13 +217,16 @@ function render() {
     '<div class="author">作者：<b>' + escapeHtml(AUTHOR) + '</b></div>' +
     '<div class="author-links">' +
     '<a href="#" data-ext="' + SITE + '" class="author-link" title="' + escapeHtml(SITE) + '">' + ICON_GLOBE +
-    escapeHtml(SITE.replace('https://', '')) + '</a>' +
+    escapeHtml(SITE.replace('https://', '')) + '</a>' + SEP +
     '<a href="#" data-ext="' + REPO + '" class="author-link" title="' + escapeHtml(REPO) + '">' + ICON_CODE +
-    '项目地址</a>' +
+    '项目地址</a>' + SEP +
     '<a href="#" data-ext="' + BILI + '" class="author-link" title="' + escapeHtml(BILI) + '">' + ICON_BILI +
-    'B 站</a>' +
+    'B 站</a>' + SEP +
     '<a href="#" data-ext="' + TG + '" class="author-link" title="' + escapeHtml(TG) + '">' + ICON_TG +
-    'Telegram</a></div>' +
+    'Telegram</a>' + SEP +
+    '<a href="#" data-ext="' + MAIL + '" class="author-link" title="' + escapeHtml(MAIL.replace('mailto:', '')) + '">' + ICON_MAIL +
+    '电子邮件</a>' +
+    '</div>' +
     '</div>' +
 
     /* 这个程序在做什么 */

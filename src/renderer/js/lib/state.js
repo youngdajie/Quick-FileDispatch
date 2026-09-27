@@ -133,12 +133,6 @@ class State {
     return !!(c.owner && c.repo && c.hasToken);
   }
 
-  get repoLabel() {
-    const c = this.cfg || {};
-    if (!c.owner || !c.repo) return '未配置仓库';
-    return `${c.owner}/${c.repo} @ ${c.branch || 'main'}`;
-  }
-
   get platformName() {
     return (this.cfg && this.cfg.platform) === 'cnb' ? 'CNB' : 'GitHub';
   }

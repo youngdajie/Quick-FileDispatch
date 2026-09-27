@@ -14,6 +14,16 @@ import { FIELDS, linkPreviewHtml } from './config-fields.js';
 
 const STEPS = ['选择平台', '仓库与令牌', '映射本地目录', '完成'];
 
+/**
+ * 步骤条 / 检查结果的勾叉一律用 SVG。
+ * 原来直接写 ✓ ✗ 字符 —— 字体里的勾粗细、形状每台机器都不一样，
+ * 有时候还会 fallback 成别的字形，看着就不像一套图标。
+ */
+const TICK =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const CROSS =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
 const PLATFORMS = [
   {
     id: 'github',
@@ -71,7 +81,7 @@ function cfgOk() {
 function stepRail() {
   return STEPS.map((s, i) => {
     const cls = i === step ? 'active' : i < step ? 'done' : '';
-    const mark = i < step ? '✓' : String(i + 1);
+    const mark = i < step ? TICK : String(i + 1);
     return (
       '<div class="ob-step ' + cls + '">' +
       '<span class="no">' + mark + '</span>' +
@@ -113,7 +123,7 @@ function paneRepo() {
           .map(
             (s) =>
               '<div class="ob-check ' + (s.ok ? 'ok' : 'bad') + '">' +
-              '<span class="ic">' + (s.ok ? '✓' : '✗') + '</span>' +
+              '<span class="ic">' + (s.ok ? TICK : CROSS) + '</span>' +
               '<span><span class="nm">' + escapeHtml(s.name) + '</span>' +
               '<div class="ms">' + escapeHtml(s.message) + '</div></span></div>'
           )

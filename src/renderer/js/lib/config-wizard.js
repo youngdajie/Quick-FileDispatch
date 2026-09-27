@@ -24,6 +24,12 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const platOf = (v) => (v === 'cnb' ? 'cnb' : 'github');
 const platName = (v) => (platOf(v) === 'cnb' ? 'CNB' : 'GitHub');
 
+/** 检查结果的勾叉用 SVG（✓ ✕ 字符在不同机器上字形不一，不像一套图标） */
+const TICK =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const CROSS =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
 /** 该平台下已经归档的配置（按创建时间倒序，用于「刚建出来的那一份」） */
 function newestProfile(platform) {
   return state.profiles
@@ -244,7 +250,7 @@ export function openConfigWizard(opts) {
     }
     const line = (title, part) =>
       '<div class="wz-check ' + (part && part.ok ? 'ok' : 'bad') + '">' +
-      '<span class="mk">' + (part && part.ok ? '✓' : '✕') + '</span>' +
+      '<span class="mk">' + (part && part.ok ? TICK : CROSS) + '</span>' +
       '<div class="tx"><b>' + escapeHtml(title) + '</b>：' + escapeHtml((part && part.message) || '未检查') +
       (part && !part.ok && part.fix ? '<em>→ ' + escapeHtml(part.fix) + '</em>' : '') +
       '</div></div>';
@@ -258,7 +264,7 @@ export function openConfigWizard(opts) {
       '<div class="wz-checks">' +
       line('仓库信息', result.cloud) +
       line('本地目录', result.local) +
-      '<div class="wz-check ok"><span class="mk">✓</span><div class="tx"><b>文件链接</b>：规则「' +
+      '<div class="wz-check ok"><span class="mk">' + TICK + '</span><div class="tx"><b>文件链接</b>：规则「' +
       escapeHtml(rule ? rule.name : draft.linkRule) + '」</div></div>' +
       '</div>' +
       '</div>'

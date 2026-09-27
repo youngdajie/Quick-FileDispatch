@@ -431,7 +431,7 @@ function newFolder() {
     '<div class="callout" style="margin-bottom:0">' +
     '建在「' +
     escapeHtml(view.dir || '仓库根目录') +
-    '」下。git 不跟踪空文件夹，里面放了文件才会同步到云端。' +
+    '」下，Git 不跟踪空文件夹，里面放了文件才会同步到云端' +
     '</div>';
 
   const handle = modal({

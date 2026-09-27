@@ -61,13 +61,6 @@ function go(name) {
 }
 
 function updateChrome() {
-  const cfg = state.cfg || {};
-  const okRepo = !!(cfg.owner && cfg.repo);
-  $('#repoChipText').textContent = state.repoLabel;
-  const dot = $('#statusDot');
-  dot.className = 'dot ' + (okRepo && cfg.hasToken ? 'ok' : okRepo || cfg.hasToken ? 'bad' : '');
-  dot.parentElement.title = okRepo && cfg.hasToken ? '配置就绪' : '尚未完成配置，点击前往设置';
-
   const info = state.info || {};
   $('#cpuBadge').textContent = (info.cpuCount || navigator.hardwareConcurrency || '-') + ' 核';
   $('#cpuBadge').title = '压缩线程池按 CPU 核心数并行';
@@ -93,7 +86,6 @@ function bindChrome() {
       go(b.dataset.page);
     };
   });
-  $('#repoChip').onclick = () => go('settings');
 
   // 昼夜切换：这里只改配置，界面颜色交给 state.on → applyAppearance 去落。
   // 顺带的好处是设置页里那两张主题卡片也会跟着亮（它走 onConfigChanged）。
