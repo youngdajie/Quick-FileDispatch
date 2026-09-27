@@ -5,7 +5,7 @@
  * 界面代码，但**这是同一个概念** —— 两处都要按平台显隐、都要弹同一句确认、
  * 都要读出同一个值传给后端。各写一份必然漂移（一边改了另一边忘）。
  *
- * 关于「默认不勾」：对象存储里的文件**无法被 jsDelivr 加速**（jsDelivr
+ * 关于「默认不勾」：对象存储里的文件**无法被 jsdmirror 加速**（jsdmirror
  * 走的是仓库 raw 文件，穿透不到对象存储），直链下载也走对象存储。
  * 多数人默认要的是能配 CDN 的普通存储，所以这里**每次打开都默认不勾**，
  * 用户明确要用了才勾，勾的时候弹一句确认把代价讲清楚。
@@ -58,7 +58,7 @@ export function lfsEnabled(cfg, box) {
  * 勾选 LFS 前的确认。
  *
  * 对象存储的文件有两个代价，用户勾选前得知道：
- *   1. **无法被 jsDelivr 加速** —— jsDelivr 走仓库 raw 文件，穿透不到对象存储
+ *   1. **无法被 jsdmirror 加速** —— jsdmirror 走仓库 raw 文件，穿透不到对象存储
  *   2. 占用对象存储额度（和仓库存储是两笔账）
  *
  * @returns {Promise<boolean>} true = 确认继续（勾上）；false = 放弃（勾选回退）
@@ -67,7 +67,7 @@ export async function confirmLfsEnable() {
   const ok = await confirmDialog(
     '用 LFS 对象存储？',
     '文件会存进 CNB 的对象存储（不占仓库额度）。\n\n' +
-      '但要注意：对象存储里的文件无法被 jsDelivr 加速，直链下载走对象存储。\n' +
+      '但要注意：对象存储里的文件无法被 jsdmirror 加速，直链下载走对象存储。\n' +
       '如果这些文件要配 CDN 加速，建议不要走 LFS。',
     '继续'
   );

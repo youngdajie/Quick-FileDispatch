@@ -7,6 +7,7 @@
 import { $, escapeHtml, ok, err, warn } from './dom.js';
 import state from './state.js';
 import { brandIcon } from './brandicons.js';
+import { enhanceAll } from './cselect.js';
 
 const CPLinks = window.CPLinks;
 import { FIELDS, linkPreviewHtml } from './config-fields.js';
@@ -246,6 +247,15 @@ function render() {
 
   bindPane();
   bindFoot();
+  // 下拉统一升级成自绘面板（链接规则 / 默认复制格式那两个）——
+  // 和设置页、配置向导向同一套，原生 select 太「网页」。
+  // 必须放在 bindPane 之后：enhanceSelect 是「增强」不是「替换」，
+  // 原 select 还在（被隐藏），onchange 照常触发，所以绑定不会丢。
+  try {
+    enhanceAll(wrap);
+  } catch (e) {
+    /* 升级失败不影响使用，原生下拉照常 */
+  }
   const x = $('#obClose');
   if (x) x.onclick = quit;
 }

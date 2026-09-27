@@ -7,6 +7,8 @@ const APP = '快捷文件分发服务@JIE';
 const AUTHOR = '小杰';
 const SITE = 'https://www.yangjie.site';
 const REPO = 'https://cnb.cool/youngdajie/Quick-FileDispatch';
+const BILI = 'https://space.bilibili.com/646325099';
+const TG = 'https://t.me/youngdajie';
 
 /**
  * hero 行两个链接的前缀图标（14px）。
@@ -20,6 +22,18 @@ const ICON_GLOBE =
 const ICON_CODE =
   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M15.5 7 20 12l-4.5 5"/><path d="M8.5 7 4 12l4.5 5"/></svg>';
+
+/** B 站：电视外框 + 两根天线 + 两个眼睛，和上面的描边风格一致 */
+const ICON_BILI =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<rect x="3" y="7.5" width="18" height="12.5" rx="3.5"/>' +
+  '<path d="M7 3.5 10 7.5"/><path d="M17 3.5 14 7.5"/>' +
+  '<path d="M9.5 12.5v3"/><path d="M14.5 12.5v3"/></svg>';
+
+/** Telegram：纸飞机 */
+const ICON_TG =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M21 4 3 11l6 2.5L11.5 20l3-5.5L21 4z"/><path d="M21 4 9 13.5"/></svg>';
 
 /** 「展开看看」按钮的小箭头（展开时 CSS 把它转 180°） */
 const ICON_CHEVRON =
@@ -196,7 +210,11 @@ function render() {
     '<a href="#" data-ext="' + SITE + '" class="author-link" title="' + escapeHtml(SITE) + '">' + ICON_GLOBE +
     escapeHtml(SITE.replace('https://', '')) + '</a>' +
     '<a href="#" data-ext="' + REPO + '" class="author-link" title="' + escapeHtml(REPO) + '">' + ICON_CODE +
-    '项目地址</a></div>' +
+    '项目地址</a>' +
+    '<a href="#" data-ext="' + BILI + '" class="author-link" title="' + escapeHtml(BILI) + '">' + ICON_BILI +
+    'B 站</a>' +
+    '<a href="#" data-ext="' + TG + '" class="author-link" title="' + escapeHtml(TG) + '">' + ICON_TG +
+    'Telegram</a></div>' +
     '</div>' +
 
     /* 这个程序在做什么 */

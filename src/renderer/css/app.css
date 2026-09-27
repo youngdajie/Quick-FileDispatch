@@ -1227,7 +1227,8 @@ html[data-theme="light"] .dropzone {
 }
 
 /* ------------------------------------------------ 上传进度（阶段 + 字节 + 速度） */
-.up-progress { margin-top: 12px; padding: 0 4px; }
+/* 左右 15px = 下面 .q-item 的内边距，进度条和队列条目对齐，不贴边 */
+.up-progress { margin-top: 12px; padding: 0 15px; }
 .up-progress-head {
   display: flex; align-items: baseline; gap: 9px;
   margin-bottom: 7px; font-size: 12px;

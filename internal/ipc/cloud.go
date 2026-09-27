@@ -1088,6 +1088,35 @@ func (e *Env) fsLocalDelete(payload map[string]any) (any, error) {
 	return map[string]any{"ok": anyOK(results), "results": results}, nil
 }
 
+// fsLocalMkdir 在本地目录里新建一个空文件夹。
+//
+// 只动本地：和改名 / 删除同一路（改完要「提交并推送」才进仓库）。
+// 注意 git **不跟踪空目录** —— 新建的文件夹要等里面有文件才会出现在云端，
+// 界面上会提醒这一点，不然用户会以为没生效。
+func (e *Env) fsLocalMkdir(payload map[string]any) (any, error) {
+	cfg := e.Store.Raw()
+	dir := strOf(cfg["localDir"])
+	if dir == "" || !local.Exists(dir) {
+		return nil, errors.New("尚未配置本地目录")
+	}
+	rel := paths.Normalize(strOf(payload["path"]))
+	if rel == "" {
+		return nil, errors.New("文件夹名不能为空")
+	}
+	abs, err := paths.SafeJoin(dir, rel)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(abs); err == nil {
+		return nil, errors.New("同名文件夹或文件已经存在")
+	}
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		return nil, fmt.Errorf("创建文件夹失败：%w", err)
+	}
+	e.cache.Invalidate()
+	return map[string]any{"ok": true, "path": rel}, nil
+}
+
 /* ------------------------------------------------------------ 小工具 */
 
 // decodeBytes 接受三种形状：字节数组、base64 字符串，以及「被 JSON 化过的

@@ -172,7 +172,9 @@
       /** 用新文件覆盖本地已有文件的内容 */
       localWrite: call('fs:localWrite'),
       /** 删除本地文件 */
-      localDelete: call('fs:localDelete')
+      localDelete: call('fs:localDelete'),
+      /** 在本地目录里新建空文件夹 */
+      localMkdir: call('fs:localMkdir')
     },
     win: {
       minimize: call('win:minimize'),

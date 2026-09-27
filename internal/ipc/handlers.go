@@ -659,6 +659,14 @@ func Register(r *Registry, env *Env) {
 		}
 		return env.fsLocalDelete(obj)
 	})
+
+	r.Handle("fs:localMkdir", func(payload json.RawMessage) (any, error) {
+		obj, err := decodeObject(payload)
+		if err != nil {
+			return nil, err
+		}
+		return env.fsLocalMkdir(obj)
+	})
 }
 
 /* ------------------------------------------------------------ 参数解码 */

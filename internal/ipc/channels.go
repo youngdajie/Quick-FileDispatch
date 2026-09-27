@@ -76,6 +76,7 @@ var known = []string{
 	"fs:localRename",
 	"fs:localWrite",
 	"fs:localDelete",
+	"fs:localMkdir",
 
 	// 窗口
 	"win:minimize",

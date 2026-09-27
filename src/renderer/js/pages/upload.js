@@ -297,11 +297,25 @@ async function processPending() {
 
   const prog = $('#upProgress');
   const bar = $('#upProgressBar');
+  const label = $('#upProgressLabel');
+  const detail = $('#upProgressDetail');
+  const pctEl = $('#upProgressPct');
   prog.hidden = false;
+  // 进度条得说清当前在干什么：这里是**本地压缩**，不是上传。
+  // 之前只动宽度、不设文案，条上留着上一次上传的「上传中」——
+  // 明明在压图却写着上传中（杰哥点名的）。上传阶段由 describeProgress 负责。
+  if (label) label.textContent = '压缩中';
+  if (detail) detail.textContent = '';
   let done = 0;
+  const paintProg = () => {
+    const p = Math.round((done / targets.length) * 100);
+    bar.style.width = p + '%';
+    if (pctEl) pctEl.textContent = p + '%';
+  };
+  paintProg();
   const tick = () => {
     done += 1;
-    bar.style.width = Math.round((done / targets.length) * 100) + '%';
+    paintProg();
     if (done >= targets.length) setTimeout(() => { prog.hidden = true; }, 420);
   };
 
@@ -975,7 +989,7 @@ export default {
     // 并同步「首次会下载 git-lfs」那句提醒的显隐
     const lfsBox = $('#upLfs');
     if (lfsBox) {
-      // 勾上先弹确认（对象存储无法 jsDelivr 加速），取消就回退不勾
+      // 勾上先弹确认（对象存储无法 jsdmirror 加速），取消就回退不勾
       lfsBox.addEventListener('change', async () => {
         if (lfsBox.checked) {
           const ok = await LFS.confirmLfsEnable();

@@ -38,6 +38,8 @@ const ICONS = {
   replace: svg('<path d="M4 12a8 8 0 0 1 13.4-5.9"/><path d="M20 12a8 8 0 0 1-13.4 5.9"/><path d="M17.5 3v3.6h-3.6"/><path d="M6.5 21v-3.6h3.6"/>', 14),
   trash: svg('<path d="M4 7h16"/><path d="M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7"/><path d="M6.5 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5l.8-12"/>', 14),
   open: svg('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17z"/>', 14),
+  /** 新建文件夹：文件夹 + 加号 */
+  folderPlus: svg('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17z"/><path d="M12 11v5"/><path d="M9.5 13.5h5"/>', 14),
   path: svg('<path d="M4 6h6"/><path d="M4 12h10"/><path d="M4 18h7"/><path d="M16 15l3 3-3 3"/><path d="M21 18h-5"/>', 14),
   list: svg('<path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h1"/><path d="M4 12h1"/><path d="M4 18h1"/>', 14),
   close: svg('<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6"/><path d="M15 9l-6 6"/>', 14),
@@ -394,6 +396,12 @@ function blankMenuItems() {
       hint: view.dir || '仓库根目录',
       onClick: () => openMiniUpload(view.dir, () => load())
     },
+    {
+      label: '新建文件夹',
+      icon: ICONS.folderPlus,
+      hint: view.dir || '仓库根目录',
+      onClick: newFolder
+    },
     { sep: true },
     {
       label: allOn ? '取消全选' : '全选当前目录',
@@ -406,6 +414,72 @@ function blankMenuItems() {
     { sep: true },
     { label: '刷新', icon: ICONS.refresh, onClick: () => load() }
   ];
+}
+
+/**
+ * 在当前目录下新建一个空文件夹。
+ *
+ * 只动**本地**目录（和改名 / 删除同一路）—— 建完要在左侧点「提交并推送」
+ * 才进仓库。而且 git 不跟踪空目录，所以要等里面放了文件才会出现在云端，
+ * 弹窗里把这一点说清楚，免得用户以为没生效。
+ */
+function newFolder() {
+  const box = document.createElement('div');
+  box.innerHTML =
+    '<label class="field"><span class="field-label">文件夹名</span>' +
+    '<input type="text" id="mgNewDirName" placeholder="例如 photos" /></label>' +
+    '<div class="callout" style="margin-bottom:0">' +
+    '建在「' +
+    escapeHtml(view.dir || '仓库根目录') +
+    '」下。git 不跟踪空文件夹，里面放了文件才会同步到云端。' +
+    '</div>';
+
+  const handle = modal({
+    title: '新建文件夹',
+    node: box,
+    buttons: [
+      { label: '取消' },
+      {
+        label: '创建',
+        primary: true,
+        onClick: () => {
+          createFolder(handle);
+          return false; // 由 createFolder 决定关不关（名字不合法就留在弹窗里）
+        }
+      }
+    ]
+  });
+
+  const input = $('#mgNewDirName', box);
+  if (input) {
+    setTimeout(() => input.focus(), 60);
+    input.onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      createFolder(handle);
+    };
+  }
+}
+
+async function createFolder(handle) {
+  const name = (($('#mgNewDirName') || {}).value || '').trim();
+  if (!name) {
+    err('文件夹名不能为空');
+    return;
+  }
+  if (/[\\/]/.test(name)) {
+    err('文件夹名里不能带斜杠');
+    return;
+  }
+  const path = view.dir ? view.dir + '/' + name : name;
+  try {
+    await window.cloudpic.fs.localMkdir({ path: path });
+    if (handle) handle.close();
+    ok('已在本地新建「' + name + '」');
+    await load();
+  } catch (e) {
+    err((e && e.message) || '创建文件夹失败');
+  }
 }
 
 /* ---------------------------------------------------------------- 数据加载 */
