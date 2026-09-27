@@ -486,6 +486,13 @@ async function createFolder(handle) {
 
 async function load() {
   if (view.loading) return;
+  // 换了目录就把上一批缩略图 blob 回收掉；同目录刷新（提交后重载）保留缓存，
+  // 不然每次刷新都要把一屏图重新解码一遍
+  const dirKey = view.source + ':' + view.dir;
+  if (load.__lastDir !== dirKey) {
+    releaseThumbs();
+    load.__lastDir = dirKey;
+  }
   view.loading = true;
   view.selected.clear();
   updateSelectionBar();
@@ -813,6 +820,121 @@ function renderBreadcrumb() {
  * 深浅主题下都看得清；同时把原来的悬停工具条整块删掉 —— 五个按钮压在缩略图上
  * 既挡内容又容易误点，操作全搬到右键菜单里了。
  */
+/* ---------------------------------------------------------------- 缩略图 */
+
+/*
+ * 大图不要直接把原图塞进 <img src>。
+ *
+ * 壁纸这类 4000×3000 的图，浏览器会把**整张**解码进内存（约 48 MB）再缩到
+ * 一百多像素显示 —— 一屏 120 个 tile 就是 5 GB 级的解码峰值，切页和滚动
+ * 必卡（杰哥的「壁纸收藏」就是这个情况）。
+ *
+ * 办法：进视口时才去取原图，用 createImageBitmap 的 resize 参数**在解码
+ * 阶段就降采样**（Chromium 走的是按需解码，不会先铺满全尺寸），再转成一个
+ * 小 blob 交给 <img>。
+ *
+ * 为什么不用后端生成缩略图：那要引图像库，而 go.mod 里「零第三方依赖」是
+ * 写明的设计约束（安装包体积 + 国内模块代理的坑）。这里靠浏览器自己的能力
+ * 就够了，一行依赖都不用加。
+ */
+
+/** 缩略图最长边。网格 tile 宽 146px 起，DPR 2x 下 320 足够清晰 */
+const THUMB_MAX = 320;
+/** 同时最多解码几张。一口气 120 张会把内存和 IO 都打满 */
+const THUMB_CONCURRENCY = 4;
+
+let thumbIO = null;
+const thumbQueue = [];
+let thumbBusy = 0;
+/** 路径 → 已解码好的缩略图 blob URL。排序 / 筛选 / 加载更多时直接复用，不重复解码 */
+const thumbCache = new Map();
+
+function thumbObserver() {
+  if (thumbIO) return thumbIO;
+  thumbIO = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        thumbIO.unobserve(e.target);
+        const img = e.target;
+        if (!img.dataset.thumb || img.dataset.queued === '1') return;
+        img.dataset.queued = '1';
+        thumbQueue.push(img);
+        pumpThumbs();
+      });
+    },
+    // 提前 300px 就开始解码，滚到眼前时基本已经好了
+    { rootMargin: '300px 0px', threshold: 0.01 }
+  );
+  return thumbIO;
+}
+
+/** 给当前所有待加载的缩略图挂上观察器（每次渲染后调） */
+function observeThumbs() {
+  const io = thumbObserver();
+  // 每次都是整块 innerHTML 重建，旧元素已经从 DOM 里没了 —— 先断掉所有旧观察，
+  // 否则那些已经没用的 img 会被 observer 一直引用着，切几次目录就积一堆
+  io.disconnect();
+  document.querySelectorAll('#mgGrid img[data-thumb]').forEach((img) => io.observe(img));
+}
+
+function pumpThumbs() {
+  while (thumbBusy < THUMB_CONCURRENCY && thumbQueue.length) {
+    const img = thumbQueue.shift();
+    if (!img.isConnected) continue;
+    thumbBusy++;
+    decodeThumb(img).finally(() => {
+      thumbBusy--;
+      pumpThumbs();
+    });
+  }
+}
+
+async function decodeThumb(img) {
+  const url = img.dataset.thumb;
+  const path = img.dataset.path || url || '';
+  delete img.dataset.thumb;
+  delete img.dataset.queued;
+  if (!url || !img.isConnected) return;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const blob = await resp.blob();
+    const bmp = await createImageBitmap(blob, {
+      resizeWidth: THUMB_MAX,
+      resizeQuality: 'medium'
+    });
+    const c = document.createElement('canvas');
+    c.width = bmp.width;
+    c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    bmp.close(); // 位图用完立刻还给系统
+    const out = await new Promise((res) => c.toBlob(res, 'image/webp', 0.82));
+    if (!out || !img.isConnected) return;
+    const objUrl = URL.createObjectURL(out);
+    thumbCache.set(path, objUrl);
+    img.src = objUrl;
+    img.classList.add('thumb-loaded');
+  } catch (e) {
+    // 降采样这条路失败了就退回原图直出 —— 至少内容能显示出来，
+    // 后续的加载失败兜底（attachImageFallback）继续管 error
+    if (img.isConnected && url) img.src = url;
+  }
+}
+
+/** 换目录时回收上一批 blob + 清缓存 */
+function releaseThumbs() {
+  thumbCache.forEach((u) => {
+    try {
+      URL.revokeObjectURL(u);
+    } catch (e) {
+      /* 已经释放过就算了 */
+    }
+  });
+  thumbCache.clear();
+  thumbQueue.length = 0;
+}
+
 function tileHtml(it, idx) {
   const sel = view.selected.has(it.path);
   const i = ' style="--i:' + Math.min(idx, 22) + '"';
@@ -822,14 +944,21 @@ function tileHtml(it, idx) {
   const img = !isDir && isImg(it);
   if (img) {
     const u = previewUrls(it);
-    thumb =
-      '<img loading="lazy" src="' +
-      escapeHtml(u.primary) +
+    const cached = thumbCache.get(it.path);
+    const attrs =
+      ' data-path="' +
+      escapeHtml(it.path) +
       '"' +
       (u.fallback ? ' data-proxy="' + escapeHtml(u.fallback) + '"' : '') +
       ' data-icon="' +
       escapeHtml(fileIcon(it.name)) +
-      '" alt="" />';
+      '" alt=""';
+    // 命中缓存就直接给 src（排序 / 筛选 / 加载更多时不重复解码）；
+    // 否则只记 URL，交给缩略图引擎：进视口才 fetch + createImageBitmap 降采样
+    // —— 不设 src，设了就等于让浏览器去解码整张原图（壁纸一张 48MB）。
+    thumb = cached
+      ? '<img src="' + escapeHtml(cached) + '"' + attrs + ' />'
+      : '<img data-thumb="' + escapeHtml(u.primary) + '"' + attrs + ' />';
   } else {
     thumb = fileIcon(it.name, { isDir: isDir });
   }
@@ -872,6 +1001,30 @@ function showSkeleton() {
   grid.classList.remove('list-view');
 }
 
+/** 上次用的视图模式（记在配置的 ui.manageView 里）；没有就网格 */
+function savedViewMode() {
+  const ui = (state.cfg && state.cfg.ui) || {};
+  return ui.manageView === 'list' ? 'list' : 'grid';
+}
+
+/**
+ * 切视图模式。
+ *
+ * @param {string} mode 'grid' | 'list'
+ * @param {boolean} persist 是否写回配置（只有用户亲手点才写；
+ *   初始化时同步按钮状态不能写，否则每次进页面都多一次无意义的配置写入）
+ * @param {boolean} paint 是否立即重绘（初始化时列表还没数据，重绘会闪一下空状态）
+ */
+function setViewMode(mode, persist, paint) {
+  view.mode = mode === 'list' ? 'list' : 'grid';
+  const g = $('#btnMgGrid');
+  const l = $('#btnMgList');
+  if (g) g.classList.toggle('active', view.mode === 'grid');
+  if (l) l.classList.toggle('active', view.mode === 'list');
+  if (persist) state.patch({ ui: { manageView: view.mode } });
+  if (paint !== false) renderGrid();
+}
+
 function renderGrid(placeholder) {
   const grid = $('#mgGrid');
   const empty = $('#mgEmpty');
@@ -900,6 +1053,7 @@ function renderGrid(placeholder) {
   grid.classList.toggle('list-view', view.mode === 'list');
   syncListHead();
   syncHeadCheck();
+  observeThumbs();
 }
 
 function attachImageFallback() {
@@ -1448,18 +1602,11 @@ function bind() {
     });
   }
 
-  $('#btnMgGrid').onclick = () => {
-    view.mode = 'grid';
-    $('#btnMgGrid').classList.add('active');
-    $('#btnMgList').classList.remove('active');
-    renderGrid();
-  };
-  $('#btnMgList').onclick = () => {
-    view.mode = 'list';
-    $('#btnMgList').classList.add('active');
-    $('#btnMgGrid').classList.remove('active');
-    renderGrid();
-  };
+  $('#btnMgGrid').onclick = () => setViewMode('grid', true);
+  $('#btnMgList').onclick = () => setViewMode('list', true);
+  // 用上次记下的视图模式 —— 别再每次重启都退回网格。
+  // paint=false：这时列表还没 load，重绘只会闪一下空状态
+  setViewMode(savedViewMode(), false, false);
 
   $('#btnMgCopyLinks').onclick = copySelectedLinks;
   $('#btnMgCopyPath').onclick = copySelectedPaths;
@@ -1491,17 +1638,23 @@ function bind() {
     state.patch({ linkFormat: $('#mgFormat').value });
   });
 
-  // 滚动懒渲染
-  $('.content').addEventListener('scroll', () => {
-    const c = $('.content');
-    if (c.scrollTop + c.clientHeight > c.scrollHeight - 260) {
-      const total = filtered().length;
-      if (view.shown < total) {
-        view.shown += PAGE;
-        renderGrid();
+  // 滚动懒渲染。
+  // 容器是 .mg-main **不是** .content —— 管理页把自己撑满并 overflow:hidden，
+  // 滚动发生在内部的 .mg-main 里。早先监听 .content，那个 scroll 永远不触发
+  // （.content 在这页根本不滚），列表就卡死在第一批 120 个 —— 杰哥 230 张
+  // 只看到 120 张，就是这个。
+  const scroller = $('.mg-main');
+  if (scroller) {
+    scroller.addEventListener('scroll', () => {
+      if (scroller.scrollTop + scroller.clientHeight > scroller.scrollHeight - 260) {
+        const total = filtered().length;
+        if (view.shown < total) {
+          view.shown += PAGE;
+          renderGrid();
+        }
       }
-    }
-  });
+    });
+  }
 
   const grid = $('#mgGrid');
   const main = $('.mg-main');
