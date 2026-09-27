@@ -132,9 +132,12 @@ function updateItem(it) {
   el.querySelector('.q-meta').innerHTML = parts.join(' ');
 
   const st = el.querySelector('.q-status');
-  st.className = 'q-status ' + statusClass(it);
+  const cls = statusClass(it);
+  st.className = cls ? 'q-status ' + cls : 'q-status';
   st.textContent = STATUS_TEXT[it.status] || it.status;
-  st.title = it.error || '';
+  // title 只在真有错误时给 —— 空值会渲染成 title="" 这种没意义的属性
+  if (it.error) st.title = it.error;
+  else st.removeAttribute('title');
   return el;
 }
 
