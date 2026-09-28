@@ -2608,11 +2608,30 @@ html[data-theme="dark"] .card { background: rgba(14, 22, 34, 0.88); }
 
 /* 编辑态：pre 铺满但只负责显示颜色，滚动由 textarea 驱动 */
 .modal.code .tv-pane { position: relative; flex: 1; min-height: 0; }
+/*
+ * pre 必须是 overflow: scroll 而不是 hidden —— 这是「光标点不准」的关键。
+ *
+ * textarea 的滚动条会占掉自己的内容区：垂直条 9px 宽、水平条 9px 高（全局
+ * ::-webkit-scrollbar 定的就是 9px）。而 hidden 的 pre 一个像素都不占，
+ * 于是两层的 clientWidth / clientHeight 对不上，最大可滚动量正好差 9px。
+ *
+ * 用户看到的是 pre、点的是 textarea，两者一旦错开，滚到越深偏得越多 ——
+ * 文件长、又有长行（JSON / 日志那种一行到底的）时最明显，约半行的偏差。
+ * 让 pre 保留同样的滚动条槽位、再把它的滚动条刷成透明（它是背景层，不该
+ * 出现滚动条），两边尺寸就完全一致了。
+ */
 .modal.code .tv-pane .tv-pre {
   position: absolute; inset: 0;
-  overflow: hidden;
+  overflow: scroll;
   pointer-events: none;
+  /* 别写 scrollbar-color / scrollbar-width：Chromium 一见到这两个标准属性
+     就会放弃 ::-webkit-scrollbar 的自定义，改用系统滚动条 —— 宽度不再是
+     下面写的 9px，两层的尺寸又对不上了。刷透明只用 webkit 伪元素。 */
 }
+.modal.code .tv-pane .tv-pre::-webkit-scrollbar { width: 9px; height: 9px; }
+.modal.code .tv-pane .tv-pre::-webkit-scrollbar-track { background: transparent; }
+.modal.code .tv-pane .tv-pre::-webkit-scrollbar-thumb { background: transparent; }
+.modal.code .tv-pane .tv-pre::-webkit-scrollbar-corner { background: transparent; }
 .modal.code .tv-ta {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
@@ -2620,7 +2639,9 @@ html[data-theme="dark"] .card { background: rgba(14, 22, 34, 0.88); }
   background: transparent;
   color: transparent;
   caret-color: var(--accent-hi);
-  overflow: auto;
+  /* 和 pre 对齐：始终保留滚动条槽位（内容不够长时是一条全透明的空槽，看不出来）。
+     若用 auto，「有滚动条 / 没滚动条」两种状态下两层的尺寸就会对不上 */
+  overflow: scroll;
   white-space: pre;
   outline: none;
 }
