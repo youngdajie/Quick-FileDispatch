@@ -146,6 +146,8 @@
       move: call('cloud:move'),
       replace: call('cloud:replace'),
       detect: call('cloud:detect'),
+      /** 存储用量与额度（只有 CNB 有）；管理页左侧那根容量条用它 */
+      quota: call('cloud:quota'),
       readText: call('cloud:readText'),
       pushLocal: call('cloud:pushLocal'),
       pullCloud: call('git:pull')

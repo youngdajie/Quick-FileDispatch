@@ -32,7 +32,7 @@ import (
 // 与 Electron 版 store.js 的 DEFAULT_CONFIG 逐字段对应，改一处必须改两处。
 func Defaults() map[string]any {
 	return map[string]any{
-		"version":       8,
+		"version":       9,   // 必须跟 migrate 里最新那一档一致
 		"onboarded":     false,
 		"platform":      "github", // github | cnb
 		"owner":         "",
@@ -88,10 +88,14 @@ func Defaults() map[string]any {
 			"bgImage": "",
 			// 浅色 + 有背景图时面板的背景模糊（px，0 = 关）。
 			// 只影响观感，深色模式读不到（没有背景图可透），但控件照旧可调
-			"bgBlur": 12,
+			// 面板不透明度 0-100（0 = 完全透明，背景图看得最清楚）。
+			// 以前这里是「毛玻璃强度 0-24」，老值在 migrate 里换算过来
+			"bgBlur": 50,
 			// 管理页的视图模式：grid（网格）/ list（列表）。
 			// 记住上次选择，免得每次重启都退回网格
 			"manageView": "grid",
+			// 上传页「图片设置」折叠区是否展开。默认收起 —— 压缩/水印是低频设置
+			"imgSetOpen": false,
 		},
 	}
 }
@@ -126,7 +130,14 @@ func New(file string, vault *dpapi.Vault) *Store {
 	s := &Store{file: file, vault: vault}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data = s.read()
+	data, migrated := s.read()
+	s.data = data
+	if migrated {
+		// 迁移改了版本号 → 落盘一次。不落的话下次启动还会把同一批迁移再跑一遍
+		if err := s.write(); err != nil {
+			fmt.Fprintf(os.Stderr, "迁移后的配置写回失败：%v\n", err)
+		}
+	}
 	return s
 }
 
@@ -148,17 +159,24 @@ func (s *Store) LocalDir() string {
 // read 读文件并深度合并到默认值上。
 // 文件不存在 / 坏了都退回默认值 —— 但**不回写**，避免把坏文件直接覆盖掉，
 // 用户还有机会手动救回来。
-func (s *Store) read() map[string]any {
+//
+// 第二个返回值表示「这次有没有跑过迁移」。调用方据此把结果落盘一次 ——
+// 不落的话版本号永远停在磁盘上的老值，那批迁移**每次启动都会重跑一遍**。
+// 迁移虽然各条都尽量写成幂等，但把它们押在幂等上并不是个好主意
+// （实测踩过：bgBlur 那条换算两次就把 24 变成 0 又变回 100）。
+func (s *Store) read() (map[string]any, bool) {
 	raw, err := os.ReadFile(s.file)
 	if err != nil {
-		return Defaults()
+		return Defaults(), false
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		fmt.Fprintf(os.Stderr, "配置解析失败，按默认值走（文件未改动）：%s\n", err)
-		return Defaults()
+		return Defaults(), false
 	}
-	return migrate(merge(Defaults(), parsed))
+	before := numOf(parsed["version"])
+	merged := migrate(merge(Defaults(), parsed))
+	return merged, numOf(merged["version"]) > before
 }
 
 // write 先写临时文件再改名，避免中途断电留下半截 JSON。

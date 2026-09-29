@@ -604,6 +604,12 @@ func Register(r *Registry, env *Env) {
 		})
 	})
 
+	r.Handle("cloud:quota", func(json.RawMessage) (any, error) {
+		return env.cache.Cached("quota|"+env.repoKey(), quotaTTL, func() (any, error) {
+			return env.cloudQuota()
+		})
+	})
+
 	r.Handle("cloud:pushLocal", func(json.RawMessage) (any, error) { return env.cloudPushLocal() })
 
 	/* ---------------------------------------------------------- Git */

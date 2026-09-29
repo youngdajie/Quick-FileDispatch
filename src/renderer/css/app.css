@@ -85,10 +85,9 @@
   --hl-reg: #56c8d8;
   --hl-head: #63aef5;
 
-  /* 毛玻璃：浅色 + 已设自定义背景图时启用，强度由设置页滑块写进 --glass-blur。
-     初始值给的是「关」状态：blur 12px、wash 0.42 都是窗口默认值，
-     JS 真正启用玻璃效果时会根据滑块位置把 --glass-blur / --glass-alpha 改掉。 */
-  --glass-blur: 12px;
+  /* 面板不透明度：浅色 + 已设自定义背景图时启用，值由设置页滑块写进 --glass-alpha。
+     0 = 完全透明（背景图看得最清楚），1 = 实心。
+     --glass-wash / --glass-wash-soft 是给 applyTone 判断「图偏暗时加厚一点」用的。 */
   --glass-alpha: 0;
   --glass-img: none;
   --glass-wash: 0.42;
@@ -266,19 +265,72 @@ kbd {
 body.is-maximized .wc-btn .ic-max { display: none; }
 body.is-maximized .wc-btn .ic-restore { display: block; }
 
-.shell { flex: 1; display: flex; min-height: 0; }
+/* 铺满：侧栏和内容区共用同一档底色，从窗口左边一路铺到右边。
+   以前内容区显 --bg、侧栏显 --bg-soft，两块相邻就是一条色差断层（杰哥点名的）。
+   底色统一之后，各块之间靠边框 / 圆角 / 阴影区分。
+   具体色值在下面的 html[data-theme="…"] .shell 里，深浅各一套。 */
+/* position: relative 是给侧栏当定位基准用的 —— 侧栏改成绝对定位浮在内容之上 */
+.shell { flex: 1; display: flex; min-height: 0; position: relative; }
 
+/* 左侧导航：**浮在内容区之上**（绝对定位，不占布局流）。
+   这样 .content 能铺满整个窗口宽度，底色是一整块 —— 之前侧栏占着左侧的位置，
+   内容区又有自己的渐变底，两块钱就是一刀断层（杰哥截图点名的）。
+   底色用 --panel：不透明、和卡片同色。
+   垂直居中用 top/bottom + margin:auto 做，把 transform 留给收起动画用。
+   收起用 transform 而不是 display/margin —— transform 不参与布局，内容不会跳。 */
 .sidebar {
-  width: 88px; flex: 0 0 auto;
-  background: var(--bg-soft);
-  border-right: 1px solid var(--border-soft);
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 10px 7px;
+  position: absolute;
+  left: 10px; top: 10px; bottom: 10px;
+  height: fit-content;
+  max-height: calc(100% - 20px);
+  margin: auto 0;
+  width: 72px;                                /* 原来 88，太宽会压住右边内容 */
+  z-index: 5;
+  border-radius: 6px;                         /* 跟内部的 .nav-item 用同一个圆角，不再割裂 */
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  display: flex; flex-direction: column; gap: 8px;   /* 项与项之间松一点（原来 2px） */
+  padding: 10px 6px;
+  /* 弹出时带一点回弹（水珠感），收起时干脆些 */
+  transition: transform 0.44s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s var(--ease);
+  will-change: transform;
 }
+/* 收起：推到屏外（宽度 72 + 左边距 10 + 余量） */
+body.side-hidden .sidebar {
+  transform: translateX(-92px);
+  transition: transform 0.34s cubic-bezier(0.4, 0, 0.7, 0.2);
+}
+
+/* 侧栏收起后留在左边的小把手：碰一下、或点中间那个箭头，都能把侧栏弹回来。
+   配色**跟界面一套**（面板色 + 细边框 + 次要文字色）——
+   之前浅色给深灰、深色给白，在各自底色上都太抢眼（杰哥说「突兀」）。 */
+.side-dock {
+  position: fixed; left: 0; top: 50%;
+  width: 14px; height: 88px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-left: 0;
+  border-radius: 0 7px 7px 0;
+  background: var(--panel);
+  color: var(--muted);                         /* 箭头颜色 */
+  display: grid; place-items: center;          /* 箭头居中 */
+  cursor: pointer;
+  box-shadow: 0 2px 10px -3px rgba(0, 0, 0, 0.3);
+  z-index: 40;
+  opacity: 0; pointer-events: none;
+  transform: translateY(-50%) scaleY(0.55);
+  transition: opacity 0.3s var(--ease), transform 0.34s var(--ease),
+              width 0.2s var(--ease), color 0.2s var(--ease);
+}
+body.side-hidden .side-dock {
+  opacity: 1; pointer-events: auto;
+  transform: translateY(-50%) scaleY(1);
+}
+body.side-hidden .side-dock:hover { width: 18px; color: var(--text); }
 .nav-item {
   position: relative;
   display: flex; flex-direction: column; align-items: center; gap: 5px;
-  padding: 11px 4px; border-radius: 8px; cursor: pointer;
+  padding: 11px 4px; border-radius: 6px; cursor: pointer;   /* 跟侧栏同一个圆角 */
   background: transparent; border: 1px solid transparent; color: var(--muted);
   font-size: 11.5px;
   transition: background 0.15s, color 0.15s, transform 0.1s;
@@ -295,14 +347,28 @@ body.is-maximized .wc-btn .ic-restore { display: block; }
 .nav-item.active::before { height: 24px; }
 .nav-item.active svg { color: var(--accent); }
 
-.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 5px; align-items: center; }
+/* CPU / 版本：原本是侧栏底部的一列（靠 margin-top:auto 顶到底），
+   现在挂在顶栏标题右边 —— 改成横排、紧凑，别占太宽，也别挤到右边那排图标。
+   注意 display: flex 要自己写全：原来那条 .sidebar-foot 规则已经被这条取代了 */
+.sidebar-foot {
+  display: flex; flex-direction: row; align-items: center; gap: 6px;
+  flex: 0 0 auto;
+  margin: 0 0 0 13px;
+}
 .cpu-badge, .ver-badge {
   font-size: 10px; color: var(--muted); font-family: var(--mono);
   background: var(--panel); border: 1px solid var(--border-soft);
   border-radius: 5px; padding: 2px 8px; white-space: nowrap;
 }
 
-.content { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; }
+/* 内容区铺满整个宽度，靠 padding 给浮在上面的侧栏让位 ——
+   这样底色是一整块，不管有没有背景图都不会和左边出现断层。
+   92 = 10(缝) + 72(侧栏宽) + 10(呼吸) */
+.content {
+  flex: 1; min-width: 0;
+  padding-left: 92px;
+  overflow-y: auto; overflow-x: hidden;
+}
 .page { display: none; padding: 20px 24px 44px; }
 .page.active { display: block; }
 
@@ -1117,7 +1183,7 @@ html[data-theme="light"] .dropzone {
    所以 hover 只用 :hover 一个伪类（具体性低于 :checked:hover），
    并且 :checked:hover 显式再声明一次，把选中态钉死。
    ------------------------------------------------------------ */
-.up-imgset input[type="checkbox"] {
+:is(.up-imgset, .up-lfs) input[type="checkbox"] {
   -webkit-appearance: none; appearance: none;
   position: relative; flex: 0 0 auto;
   width: 16px; height: 16px; margin: 0;
@@ -1128,38 +1194,46 @@ html[data-theme="light"] .dropzone {
   transition: background 0.18s var(--ease), border-color 0.18s,
               box-shadow 0.18s, transform 0.1s var(--ease);
 }
-.up-imgset input[type="checkbox"]:hover { border-color: var(--text-dim); }
-.up-imgset input[type="checkbox"]:active { transform: scale(0.9); }
-.up-imgset input[type="checkbox"]:focus-visible {
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:hover { border-color: var(--text-dim); }
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:active { transform: scale(0.9); }
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:focus-visible {
   outline: none; box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.up-imgset input[type="checkbox"]:checked,
-.up-imgset input[type="checkbox"]:checked:hover {
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:checked,
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:checked:hover {
   background: linear-gradient(180deg, var(--accent-hi), var(--accent));
   border-color: var(--accent);
   box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--accent) 62%, transparent);
 }
-/* 勾要秀气并且真正居中：left/top 各 50% + translate(-50%,-50%) 后再旋转，
-   绕自身中心转，天生居中；以前用固定 left/top 摆，肉眼看着偏左下 */
-.up-imgset input[type="checkbox"]::after {
-  content: ''; position: absolute; left: 50%; top: 50%;
+/* 勾要**几何居中**，别靠 translate(-50%,-50%) 去推 —— 那套依赖元素实际尺寸，
+   而伪元素是 content-box、border 又会被设备像素舍入（1.8px 落到 1px），
+   算出来的偏移就差着一截，看着就是「勾歪在右边」。
+   改成 inset: 0 + margin: auto：浏览器直接把它摆在父元素（padding box）正中央。
+   最后那个 -1px 上移是补**视觉重心** —— 勾是「右边 + 下边」两条边框拼的 L 形，
+   绕中心转 42° 之后质心落到中心下方约 1.8px，不补看着就是往下坠。 */
+:is(.up-imgset, .up-lfs) input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
   width: 4px; height: 7px;
-  margin: -4px 0 0 -2px;
   border: 1.8px solid #fff; border-top: 0; border-left: 0;
-  transform: rotate(42deg) scale(0); transform-origin: center;
+  transform: translateY(-1px) rotate(42deg) scale(0);
+  transform-origin: center;
   opacity: 0;
   transition: transform 0.18s var(--ease), opacity 0.12s;
 }
-.up-imgset input[type="checkbox"]:checked::after {
-  transform: rotate(42deg) scale(1); opacity: 1;
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:checked::after {
+  transform: translateY(-1px) rotate(42deg) scale(1);
+  opacity: 1;
 }
-.up-imgset input[type="checkbox"]:disabled {
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:disabled {
   opacity: 0.45; cursor: not-allowed;
   background: var(--panel-3); border-color: var(--border); box-shadow: none;
 }
-.up-imgset input[type="checkbox"]:disabled::after { opacity: 0; }
-.up-imgset input[type="checkbox"]:disabled + .uis-block-title,
-.up-imgset input[type="checkbox"]:disabled + .field-label { color: var(--muted); }
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:disabled::after { opacity: 0; }
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:disabled + .uis-block-title,
+:is(.up-imgset, .up-lfs) input[type="checkbox"]:disabled + .field-label { color: var(--muted); }
 /* 关掉开关时把参数区淡下去：视线立刻知道它不参与干活（压缩 / 水印各管各的） */
 .uis-block .grid-2 { transition: opacity 0.2s ease; }
 .uis-block:has(#upCompress:not(:checked)) .grid-2,
@@ -1234,7 +1308,9 @@ html[data-theme="light"] .dropzone {
 
 /* ------------------------------------------------ LFS 开关（仅 CNB） */
 .up-lfs {
-  display: flex; align-items: flex-start; gap: 10px;
+  /* 复选框垂直居中，而不是跟标题那一行顶端对齐 —— 右边是「标题 + 三行说明」，
+     顶端对齐时那颗小方框孤零零挂在左上角，看着别扭 */
+  display: flex; align-items: center; gap: 10px;
   margin-top: 13px; padding: 11px 13px;
   border: 1px solid var(--border-soft); border-radius: 9px;
   background: var(--bg-soft); cursor: pointer;
@@ -1242,7 +1318,8 @@ html[data-theme="light"] .dropzone {
 }
 .up-lfs:hover { border-color: var(--border); }
 .up-lfs:has(input:checked) { border-color: var(--accent-line); background: var(--accent-soft); }
-.up-lfs input[type="checkbox"] { margin-top: 2px; flex: 0 0 auto; }
+/* 尺寸 / 描边 / 对勾都走上面那套共用的自绘规则（:is(.up-imgset, .up-lfs)），
+   这里不再单独摆位置 —— 之前那条 margin-top: 2px 已被自绘规则的 margin: 0 盖掉 */
 .up-lfs-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .up-lfs-text b { font-size: 12.5px; color: var(--text); font-weight: 600; }
 .up-lfs-text .hint { line-height: 1.65; }
@@ -1348,10 +1425,42 @@ html[data-theme="light"] .dropzone {
   padding: 0 6px; word-break: break-all;
 }
 .side-git { font-size: 11px; color: var(--muted); line-height: 1.8; padding: 0 6px; }
+/* 「状态」和「云端检测器」合并后，两块内容靠间距分开（原来是一条分隔线） */
+.side-git-cloud { margin-top: 10px; }
 .side-git .ok { color: var(--ok); }
 .side-git .bad { color: var(--warn); }
 .side-git .txt { font-family: var(--mono); word-break: break-all; }
 .side-git .btn { margin-top: 8px; width: 100%; }
+
+/* 存储用量条（CNB 的组织级配额）。挂在云端检测器下面一段 */
+/* 存储用量条（CNB 的组织级配额）。挂在云端检测器下面一段。
+   和上面之间原本是一条通栏细直线（border-top），现在换成居中的一小段波浪
+   （见 .sq-wave）—— 通栏直线把这一小块切得太"硬"，波浪轻一些。 */
+.side-quota { margin-top: 15px; padding: 0 6px; }
+/* 居中的短波浪线。SVG 是内联在 renderQuota 里的，不是 CSS background ——
+   CSS 里的 SVG 属于独立文档，stroke 的 currentColor 取不到外层颜色。 */
+.sq-wave {
+  display: flex; justify-content: center;
+  margin: 0 0 13px;               /* 和下面「存储用量」那行拉开间隙 */
+  color: var(--border-soft);
+}
+.sq-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; }
+.sq-label { color: var(--muted); }
+/* 等宽数字：百分比跳动时右边的数字不跟着抖 */
+.sq-pct {
+  font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.sq-pct.warn { color: var(--warn); }
+.sq-pct.bad { color: var(--danger-text); }
+.sq-bar { margin-top: 6px; height: 5px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.sq-bar i {
+  display: block; height: 100%; width: 0; border-radius: 3px;
+  background: var(--accent); transition: width .3s var(--ease);
+}
+.sq-bar i.warn { background: var(--warn); }
+.sq-bar i.bad { background: var(--danger-text); }
+.sq-num { margin-top: 5px; font-size: 10.5px; color: var(--muted); font-family: var(--mono); }
 
 /* 状态区的「标题 + 小按钮」一行：云端检测器的重测入口 */
 .side-head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1888,6 +1997,19 @@ html[data-theme="light"] .about-logo {
 .mh-btn:active { transform: translateY(1px); }
 .mh-btn svg { flex-shrink: 0; }
 .mh-btn[hidden] { display: none; }
+/* 标题栏右上角的关闭叉（自绘）。观感对齐「新手指引」右上角那个 ✕ */
+.modal .mh-close {
+  flex: 0 0 auto; padding: 0;
+  width: 26px; height: 26px; border-radius: 7px;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  color: var(--muted); line-height: 1;
+  transition: background .16s, color .16s, border-color .16s;
+}
+.modal .mh-close:hover {
+  color: var(--danger-text); border-color: var(--danger-text); background: var(--bg-soft);
+}
+.modal .mh-close:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .modal-body { padding: 15px 19px; overflow-y: auto; font-size: 13px; color: var(--text-dim); line-height: 1.8; }
 .modal-foot { padding: 12px 19px 15px; display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid var(--border-soft); }
 .modal.wide { max-width: 900px; }
@@ -2174,7 +2296,7 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 .plat-brand { display: flex; align-items: center; gap: 11px; }
 .plat-brand-item { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; }
 .plat-brand-ico {
-  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px;
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 10px;
   display: grid; place-items: center;
   color: #fff; box-shadow: 0 4px 12px -6px rgba(0, 0, 0, 0.6);
 }
@@ -2350,34 +2472,52 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
     上传页的虚线框当场裂开 —— 那个坑别再踩）。 */
 html[data-theme="light"].glass-ready .glass-host { position: relative; z-index: 0; overflow: hidden; }
 
+/* 玻璃层：面板上盖的那层「白纱」。
+   ------------------------------------------------------------
+   它**不再画背景图、也不再自己模糊**（2026-09-29 重新设计）。
+   模糊交给最底下那层固定的 #customBg 去做 —— 那里只有**一层**，而且它
+   position: fixed、滚动时完全不动，所以滚动不产生任何重绘。
+
+   旧做法是每块面板各画一份按视口对齐的背景图、各自 filter: blur()：
+   滚动时 JS 要逐面板量坐标改 background-position，十几块面板叠加起来
+   就是「背景跟内容有拉扯、黏黏的」那种感觉。
+   ⚠️ 中间试过把背景图挪进 100vw×100vh 的子层用 transform 平移，捅了大篓子：
+   那层盖住整个窗口，而玻璃层位于 .topbar 内部 —— 顶栏是
+   -webkit-app-region: drag，drag 判定又不认 pointer-events: none，
+   结果整个窗口变成可拖区、外加十几个全屏合成层把 GPU 压死。
+   所以：**模糊放 #customBg，面板这边只留半透明白纱**。
+   ------------------------------------------------------------ */
+/* 启用了自定义背景图时，面板自身不再涂色 —— 遮多少全交给 .glass-layer 那层纱，
+   浓度就是滑块那个「不透明度」。这样拖到 0 才是真的完全透明。
+   ⚠️ 两个不在这个列表里：
+     - 侧栏：按杰哥的要求保持 --panel 实心色
+     - 顶栏：它是**固定**的，不跟滑块走（有自己的一套底色） */
+html[data-theme="light"].glass-ready .card,
+html[data-theme="light"].glass-ready .queue-panel,
+html[data-theme="light"].glass-ready .result-panel,
+html[data-theme="light"].glass-ready .up-target,
+html[data-theme="light"].glass-ready .dropzone,
+html[data-theme="light"].glass-ready .up-options,
+html[data-theme="light"].glass-ready .up-imgset,
+html[data-theme="light"].glass-ready .about-hero {
+  background: transparent;
+}
+
 html[data-theme="light"].glass-ready .glass-host > .glass-layer {
   display: block;
-  position: absolute; inset: -28px; z-index: -1; pointer-events: none;
-  /* 白纱浓度直接由滑块决定：强度 0 → 纱几乎不透明（看起来就是原来的实心面板），
-     强度拉满 → 纱退到 --glass-wash，模糊的图透出来。
-     所以「越调越透」不会再出现：透出来的一直是被模糊过的图，且模糊半径同步变大。 */
-  background-image:
-    linear-gradient(
-      rgba(255, 255, 255, calc(1 - (1 - var(--glass-wash)) * var(--glass-alpha, 0))),
-      rgba(255, 255, 255, calc(1 - (1 - var(--glass-wash)) * var(--glass-alpha, 0)))
-    ),
-    var(--glass-img);
-  background-size: 100% 100%, 100vw 100vh;
-  background-position: 0 0, calc(28px - var(--gx, 0px)) calc(28px - var(--gy, 0px));
-  background-repeat: no-repeat, no-repeat;
-  filter: blur(var(--glass-blur)) saturate(1.15);
-  transition: filter 0.22s linear, background-image 0.38s linear;
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  /* 纱的浓度**就是**滑块那个不透明度：
+       0 → 完全透（自定义背景图看得一清二楚）
+       1 → 全白实心
+     以前这里算的是 (1 - (1 - wash) * alpha)，alpha=0 时纱是满的 —— 也就是
+     「调到 0 反而卡白卡白」，跟直觉完全相反（杰哥点名的）。现在直给。 */
+  background: linear-gradient(
+    rgba(255, 255, 255, var(--glass-alpha, 0)),
+    rgba(255, 255, 255, var(--glass-alpha, 0))
+  );
 }
-/* 顶栏 / 侧栏的白纱再薄一点，让背景图的气色透出来 */
-html[data-theme="light"].glass-ready .topbar > .glass-layer,
-html[data-theme="light"].glass-ready .sidebar > .glass-layer {
-  background-image:
-    linear-gradient(
-      rgba(247, 249, 252, calc(1 - (1 - var(--glass-wash-soft)) * var(--glass-alpha, 0))),
-      rgba(247, 249, 252, calc(1 - (1 - var(--glass-wash-soft)) * var(--glass-alpha, 0)))
-    ),
-    var(--glass-img);
-}
+/* 顶栏这条白纱去掉了：它是固定元素，不跟「面板不透明度」滑块走，
+   底色继续用自己那套（见下面的 html[data-theme="…"] .topbar） */
 /* 卡片左侧那根 hover 主色条是 ::before，得抬到玻璃层上面，不然被白纱盖住 */
 html[data-theme="light"].glass-ready .glass-host::before { z-index: 2; }
 html[data-theme="light"].glass-ready .content {
@@ -2430,17 +2570,32 @@ html[data-theme="dark"] #universe { display: block; }
 #customBg.on { display: block; }
 html[data-theme="dark"] #customBg { display: none; }
 
+/* 模糊先撤了（杰哥要求）：那套「强度」的语义反直觉，改成直白的不透明度。
+   以后要恢复模糊就在这里加回 filter —— 但那时得先想清楚「0 该是糊还是清」，
+   别再出现「调到 0 反而更糊/更白」。 */
+html[data-theme="light"].glass-ready #customBg {
+  inset: 0;
+}
+
 /* 界面整体压在画布之上。.content / .page 本来就没有底色，
    它们那一块会直接透出粒子；有底色的容器得半透明才透得过。 */
 .app { position: relative; z-index: 1; }
 
 html[data-theme="light"] .topbar { background: rgba(247, 249, 252, 0.72); }
-html[data-theme="light"] .sidebar { background: rgba(247, 249, 252, 0.58); }
 html[data-theme="light"] .card { background: rgba(255, 255, 255, 0.84); }
+/* 铺满用的底：比卡片淡一档，垫在侧栏 + 内容区下面。
+   跟卡片同色系 → 不会再出现「page 一块、左边一块」的色差断层；
+   但又比卡片淡，卡片才立得出来。 */
+html[data-theme="light"] .shell { background: rgba(244, 247, 251, 0.72); }
+/* ⚠️ 这层底也得跟「面板不透明度」滑块走 —— 否则滑块拖到 0 时面板自己透明了，
+   却被这层固定的底挡着，背景图还是透不出来（杰哥截图点名的「卡白」）。 */
+html[data-theme="light"].glass-ready .shell {
+  background: rgba(244, 247, 251, calc(0.72 * var(--glass-alpha, 0)));
+}
 
 html[data-theme="dark"] .topbar { background: rgba(10, 16, 25, 0.78); }
-html[data-theme="dark"] .sidebar { background: rgba(10, 16, 25, 0.64); }
 html[data-theme="dark"] .card { background: rgba(14, 22, 34, 0.88); }
+html[data-theme="dark"] .shell { background: rgba(11, 17, 26, 0.62); }
 
 /* ------------------------------------------------ 昼夜按钮的涟漪
    点一下：一圈从图标中心向外炸开并淡出，同时一圈光晕从外向内收回来，
@@ -2774,6 +2929,15 @@ html[data-theme="light"] .mini-up-wrap { background: rgba(20, 32, 48, 0.42); }
    特异性更高，不受影响。 */
 html { user-select: none; -webkit-user-select: none; }
 body { cursor: default; }
+/*
+ * 链接不许被原生拖拽。
+ *
+ * user-select: none 管不到这个：<a> 的 -webkit-user-drag 默认是 auto，按住
+ * 往旁边一滑就会拖出个半透明的残影、光标也跟着变成「拖放」样式 —— 一眼就
+ * 露馅是个网页（杰哥点名的那个「默认标志」）。
+ * 禁掉拖拽不影响正常点击，也不影响在链接上滚动页面。
+ */
+a[href] { -webkit-user-drag: none; }
 input, textarea, select, [contenteditable="true"], pre, code, .qfd-selectable {
   user-select: text; -webkit-user-select: text;
 }

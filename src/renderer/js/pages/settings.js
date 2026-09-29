@@ -348,13 +348,12 @@ function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
 }
 function fmtBlur(n) {
-  const v = round1(n);
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  return String(Math.round(Number(n) || 0));
 }
 
-/** 毛玻璃强度落盘（防抖：拖动过程中别每帧都写一次配置） */
+/** 面板不透明度落盘（防抖：拖动过程中别每帧都写一次配置） */
 const saveBlur = debounce(() => {
-  const v = round1(Number($('#cfgBgBlur').value) || 0);
+  const v = Math.round(Number($('#cfgBgBlur').value) || 0);
   state.patch({ ui: { bgBlur: v } }).catch((e) => err(e.message || String(e)));
 }, 260);
 
@@ -432,7 +431,8 @@ function fillGlobal() {
   ensureFontOptions(ui.font || PRIMARY_FONT_NAME);
   const msg = $('#cfgCommitMessage');
   if (msg) msg.value = c.commitMessage || '';
-  const blur = ui.bgBlur == null ? 12 : Number(ui.bgBlur);
+  // 0-100 的「面板不透明度」（老配置的 0-24 强度值由 store 那边迁移过）
+  const blur = ui.bgBlur == null ? 50 : Number(ui.bgBlur);
   const slider = $('#cfgBgBlur');
   if (slider) slider.value = blur;
   const blurVal = $('#cfgBgBlurVal');
@@ -579,7 +579,7 @@ export default {
         .map(
           (id) =>
             '<span class="plat-brand-item">' +
-            '<span class="plat-brand-ico" style="background:' + BRAND_TILE[id] + '">' + brandIcon(id, 16) + '</span>' +
+            '<span class="plat-brand-ico" style="background:' + BRAND_TILE[id] + '">' + brandIcon(id, 20) + '</span>' +
             escapeHtml(PLATFORM_NAME[id]) +
             '</span>'
         )

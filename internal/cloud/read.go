@@ -349,6 +349,84 @@ func (c *Client) HeadSHA(branch string) (string, error) {
 
 /* ------------------------------------------------------------ 取值小工具 */
 
+/* ------------------------------------------------------------ 存储容量 */
+
+// StorageQuota 是一对「已用 / 总量」字节数。
+type StorageQuota struct {
+	Used  int64 `json:"used"`
+	Total int64 `json:"total"`
+}
+
+// QuotaInfo 是 CNB 的存储用量快照。
+//
+// 注意这是**组织级**的：CNB 的 charge 接口就开在组织这一层
+// （/{org}/-/charge/…），仓库维度的 repos-volume 参数没公开，调过去只会
+// 400。所以这里的数字实际是「这个账号下所有仓库」的合计 —— 界面上得说清楚，
+// 别让人当成单个仓库的用量。
+type QuotaInfo struct {
+	Git    StorageQuota `json:"git"`    // 仓库存储
+	Object StorageQuota `json:"object"` // 对象存储（LFS 走这边）
+}
+
+// Quota 取存储用量与额度。只有 CNB 有这套接口（GitHub 没有对应的免费额度概念）。
+//
+// 额度和用量是两个接口，而且都只认组织 slug —— 不带仓库名。
+func (c *Client) Quota() (*QuotaInfo, error) {
+	if !c.IsCNB() {
+		return nil, &ApiError{Message: "只有 CNB 提供容量接口"}
+	}
+	if c.Owner == "" {
+		return nil, &ApiError{Message: "还没配置仓库"}
+	}
+	base := "/" + c.Owner + "/-/charge/"
+	quotaRaw, err := c.req("GET", base+"quota", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	usedRaw, err := c.req("GET", base+"volume", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	q, _ := quotaRaw.(map[string]any)
+	v, _ := usedRaw.(map[string]any)
+	// quota 里的是对象（{"total":…,"free":…}），volume 里的是裸数字
+	return &QuotaInfo{
+		Git: StorageQuota{
+			Used:  num64(v["git_in_byte"]),
+			Total: num64(field(q, "git_in_byte", "total")),
+		},
+		Object: StorageQuota{
+			Used:  num64(v["object_in_byte"]),
+			Total: num64(field(q, "object_in_byte", "total")),
+		},
+	}, nil
+}
+
+// num64 把 JSON 数字统一成 int64：标准库解出来的数字都是 float64。
+// 取不到就当 0，别为了一个容量条把整页搞崩。
+func num64(v any) int64 {
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int64:
+		return n
+	}
+	return 0
+}
+
+// field 取嵌套字段：field(m, "git_in_byte", "total") 等价于 m["git_in_byte"]["total"]
+func field(m map[string]any, keys ...string) any {
+	var cur any = m
+	for _, k := range keys {
+		mm, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = mm[k]
+	}
+	return cur
+}
+
 func str(v any) string {
 	s, _ := v.(string)
 	return s

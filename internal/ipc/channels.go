@@ -53,6 +53,7 @@ var known = []string{
 	"cloud:move",
 	"cloud:replace",
 	"cloud:detect",
+	"cloud:quota",
 	"cloud:readText",
 	"cloud:pushLocal",
 

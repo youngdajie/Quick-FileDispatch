@@ -680,30 +680,28 @@ const persistQuickOptions = debounce(() => {
 
 /* ---------------------------------------------------------- 图片设置（折叠 + 水印色板） */
 
-/** 折叠状态记在 localStorage：换页 / 重启都保持用户上次的展开习惯 */
-const IMGSET_KEY = 'qfd-imgset-open';
-
-function setImgSetOpen(open) {
+/**
+ * 「图片设置」的折叠状态。
+ *
+ * 记在配置的 ui.imgSetOpen 里 —— 原来用 localStorage，那个依赖 WebView2 的
+ * userDataFolder 是否持久，写在配置里更稳，也和 theme / manageView 那几项
+ * 界面偏好保持了同一处。
+ *
+ * 默认**收起**：日常只改目录和文件名，压缩参数属于低频设置，摊开占地方。
+ */
+function setImgSetOpen(open, persist) {
   const box = $('#upImgSet');
   if (!box) return;
   box.classList.toggle('open', !!open);
   const head = $('#upImgSetHead');
   if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
-  try {
-    localStorage.setItem(IMGSET_KEY, open ? '1' : '0');
-  } catch (e) {
-    /* 隐私模式存不了就算了 */
-  }
+  // persist=false 给初始化用：恢复上次的状态，但别反过来再写一次配置
+  if (persist !== false) state.patch({ ui: { imgSetOpen: !!open } });
 }
 
 function imgSetOpen() {
-  try {
-    const v = localStorage.getItem(IMGSET_KEY);
-    if (v !== null) return v === '1';
-  } catch (e) {
-    /* 读不到按展开算 */
-  }
-  return true;
+  const ui = (state.cfg && state.cfg.ui) || {};
+  return ui.imgSetOpen === true;
 }
 
 /** 色块 / 隐藏色值 / hex 文本框三处同步（自设置页原样迁来，#upWmColor 是数据源） */
@@ -1024,7 +1022,8 @@ export default {
 
     // 「图片设置」折叠：点头部开合，状态记 localStorage
     $('#upImgSetHead').onclick = () => setImgSetOpen(!imgSetOpen());
-    setImgSetOpen(imgSetOpen());
+    // 初始化：按记住的状态摆好，但别回写配置
+    setImgSetOpen(imgSetOpen(), false);
 
     // 压缩 / 水印参数变了：清掉「就绪」让队列按新参数重算 + 落盘
     // （水印也影响输出，所以同样要走 invalidate）

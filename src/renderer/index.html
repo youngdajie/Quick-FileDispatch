@@ -22,6 +22,13 @@
       <span class="brand-name">快捷文件分发服务@JIE</span>
     </div>
 
+    <!-- CPU / 版本：原来挂在侧栏底部，挪到标题右边（横排、紧凑，
+         右边那排图标按钮靠 topbar-spacer 顶着，互不干扰） -->
+    <div class="sidebar-foot">
+      <div class="cpu-badge" id="cpuBadge">CPU 核心 —</div>
+      <div class="ver-badge" id="verBadge">v1.2</div>
+    </div>
+
     <div class="topbar-spacer"></div>
 
     <button class="icon-btn" id="btnTheme" title="切换主题">
@@ -71,11 +78,13 @@
         <span>关于</span>
       </button>
 
-      <div class="sidebar-foot">
-        <div class="cpu-badge" id="cpuBadge">CPU 核心 —</div>
-        <div class="ver-badge" id="verBadge">v1.2</div>
-      </div>
     </nav>
+
+    <!-- 侧栏收起后留在左边的小把手：鼠标碰一下、或直接点中间的箭头，
+         都能把侧栏弹回来（position: fixed，不参与 shell 的 flex 布局） -->
+    <button type="button" class="side-dock" id="sideDock" title="点击展开侧栏" aria-label="展开侧栏">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5.5l6.5 6.5L9 18.5"/></svg>
+    </button>
 
     <section class="content" id="content">
 
@@ -202,7 +211,7 @@
           <!-- 图片设置：压缩 + 水印全部集中在这里（原设置页两块卡整体迁入），
                可折叠 —— 日常只改目录/文件名/前缀，这些低频参数收起来不占地方 -->
           <div class="up-imgset" id="upImgSet">
-            <button type="button" class="uis-head" id="upImgSetHead" aria-expanded="true" aria-controls="upImgSetBody">
+            <button type="button" class="uis-head" id="upImgSetHead" aria-expanded="false" aria-controls="upImgSetBody">
               <svg class="uis-chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
               <span class="uis-title">图片设置</span>
               <span class="uis-sub">压缩与水印 · 仅对图片生效，其它文件原样上传</span>
@@ -380,16 +389,19 @@
 
         <div class="mg-body">
           <aside class="mg-side" id="mgSide">
-            <div class="side-head">状态</div>
-            <div class="side-git" id="mgGitState">—</div>
-            <div class="side-sep"></div>
+            <!-- 「状态」和「云端检测器」合并成一块：两者本来就在说同一件事
+                 （本地与云端对得上吗），分成两栏只是多了个标题和一条分隔线。
+                 头部沿用云端检测器那套（带「检测」按钮） -->
             <div class="side-head side-head-row">
-              <span>云端检测器</span>
+              <span>云端 · 本地检测器</span>
               <button type="button" class="side-mini" id="btnMgDetect" title="重新检测本地与云端的提交差异">检测</button>
             </div>
-            <div class="side-git" id="mgCloudState">
+            <div class="side-git" id="mgGitState">—</div>
+            <div class="side-git side-git-cloud" id="mgCloudState">
               <span class="txt">正在检测本地与云端…</span>
             </div>
+            <!-- 存储用量（只有 CNB 有）。数据不全时整块藏起来，不留空壳 -->
+            <div class="side-quota" id="mgQuota" hidden></div>
           </aside>
           <div class="mg-main">
             <div class="mg-listhead" id="mgListHead" hidden>
@@ -539,12 +551,12 @@
                 <p class="field-note">程序会把图片复制一份进自己的配置目录，之后原图挪走、删掉都不影响背景</p>
                 <label class="field" style="margin-top:10px">
                   <span class="field-label">
-                    毛玻璃强度 <b id="cfgBgBlurVal">12</b>
-                    <span class="hint">0 = 关闭 · 设了背景图时在浅色模式下生效</span>
+                    面板不透明度 <b id="cfgBgBlurVal">50</b>
+                    <span class="hint">0 = 完全透明（背景图看得最清楚）· 设了背景图时在浅色模式下生效</span>
                   </span>
-                  <input type="range" id="cfgBgBlur" min="0" max="24" step="0.1" />
+                  <input type="range" id="cfgBgBlur" min="0" max="100" step="1" />
                 </label>
-                <p class="field-note">给顶栏、侧栏和卡片加上背景模糊，让背景图在面板后面透出来又不抢正文</p>
+                <p class="field-note">控制顶栏和卡片遮住背景的程度：0 时完全不遮（自定义图一清二楚），100 时回到实心面板</p>
 
                 <!-- 智能推荐：分析背景图后给出 blur 推荐值 + 文字风格提示，
                      点一下就让按钮一行出来，不动现有滑块逻辑 -->

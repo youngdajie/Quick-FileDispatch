@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -286,6 +287,20 @@ func migrate(cfg map[string]any) map[string]any {
 			cfg["customDomain"] = defStr(act["customDomain"], "")
 		}
 		cfg["version"] = 8
+	}
+	if v < 9 {
+		// bgBlur 换了语义：以前是「毛玻璃强度」（0-24，越大人越透、还带模糊），
+		// 现在是「面板不透明度」（0-100，越大越实心）。模糊那套先撤了 ——
+		// 老逻辑里强度 0 反而是全白实心，跟直觉反着来。
+		// 按 (1 - 旧/24) * 100 换算，同一档位观感尽量对上：
+		//   旧 0（关毛玻璃 = 实心） → 新 100（不透明）
+		//   旧 24（最强、最透）     → 新 0（全透明）
+		if ui, ok := cfg["ui"].(map[string]any); ok {
+			if b, ok := ui["bgBlur"].(float64); ok && b >= 0 && b <= 24 {
+				ui["bgBlur"] = math.Round((1 - b/24) * 100)
+			}
+		}
+		cfg["version"] = 9
 	}
 
 	list, _ := cfg["profiles"].([]any)

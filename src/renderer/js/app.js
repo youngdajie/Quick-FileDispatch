@@ -244,10 +244,50 @@ async function boot() {
 
   go('upload');
 
+  // 侧栏闲置自动收起（10 秒），鼠标碰到左边那条提示线再弹回来
+  initSidebarAutoHide();
+
   // 没走完引导就不让用：配置齐全只是「能连上」，走完引导才算「会用了」
   if (!state.cfg.onboarded || !state.configured) {
     onboard.open();
   }
+}
+
+/**
+ * 侧栏闲置自动收起。
+ *
+ * 收起状态挂在 body 的 .side-hidden 上，具体动作由 CSS 做（transform 平移出屏）——
+ * 用 transform 而不是改宽度/display，是因为它不参与布局，右边的 .content
+ * 不会跟着跳。
+ */
+function initSidebarAutoHide() {
+  const bar = document.getElementById('sidebar');
+  const dock = document.getElementById('sideDock');
+  if (!bar || !dock) return;
+  const IDLE_MS = 10000;
+  let timer = null;
+
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => document.body.classList.add('side-hidden'), IDLE_MS);
+  };
+  const expand = () => {
+    document.body.classList.remove('side-hidden');
+    schedule();
+  };
+
+  // 鼠标在侧栏里就一直展开着（暂停倒计时），移开之后才开始算 10 秒
+  bar.addEventListener('mouseenter', () => clearTimeout(timer));
+  bar.addEventListener('mouseleave', schedule);
+  // 碰那条提示线 → 弹出来
+  dock.addEventListener('mouseenter', expand);
+  dock.addEventListener('click', expand);
+  // Tab 键把焦点送进侧栏时也要展开，否则焦点跑进了一个看不见的东西里
+  bar.addEventListener('focusin', expand);
+  // 页面切换（点是导航）时重新计时，别让用户刚点完就被收走
+  bar.addEventListener('click', schedule);
+
+  schedule();
 }
 
 boot().catch((e) => {

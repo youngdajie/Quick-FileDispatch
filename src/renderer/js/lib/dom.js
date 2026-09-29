@@ -61,6 +61,10 @@ export const warn = (m) => toast(m, 'warn');
 
 /* ---------------------------------------------------------------- Modal */
 
+/** 标题栏右上角的关闭叉。自绘 SVG，不用字体里的 ×（字形随机器变） */
+const ICON_CLOSE =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
 /**
  * 通用弹层。
  *
@@ -71,6 +75,9 @@ export const warn = (m) => toast(m, 'warn');
  *   actions    标题右侧的小按钮 [{ icon, label, title, className, onClick }]
  *              文本预览的「在浏览器打开」就走这里 —— 放标题栏才符合直觉，
  *              沉到底栏会和「保存 / 关闭」混在一起变成一排同权重的按钮
+ *   closeX     是否在右上角放一个关闭叉（自绘）。文本预览那种没有底栏按钮、
+ *              也不让点遮罩关的弹层需要它，否则用户只能按 Esc 才知道怎么退
+ *   closeTitle 关闭叉的悬停提示，默认「关闭」
  *   html/node/text/buttons/onClose/dismissable 同以前
  */
 export function modal(opts) {
@@ -78,6 +85,14 @@ export function modal(opts) {
   const wrap = $('#modalWrap');
   wrap.hidden = false;
   wrap.innerHTML = '';
+
+  // close 要先定义：标题栏那个 ✕ 在拼 head 的时候就要用它。
+  // 原来是拼完 body 才 const close = ...，放前面引用会撞上 TDZ。
+  const close = () => {
+    wrap.hidden = true;
+    wrap.innerHTML = '';
+    if (o.onClose) o.onClose();
+  };
 
   const box = document.createElement('div');
   box.className = 'modal' + (o.wide ? ' wide' : '') + (o.className ? ' ' + o.className : '');
@@ -110,6 +125,18 @@ export function modal(opts) {
     head.appendChild(acts);
   }
 
+  // 关闭叉放在 actions 之后 —— 也就是说，它永远在最右边（右上角）
+  if (o.closeX) {
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'mh-close';
+    x.title = o.closeTitle || '关闭';
+    x.setAttribute('aria-label', x.title);
+    x.innerHTML = ICON_CLOSE;
+    x.onclick = close;
+    head.appendChild(x);
+  }
+
   const body = document.createElement('div');
   body.className = 'modal-body';
   if (o.html) body.innerHTML = o.html;
@@ -118,12 +145,6 @@ export function modal(opts) {
 
   box.appendChild(head);
   box.appendChild(body);
-
-  const close = () => {
-    wrap.hidden = true;
-    wrap.innerHTML = '';
-    if (o.onClose) o.onClose();
-  };
 
   if (o.buttons !== false) {
     const foot = document.createElement('div');

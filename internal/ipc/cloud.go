@@ -844,6 +844,46 @@ func repoLabel(cfg map[string]any) string {
 	return ""
 }
 
+/* ------------------------------------------------------------ cloud:quota */
+
+// cloudQuota 查 CNB 的存储用量，给管理页左侧画一根容量条。
+//
+// 刻意**不返回 error**：所有失败都塞进 {ok:false, reason:…}。
+// 容量只是锦上添花的参考信息，不该因为它挂了就让整个侧栏报错 ——
+// 那会盖掉下面更有用的「本地与云端是否同步」。
+func (e *Env) cloudQuota() (any, error) {
+	cfg := e.Store.Raw()
+	out := map[string]any{
+		"ok":       false,
+		"platform": cloud.NormalizePlatform(strOf(cfg["platform"])),
+		"owner":    strOf(cfg["owner"]),
+		// CNB 的 charge 接口是组织级的，前端据此说明「含全部仓库」
+		"scope": "org",
+	}
+	if out["platform"] != "cnb" {
+		out["reason"] = "只有 CNB 能查容量"
+		return out, nil
+	}
+	if out["owner"] == "" {
+		out["reason"] = "还没配置仓库"
+		return out, nil
+	}
+	_, client, err := e.conn()
+	if err != nil {
+		out["reason"] = friendly(err)
+		return out, nil
+	}
+	q, err := client.Quota()
+	if err != nil {
+		out["reason"] = friendly(err)
+		return out, nil
+	}
+	out["ok"] = true
+	out["git"] = q.Git
+	out["object"] = q.Object
+	return out, nil
+}
+
 /* ------------------------------------------------------------ cloud:pushLocal */
 
 func (e *Env) cloudPushLocal() (any, error) {

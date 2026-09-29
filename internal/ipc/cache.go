@@ -19,6 +19,8 @@ const (
 	// 检测是只读的，但 CNB 那份要跑一次 git fetch（走网络）。
 	// 来回点几份配置时每点一次都重算没意义，留 1.5 秒。
 	detectTTL = 1500 * time.Millisecond
+	// 容量条是纯展示信息、变化很慢，缓存久一点：不必每次进管理页都打两次 CNB 接口
+	quotaTTL = 5 * time.Minute
 )
 
 type repoCache struct {

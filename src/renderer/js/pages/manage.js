@@ -497,6 +497,9 @@ async function load() {
   view.selected.clear();
   updateSelectionBar();
   showSkeleton();
+  // 容量条和列表数据没关系，先挂上去：列表就算读失败（比如这台机器没配 Token），
+  // 它也该照常显示，不该跟着一起消失
+  refreshCloudQuota();
   try {
     const cfg = state.cfg || {};
     if (!cfg.localDir) {
@@ -542,12 +545,80 @@ async function loadSide() {
   await refreshCloudDetect();
 }
 
+/**
+ * 存储用量条。
+ *
+ * 数据来自 CNB 的 charge 接口 —— 注意那是**组织级**的（/{org}/-/charge/…），
+ * 仓库维度的接口没公开，所以这里的数字是「这个账号下所有仓库」的合计，
+ * tooltip 里会写明，免得被当成单个仓库的用量。
+ */
+async function refreshCloudQuota() {
+  const box = $('#mgQuota');
+  if (!box) return;
+  const cfg = state.cfg || {};
+  // 只有 CNB 有容量接口，其他平台整块不显示
+  const plat = cfg.platform === 'cnb' ? 'cnb' : 'github';
+  if (!cfg.owner || plat !== 'cnb') {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  try {
+    const q = await window.cloudpic.cloud.quota();
+    if (!q || !q.ok) {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+    const html = renderQuota(q);
+    box.hidden = !html;
+    box.innerHTML = html;
+  } catch (e) {
+    // 查不到就静静收起来 —— 侧栏的主体信息不该被一根容量条牵连
+    box.hidden = true;
+    box.innerHTML = '';
+  }
+}
+
+/**
+ * 容量条上方那条居中短波浪。
+ *
+ * 内联 SVG 而不是 CSS background：写在 CSS 里的 SVG 属于独立文档，
+ * stroke 的 currentColor 取不到外层元素的颜色，只能硬编码色值 —— 那样换主题
+ * 就断了。内联进来就跟着 .sq-wave 的 color 走。
+ */
+const SQ_WAVE =
+  '<svg viewBox="0 0 44 6" width="44" height="6" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.3" stroke-linecap="round" aria-hidden="true">' +
+  '<path d="M2 3q5 -4.2 10 0t10 0t10 0t10 0"/></svg>';
+
+function renderQuota(q) {
+  const g = q.git || { used: 0, total: 0 };
+  if (!g.total) return '';
+  const pct = Math.max(0, Math.min(1, g.used / g.total));
+  const pctTxt = (pct * 100).toFixed(pct < 0.001 ? 3 : pct < 0.1 ? 2 : 1) + '%';
+  // 占比极小时给条留一丝可见宽度，否则一眼看去像是 0
+  const w = pct > 0 ? Math.max(pct * 100, 1.5) : 0;
+  const tone = pct >= 0.85 ? 'bad' : pct >= 0.6 ? 'warn' : '';
+  const scope = q.scope === 'org' ? '「' + (q.owner || '当前账号') + '」名下所有仓库一起算' : '';
+  return (
+    '<div class="sq-wave" aria-hidden="true">' + SQ_WAVE + '</div>' +
+    '<div class="sq-line" title="' +
+    escapeHtml('仓库存储用量' + (scope ? '（' + scope + '）' : '')) +
+    '"><span class="sq-label">存储用量</span>' +
+    '<span class="sq-pct' + (tone ? ' ' + tone : '') + '">' + pctTxt + '</span></div>' +
+    '<div class="sq-bar"><i class="' + tone + '" style="width:' + w.toFixed(2) + '%"></i></div>' +
+    '<div class="sq-num">' + CPLinks.formatBytes(g.used) + ' / ' + CPLinks.formatBytes(g.total) + '</div>'
+  );
+}
+
 async function refreshGitState() {
   const box = $('#mgGitState');
   if (!box) return;
   const cfg = state.cfg || {};
   if (!cfg.localDir) {
     view.git = null;
+    box.hidden = false;
     box.innerHTML = '<span>未配置本地目录</span><br><span class="txt">只有云端浏览，速度取决于网络</span>';
     return;
   }
@@ -556,21 +627,29 @@ async function refreshGitState() {
     view.git = st;
     if (!st.isRepo) {
       view.git = null;
+      box.hidden = false;
       box.innerHTML =
         '<span class="bad">本地目录不是 Git 仓库</span><br><span class="txt">' + escapeHtml(cfg.localDir) + '</span>';
       return;
     }
     const dirty = !!st.dirty;
+    // 只留「有未提交改动」这条独有信息。
+    // 「本地与仓库已同步 / 分支 @ sha」跟下面「云端 · 本地检测器」说的是同一件事
+    // （本地 sha 对云端 sha），并排摆着纯属重复；没有改动时整块不占地方。
+    if (!dirty) {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+    box.hidden = false;
     box.innerHTML =
-      (dirty
-        ? '<span class="bad">本地有 ' + st.changes + ' 处未提交改动</span>'
-        : '<span class="ok">本地与仓库已同步</span>') +
-      '<br><span class="txt">' + escapeHtml(st.branch || '?') + ' @ ' + escapeHtml(st.head || '?') + '</span>' +
-      (dirty ? '<br><button class="btn btn-primary btn-sm" id="btnMgPush">提交并推送</button>' : '');
+      '<span class="bad">本地有 ' + st.changes + ' 处未提交改动</span>' +
+      '<br><button class="btn btn-primary btn-sm" id="btnMgPush">提交并推送</button>';
     const push = $('#btnMgPush');
     if (push) push.onclick = pushLocal;
   } catch (e) {
     view.git = null;
+    box.hidden = false;
     box.innerHTML = '<span class="bad">状态读取失败</span>';
   }
 }
@@ -758,8 +837,9 @@ async function refreshStats() {
   const fileCount = view.items.filter((i) => i.type === 'file').length;
   const dirCount = view.items.filter((i) => i.type === 'dir').length;
   const bytes = view.items.reduce((a, b) => a + (b.size || 0), 0);
+  // 「本地目录」那枚 pill 去掉了：左边侧栏已经在讲本地目录的事，
+  // 底栏再挂一遍是重复信息
   const pills = [
-    '<span class="pill">本地目录</span>',
     '<span class="pill">当前目录 ' + dirCount + ' 个文件夹 / ' + fileCount + ' 个文件</span>',
     '<span class="pill">合计 ' + CPLinks.formatBytes(bytes) + '</span>'
   ];

@@ -100,7 +100,7 @@ export function applyBackgroundImage(cfg) {
  * 为什么不用 backdrop-filter：它拿不到 .app 层叠上下文外面的内容（自定义背景图
  * 正好在外面），实测开关 blur 两态像素差为 0（挂在 body 上的同款元素却能糊）。
  * 所以改成「给面板塞一层玻璃」：
- *   - <html> 上打 glass-ready / 写 --glass-blur、--glass-alpha、--glass-img；
+ *   - <html> 上打 glass-ready / 写 --glass-alpha、--glass-img；
  *     （glass-on 只在浓度 > 0 时为真，给自检当信号用，样式不依赖它）
  *   - 给每个 .glass-host 面板插入 .glass-layer（绝对定位的一层，
  *     里面画「白纱 + 背景图」，由 CSS 做 filter: blur）。
@@ -108,8 +108,11 @@ export function applyBackgroundImage(cfg) {
  * 行为一致：随时可调、随时生效。
  */
 const GLASS_HOSTS = [
-  '.topbar',
-  '.sidebar',
+  // 注意：`.topbar` 和 `.sidebar` **都不在这里**。
+  // - .sidebar 挂了玻璃层会跟旁边内容区对不上色（见 CSS 里那条注释）
+  // - .topbar 是**固定**的顶栏，不该被「面板不透明度」滑块牵着走，
+  //   它有自己的一套底色（见 html[data-theme="…"] .topbar）
+  // 别再往这个列表里加。
   '.card',
   '.about-hero',
   '.queue-panel',
@@ -172,99 +175,102 @@ function applyTone(lum) {
   root.style.setProperty('--glass-wash-soft', washSoft.toFixed(3));
 }
 
+/**
+ * 给面板挂上玻璃层（幂等）。
+ *
+ * 层就是一格 `<i class="glass-layer">`：CSS 在它上面画「白纱 + 背景图」，
+ * 用 --gx/--gy 反推偏移，让每块面板看到的是同一张按视口对齐的图。
+ *
+ * ⚠️ 回退记录（别再试一遍）：曾经把背景图拆进一个 100vw×100vh 的子层、
+ * 靠 transform 平移，想省掉滚动时的重绘。结果那个子层盖住了整个窗口，
+ * 而玻璃层又在顶栏内部 —— 顶栏是 -webkit-app-region: drag，于是整个窗口
+ * 都成了可拖区（鼠标移到哪都能拖窗口），外加十几个全屏合成层把 GPU 压死。
+ * 现在回到「背景图直接画在玻璃层上」的老做法。
+ */
+function ensureGlassLayer(host) {
+  let layer = host.querySelector(':scope > .glass-layer');
+  if (!layer) {
+    layer = document.createElement('i');
+    layer.className = 'glass-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    host.appendChild(layer);
+  }
+  // 清掉旧版本可能残留在 DOM 里的子层
+  const stale = layer.querySelector(':scope > .gl-img');
+  if (stale) stale.remove();
+  host.classList.add('glass-host');
+  return layer;
+}
+
 function syncGlassLayers(on) {
   GLASS_HOSTS.forEach((sel) => {
     document.querySelectorAll(sel).forEach((host) => {
-      const old = host.querySelector(':scope > .glass-layer');
       if (!on) {
         host.classList.remove('glass-host');
+        const old = host.querySelector(':scope > .glass-layer');
         if (old) old.remove();
         return;
       }
-      host.classList.add('glass-host');
-      if (!old) {
-        const layer = document.createElement('i');
-        layer.className = 'glass-layer';
-        layer.setAttribute('aria-hidden', 'true');
-        // 负层级：盖住面板底色、垫在内容下面（见 app.css 里的说明）
-        host.appendChild(layer);
-      }
-      positionLayer(host);
+      ensureGlassLayer(host);
     });
   });
   installGlassHooks();
 }
 
-/**
- * 把面板的视口坐标写进它那层玻璃的 --gx/--gy。
- * 玻璃层里的背景图按视口尺寸画，靠这两个值反推偏移 —— 面板一滚动就要重算，
- * 否则图会跟着面板「浮」起来。
- */
-function positionLayer(host) {
-  const layer = host.querySelector(':scope > .glass-layer');
-  if (!layer) return;
-  const r = host.getBoundingClientRect();
-  layer.style.setProperty('--gx', Math.round(r.left) + 'px');
-  layer.style.setProperty('--gy', Math.round(r.top) + 'px');
-}
-
 let glassHookInstalled = false;
 
-/** 滚动 / 缩放时重算（rAF 节流；捕获阶段才能收到 #content 这种内层滚动） */
+/**
+ * 面板是 JS 现拼 innerHTML 生成的（关于页 / 文件管理页都这样），所以得盯着
+ * DOM 变动把白纱补上（缺就加，已有就跳过 —— ensureGlassLayer 是幂等的）。
+ *
+ * **不再监听 scroll / resize**：白纱就是一块纯色半透明，不依赖任何坐标。
+ * 之前的版本每帧要逐面板量 getBoundingClientRect 再改 CSS 变量，那正是
+ * 「背景和内容有拉扯、黏黏的」的来源。现在滚动这条路上一次 JS 都不跑。
+ */
 function installGlassHooks() {
   if (glassHookInstalled) return;
   glassHookInstalled = true;
   let ticking = false;
-  // 补挂：关于页 / 文件管理页的面板是 JS 现拼 innerHTML 生成的，
-  // 生成时玻璃层早就装完了 —— 所以每次 DOM 变动都补一遍（缺就加、已加就只更新坐标）
   const run = () => {
-    ticking = false;
-    if (!document.documentElement.classList.contains('glass-ready')) return;
-    GLASS_HOSTS.forEach((sel) => {
-      document.querySelectorAll(sel).forEach((host) => {
-        if (!host.querySelector(':scope > .glass-layer')) {
-          host.classList.add('glass-host');
-          const layer = document.createElement('i');
-          layer.className = 'glass-layer';
-          layer.setAttribute('aria-hidden', 'true');
-          host.appendChild(layer);
-        }
-        positionLayer(host);
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      if (!document.documentElement.classList.contains('glass-ready')) return;
+      GLASS_HOSTS.forEach((sel) => {
+        document.querySelectorAll(sel).forEach(ensureGlassLayer);
       });
     });
   };
-  const ask = () => {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(run);
-  };
-  window.addEventListener('scroll', ask, { capture: true, passive: true });
-  window.addEventListener('resize', ask);
-  document.addEventListener('transitionend', ask, true);
   try {
-    new MutationObserver(ask).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(run).observe(document.body, { childList: true, subtree: true });
   } catch (e) {
-    /* 观察不了就靠上面几个事件兜底 */
+    /* 观察不了就算了：主要面板首屏就已经在位 */
   }
 }
 
+/**
+ * 面板的不透明度（浅色 + 有背景图时才起作用）。
+ *
+ * ⚠️ 这个值以前是「毛玻璃强度」（0-24，还会给背景加 filter: blur）。
+ * 模糊那套先撤了 —— 旧逻辑里强度为 0 时面板反而是**全白**的（卡白卡白），
+ * 跟「0 应该什么都挡不住」的直觉正好相反（杰哥点名的）。
+ * 现在改成直白的**不透明度**（0-100）：
+ *   0   → 面板完全透明，自定义背景图看得一清二楚
+ *   100 → 完全不透明，回到实心面板
+ * 旧配置由 store 那边按 (1 - 旧值/24) * 100 换算过来。
+ */
 export function applyGlass(cfg) {
   const root = document.documentElement;
   const ui = (cfg && cfg.ui) || {};
   const theme = ui.theme || 'dark';
   const img = String(ui.bgImage || '').trim();
-  let blur = Number(ui.bgBlur);
-  if (!isFinite(blur) || blur < 0) blur = 0;
-  if (blur > 24) blur = 24; // 上限 24：再往上面板就「透明感」压过「玻璃感」，正文反而难读
-  // 保留一位小数：滑块是 0.1 一档的，取整会把档位吃掉
-  root.style.setProperty('--glass-blur', blur.toFixed(1) + 'px');
-  // 玻璃浓度 = 强度/上限（线性同步）。**别改成 /8 那种提前满浓度**：
-  // 那样 blur=4 时浓度已经 50%，而 4px 的模糊还糊不住背景条纹 ——
-  // 露出来的是「清晰的背景」，看起来就是「越调越透明」（杰哥实测点名的）。
-  // 线性之后：2 → 8% 几乎看不出来，12 → 一半，24 → 满，与「数字越大越糊」一致。
-  const alpha = Math.max(0, Math.min(1, blur / 24));
+  let op = Number(ui.bgBlur);
+  if (!isFinite(op) || op < 0) op = 0;
+  if (op > 100) op = 100;
+  const alpha = Math.max(0, Math.min(1, op / 100));
   root.style.setProperty('--glass-alpha', alpha.toFixed(3));
-  const on = theme === 'light' && !!img && blur > 0;
+  const on = theme === 'light' && !!img && alpha > 0;
   const ready = theme === 'light' && !!img; // 层常驻，浓度交给 --glass-alpha
   let imgUrl = '';
   if (ready) {

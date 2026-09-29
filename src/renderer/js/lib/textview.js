@@ -82,6 +82,9 @@ export function previewText(opts) {
     className: 'code',
     dismissable: false,
     buttons: false,
+    // 这层既没有底栏按钮、也不让点遮罩关 —— 右上角必须给个明确的退出口，
+    // 否则用户得猜到还能按 Esc
+    closeX: true,
     node: body,
     actions: [
       link
