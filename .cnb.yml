@@ -71,11 +71,22 @@ $:
         - name: 建版本
           script: |
             set -e
-            # 版本说明优先用 docs/releases/<tag>.md，没有就退回 tag 的附注信息
-            NOTES="docs/releases/${CNB_BRANCH}.md"
-            if [ -f "$NOTES" ]; then
+            # 版本说明优先用 docs/releases/<tag>.md，没有就退回 tag 的附注信息。
+            #
+            # ⚠️ 这里必须两种命名都试：**标签名带 v 前缀（v3.4.5），而文档名不带
+            #    （3.4.5.md）**。只查 "${CNB_BRANCH}.md" 的话永远匹配不上
+            #    （CNB_BRANCH 在 tag_push 里就是标签名），于是一直静默退回 tag 附注 ——
+            #    Release 页正文从引入这步起就一直是 tag 说明，docs/releases/ 下那些
+            #    写好的正文一次都没被用上（v3.4.5 发布时发现）。
+            NOTES=""
+            for cand in "docs/releases/${CNB_BRANCH}.md" "docs/releases/${CNB_BRANCH#v}.md"; do
+              if [ -f "$cand" ]; then NOTES="$cand"; break; fi
+            done
+            if [ -n "$NOTES" ]; then
+              echo "版本正文取自 $NOTES"
               BODY=$(cat "$NOTES")
             else
+              echo "docs/releases/ 下没有对应说明，退回 tag 附注"
               BODY="${CNB_TAG_MESSAGE:-$CNB_BRANCH}"
             fi
 
