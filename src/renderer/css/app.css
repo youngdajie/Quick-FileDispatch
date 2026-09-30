@@ -92,6 +92,34 @@
   --glass-img: none;
   --glass-wash: 0.42;
   --glass-wash-soft: 0.36;
+
+  /* 「全部配置」的归档卡片（pc = profile card）。
+     刻意不做木纹/毛玻璃那类「质感」—— 这套界面是扁平、硬朗、细边框的单色系，
+     拟物质感只会跟它打架。高级感从这三样来：
+       ① 渐变描边（左上亮、右下化开，像被一束侧光照到）
+       ② 卡面上下微渐变 + 顶部一线冷光
+       ③ 层次交给字重和间距，不靠堆颜色 */
+  /* 明度差是「高级感」的第一来源：卡面必须明显亮于大背景（#0e1622），
+     否则一屏灰糊糊的，再精致的描边也救不回来。所以上端给到 #1c2a3d，
+     再往下沉回 panel-2，卡面自己就有厚度 */
+  --pc-bg-a: #1c2a3d;
+  --pc-bg-b: #131e2e;
+  /* 描边做成「左上被侧光照到」的斜切光：起点够亮、右下几乎化没，
+     这一条亮边就是整张卡的立体感来源 */
+  --pc-edge-hi: rgba(140, 186, 246, 0.55);
+  --pc-edge-top: rgba(180, 216, 255, 0.66);
+  --pc-edge: rgba(126, 172, 236, 0.32);
+  --pc-edge-b: rgba(126, 172, 236, 0.05);
+  --pc-sheen: rgba(78, 155, 234, 0.16);
+  --pc-top: rgba(255, 255, 255, 0.08);
+  /* 底部内侧再压一道暗影：卡面上下两端一明一暗，整张卡才有「厚度」，
+     只靠一个投影是压不出立体感的 */
+  --pc-inner: inset 0 -16px 24px -20px rgba(0, 0, 0, 0.85);
+  /* 卡面的点阵：密度 13px、亮度放到「知道有、但不抢戏」的程度。
+     它不承担信息，只负责让一大片深色不那么"哑" */
+  --pc-dots: rgba(190, 220, 255, 0.075);
+  --pc-lift: 0 12px 26px -20px rgba(0, 0, 0, 0.95);
+  --pc-lift-hi: 0 18px 34px -18px rgba(0, 0, 0, 1);
 }
 
 /* ============================================================
@@ -164,6 +192,21 @@ html[data-theme="light"] {
   --hl-esc: #0e7186;
   --hl-reg: #0e7186;
   --hl-head: #1d5fb5;
+
+  /* 浅色下同一套结构，只是把「侧光」换成浅蓝白：
+     卡面自上而下由纯白过渡到极淡的蓝灰，描边用低饱和的蓝，投影更软 */
+  --pc-bg-a: #ffffff;
+  --pc-bg-b: #f2f6fb;
+  --pc-edge-hi: rgba(47, 127, 214, 0.42);
+  --pc-edge-top: rgba(47, 127, 214, 0.55);
+  --pc-edge: rgba(47, 127, 214, 0.18);
+  --pc-edge-b: rgba(47, 127, 214, 0.03);
+  --pc-sheen: rgba(255, 255, 255, 0.95);
+  --pc-top: rgba(255, 255, 255, 0.9);
+  --pc-inner: inset 0 -16px 24px -20px rgba(20, 42, 74, 0.14);
+  --pc-dots: rgba(30, 70, 130, 0.075);
+  --pc-lift: 0 10px 22px -18px rgba(20, 42, 74, 0.42);
+  --pc-lift-hi: 0 16px 32px -18px rgba(20, 42, 74, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -656,35 +699,95 @@ select.csel-native {
    aspect-ratio 只是「想要方」：内容放不下时盒子会自己长高，绝不为方裁内容 */
 .prof-list {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
+/*
+ * 卡面四层背景，各管一段，靠 background-clip 分区（顺序 = 从上层到下层）：
+ *   ① padding-box 顶光（radial，从卡片上方斜打下来）
+ *   ② padding-box 点阵（13px 一格，只负责质感，不承载信息）
+ *   ③ padding-box 卡面微渐变（上亮下暗，制造厚度）
+ *   ④ border-box  描边渐变（左上亮 → 右下化开）
+ * 前提是 border 得是 transparent，否则 ④ 永远看不见。
+ * 好处：描边本身能带渐变、还能整条跟着 hover / 选中换色，比一根实线精致得多。
+ *
+ * 之前试过木纹（SVG 湍流 + 四层 blend），视觉上跟这套扁平单色系界面是打架的 ——
+ * 拟物质感放在这里只会显得脏，高级感还是得靠描边、明暗和留白。
+ *
+ * ⚠️ background-clip / background-size 必须按同样的顺序写满四段，漏一段就整体错位
+ * （比如点阵的尺寸套到描边层上）。
+ */
 .pf-row {
+  position: relative;
   display: flex; flex-direction: column; gap: 6px;
   aspect-ratio: 1 / 1;
-  padding: 11px 12px 10px; cursor: pointer;
-  border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
-  background: var(--panel-2);
-  transition: border-color 0.15s, background 0.15s, transform 0.14s var(--ease);
-  animation: rowIn 0.26s var(--ease) both;
+  padding: 12px 13px 11px; cursor: pointer;
+  border: 1px solid transparent; border-radius: 10px;
+  background-image:
+    radial-gradient(120% 78% at 50% -22%, var(--pc-sheen), transparent 60%),
+    radial-gradient(circle at 50% 50%, var(--pc-dots) 0.9px, transparent 1.3px),
+    linear-gradient(180deg, var(--pc-bg-a) 0%, var(--pc-bg-b) 100%),
+    linear-gradient(150deg, var(--pc-edge-hi) 0%, var(--pc-edge) 26%, var(--pc-edge-b) 64%, rgba(0, 0, 0, 0) 90%);
+  background-clip: padding-box, padding-box, padding-box, border-box;
+  background-size: auto, 13px 13px, auto, auto;
+  box-shadow: var(--pc-lift), inset 0 1px 0 var(--pc-top), var(--pc-inner);
+  transition: transform 0.16s var(--ease), box-shadow 0.16s, background-image 0.16s;
+  /* fill-mode 必须是 backwards，不能是 both ——
+     rowIn 的 to 帧写着 `transform: none`，用 both（含 forwards）的话动画结束后
+     这一帧会一直挂在那儿，把下面 :hover 的 translateY 整个压死（动画优先级高于
+     普通声明）。表现就是「悬停只有投影变了，卡片纹丝不动」，
+     而且不报错、看代码也看不出来 —— 是 hover 断言把它逮出来的。 */
+  animation: rowIn 0.26s var(--ease) backwards;
 }
-.pf-row:hover { border-color: var(--border); background: var(--panel-3); transform: translateY(-1px); }
-.pf-row.active { border-color: var(--accent-line); background: var(--accent-soft); }
+.pf-row:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--pc-lift-hi), inset 0 1px 0 var(--pc-top), var(--pc-inner);
+  background-image:
+    radial-gradient(120% 78% at 50% -22%, var(--pc-sheen), transparent 60%),
+    radial-gradient(circle at 50% 50%, var(--pc-dots) 0.9px, transparent 1.3px),
+    linear-gradient(180deg, var(--pc-bg-a) 0%, var(--pc-bg-b) 100%),
+    linear-gradient(150deg, var(--pc-edge-top) 0%, var(--pc-edge-hi) 28%, var(--pc-edge-b) 66%, rgba(0, 0, 0, 0) 90%);
+}
+/* 「使用中」：描边整条换成强调色 + 顶部透出一点品牌蓝的辉光，
+   不去改卡面底色 —— 底色一动，里面的徽章、文字对比度全得跟着重算 */
+.pf-row.active {
+  background-image:
+    radial-gradient(120% 78% at 50% -22%, var(--accent-soft), transparent 60%),
+    radial-gradient(circle at 50% 50%, var(--pc-dots) 0.9px, transparent 1.3px),
+    linear-gradient(180deg, var(--pc-bg-a) 0%, var(--pc-bg-b) 100%),
+    linear-gradient(150deg, var(--accent-hi) 0%, var(--accent-line) 32%, var(--pc-edge-b) 68%, rgba(0, 0, 0, 0) 90%);
+  box-shadow: var(--pc-lift), inset 0 1px 0 var(--pc-top), var(--pc-inner), 0 0 30px -14px var(--accent);
+}
 
 /* ①顶部：平台 pill 在左，「使用中」徽章顶到右边 */
 .pf-top { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
 .pf-cur {
-  flex: 0 0 auto;
-  font-size: 10px; color: var(--accent-hi); white-space: nowrap;
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.2px;
+  color: var(--accent-hi); white-space: nowrap;
+}
+/* 一颗发光的小实心点：比「使用中」三个字更先被眼睛抓到。
+   只在选中那张卡上出现，其余卡片保持安静 */
+.pf-cur::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 7px var(--accent);
 }
 
 /* 云端 ↕ 本地 小图（杰哥定的版式）：只画图标和字，路径不写上来，
    悬停「云端」/「本地」时由云朵气泡给出具体内容 */
 /* 云端 ↕ 本地：横排一行、居中、放大一号 —— 正方形卡片里这行是主角，
    竖着排两个小字太零碎 */
+/* 云端 ↕ 本地：收进一枚淡色胶囊里。
+   散着放是两个图标加两行字，收成一体就变成一个「模块」——
+   卡片里从此有了一个明确的视觉单元，不再只是几行居中的小字。
+   底色直接借 --hair（两个主题各自定过的极淡色调），不另开变量。 */
 .pf-cd {
   display: flex; flex-direction: row; align-items: center; justify-content: center;
-  gap: 10px; margin: 9px 0 7px;
+  align-self: center;
+  gap: 10px; margin: 10px 0 8px;
+  padding: 6px 13px; border-radius: 9px;
+  background: var(--hair);
+  border: 1px solid var(--hair);
 }
 .pf-cd-row { display: flex; align-items: center; gap: 6px; cursor: default; }
 .pf-cd-ico { flex: 0 0 auto; display: grid; place-items: center; color: var(--muted); }
@@ -700,19 +803,26 @@ select.csel-native {
 }
 .pf-cd-link svg { width: 13px; height: 13px; }
 
-/* ③别名：小一号、弱一档 */
+/* ③别名：卡片上真正的主体，字号最大、用正文色。
+   高级感来自字重与字号差，不是把每样东西都加粗 */
 .pf-alias {
-  min-width: 0; font-size: 18.5px; line-height: 1.3; color: var(--text-dim); text-align: center;
+  min-width: 0; font-size: 21px; font-weight: 600; line-height: 1.25;
+  letter-spacing: -0.1px; color: var(--text); text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* ⑤⑥⑦状态区：竖排小字，紧跟在目录下面（信息在上一组、状态在下一组），
    中间不留空档；真正被压到底的是下面的操作按钮 */
 .pf-meta {
-  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px;
-  margin-top: 7px; padding-top: 7px;
-  border-top: 1px dashed var(--border-soft);
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5px;
+  position: relative;
+  margin-top: 9px; padding-top: 9px;
   min-width: 0;
+}
+/* 分隔线改成「两头化开」的渐变细线：一条 dashed 横贯整宽会把卡片切得很生硬 */
+.pf-meta::before {
+  content: ''; position: absolute; left: 12%; right: 12%; top: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border) 24%, var(--border) 76%, transparent);
 }
 .pf-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; align-items: center; }
 .pf-rule {
@@ -721,31 +831,34 @@ select.csel-native {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* 平台标记 / 状态徽章统一成「无边框色块 chip」。
+   深色描边的小药丸在卡面上会显脏，做成淡底本色反而更干净、更现代 */
 .pf-platform {
-  flex: 0 0 auto; font-size: 10px; font-family: var(--mono); letter-spacing: 0.3px;
-  padding: 1px 6px; border-radius: 4px;
-  border: 1px solid var(--border); color: var(--text-dim);
+  flex: 0 0 auto; font-size: 10px; font-family: var(--mono); font-weight: 500;
+  letter-spacing: 0.4px; padding: 2px 7px; border-radius: 5px;
+  color: var(--plat-github);
+  background: color-mix(in srgb, var(--plat-github) 14%, transparent);
 }
-.pf-platform.pf-cnb { color: var(--cnb); border-color: color-mix(in srgb, var(--cnb) 32%, transparent); }
+.pf-platform.pf-cnb { color: var(--cnb); background: color-mix(in srgb, var(--cnb) 15%, transparent); }
 
 .pf-badge {
-  flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 4px;
-  border: 1px solid var(--border); color: var(--text-dim);
+  flex: 0 0 auto; font-size: 10px; padding: 2px 7px; border-radius: 5px;
+  color: var(--muted); background: rgba(126, 172, 236, 0.09);
   white-space: nowrap;
 }
-.pf-badge.ok { color: var(--ok); border-color: rgba(51, 189, 144, 0.32); background: rgba(51, 189, 144, 0.1); }
-.pf-badge.warn { color: var(--warn); border-color: rgba(221, 162, 63, 0.3); background: rgba(221, 162, 63, 0.1); }
-.pf-badge.danger { color: var(--danger); border-color: rgba(239, 85, 96, 0.3); background: var(--danger-soft); }
+.pf-badge.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+.pf-badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
+.pf-badge.danger { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .pf-sub { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
 
 /* ⑧操作：沉到卡片最底（margin-top:auto 把剩余空间全吃掉），一行两三个小按钮；
-   hover 才完全显形 */
+   平时淡着，鼠标进来才完全显形 —— 但不清零，免得让人以为卡片不可操作 */
 .pf-ops {
   display: flex; align-items: center; justify-content: center; gap: 5px;
   margin-top: auto;
-  opacity: 0.55; transition: opacity 0.14s;
+  opacity: 0.45; transition: opacity 0.16s;
 }
-.pf-row:hover .pf-ops, .pf-row.active .pf-ops { opacity: 1; }
+.pf-row:hover .pf-ops, .pf-row.active .pf-ops, .pf-row:focus-within .pf-ops { opacity: 1; }
 .pf-ops .btn { padding: 2px 7px; font-size: 10.5px; }
 
 .prof-empty {

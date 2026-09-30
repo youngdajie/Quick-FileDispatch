@@ -42,7 +42,7 @@ import (
 
 // 版本号规则：3.0.0 起去掉 -go 后缀（2.8.1~2.9.0 的 -go 是
 // 与 Electron 时代 v* 标签区分发布线的过渡写法）。
-const version = "3.4.3"
+const version = "3.4.5"
 
 // appName 沿用 Electron 时代定下的 userData 目录名（appData + 应用名）：
 // 两边对不上就会各自读一份配置，看起来像「配置丢了」——老用户升级到 Go 版

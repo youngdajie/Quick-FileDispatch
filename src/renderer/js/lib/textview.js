@@ -222,6 +222,10 @@ export function previewText(opts) {
 
   /** 编辑：着色层在背后、透明输入层在前面，两者字体度量完全一致才能对齐 */
   function renderEdit() {
+    // 切模式不该改变你看的位置：先把只读态的视野记下来
+    const top = preEl ? preEl.scrollTop : 0;
+    const left = preEl ? preEl.scrollLeft : 0;
+
     body.innerHTML =
       '<div class="tv-pane">' +
       '<pre class="tv-pre code-font" aria-hidden="true"><code class="tv-code"></code></pre>' +
@@ -241,13 +245,63 @@ export function previewText(opts) {
     paint();
     ta.value = st.text;
     bindTa();
+
+    // 光标必须先归零再 focus。
+    //
+    // 给 textarea 赋 value 会把选区丢到**末尾**，此时直接 focus()，浏览器为了
+    // 「让光标进入视野」会把输入框一路滚到最后一行 —— 用户看到的就是
+    // 「点一下编辑，文本唰地滑到了文件结尾」。先把光标放到开头，focus 就
+    // 不会再滚动；随后再把视野放回原来的位置。
+    ta.selectionStart = ta.selectionEnd = 0;
+    ta.scrollTop = 0;
+    ta.scrollLeft = 0;
     ta.focus();
+
+    // 视野回到只读时的位置，光标落在视野首行行首 —— 你看的是哪儿，就从哪儿改
+    const caret = charAtLineStart(top);
+    if (caret > 0) ta.setSelectionRange(caret, caret);
+    ta.scrollTop = top;
+    ta.scrollLeft = left;
     syncScroll();
+  }
+
+  /**
+   * 把「滚动位置」换算成「字符偏移」：取视野顶部那一行的行首。
+   *
+   * scrollTop 的 0 点在内容盒顶，所以要先减掉 padding-top 才是行号的基准；
+   * 顶部那段 padding 还在视野里时，一律算第 0 行。
+   */
+  function charAtLineStart(top) {
+    if (!ta || !(top > 0)) return 0;
+    const cs = getComputedStyle(ta);
+    const lh = parseFloat(cs.lineHeight);
+    if (!(lh > 0)) return 0;
+    const pad = parseFloat(cs.paddingTop) || 0;
+    const line = Math.max(0, Math.floor(Math.max(0, top - pad) / lh));
+    if (line <= 0) return 0;
+    const lines = st.text.split('\n');
+    if (line >= lines.length) return st.text.length;
+    let pos = 0;
+    for (let i = 0; i < line; i++) pos += lines[i].length + 1;
+    return pos;
   }
 
   function paint() {
     if (!codeEl) return;
-    codeEl.innerHTML = H ? H.highlight(st.text, lang) : escapeHtml(st.text);
+    const html = H ? H.highlight(st.text, lang) : escapeHtml(st.text);
+    // 末尾补一个换行 —— 不是画蛇添足，是两层能对齐的必需品。
+    //
+    // 块级 <pre> 会忽略**最后一个**换行符（CSS 的规矩：块末尾的空行不产生行盒），
+    // 而 <textarea> 必须为它留出一行 —— 否则光标就没法停在最后一行。
+    // 于是一模一样的文本，pre 排 461 行、textarea 排 462 行，内容高度正好差
+    // 一个行高（这个文件上实测 21.25px）。
+    //
+    // 滚动是 textarea 主导、pre 跟从（syncScroll 方向单一）。滚到底时 ta 能到
+    // 9296，pre 的上限只有 9274，被自己的高度卡住 —— 表现就是「点最下面那几行，
+    // 光标比看到的偏一行」。补上这个换行，两层的内容高度就一致了。
+    //
+    // 只读态复用同一个 paint()，于是只读 / 编辑来回切也不会跳。
+    codeEl.innerHTML = html + '\n';
   }
 
   function schedulePaint() {

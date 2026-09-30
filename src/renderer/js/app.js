@@ -244,7 +244,7 @@ async function boot() {
 
   go('upload');
 
-  // 侧栏闲置自动收起（10 秒），鼠标碰到左边那条提示线再弹回来
+  // 侧栏闲置自动收起（20 秒），鼠标碰到左边那条提示线再弹回来
   initSidebarAutoHide();
 
   // 没走完引导就不让用：配置齐全只是「能连上」，走完引导才算「会用了」
@@ -264,7 +264,8 @@ function initSidebarAutoHide() {
   const bar = document.getElementById('sidebar');
   const dock = document.getElementById('sideDock');
   if (!bar || !dock) return;
-  const IDLE_MS = 10000;
+  // 20 秒没碰就自动收起 —— 10 秒太急，看一眼文件回来侧栏就没了
+  const IDLE_MS = 20000;
   let timer = null;
 
   const schedule = () => {
@@ -276,7 +277,7 @@ function initSidebarAutoHide() {
     schedule();
   };
 
-  // 鼠标在侧栏里就一直展开着（暂停倒计时），移开之后才开始算 10 秒
+  // 鼠标在侧栏里就一直展开着（暂停倒计时），移开之后才开始算 20 秒
   bar.addEventListener('mouseenter', () => clearTimeout(timer));
   bar.addEventListener('mouseleave', schedule);
   // 碰那条提示线 → 弹出来
