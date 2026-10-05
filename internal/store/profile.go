@@ -302,6 +302,36 @@ func migrate(cfg map[string]any) map[string]any {
 		}
 		cfg["version"] = 9
 	}
+	if v < 10 {
+		// 水印的位置从「边距由字号推导」改成「可以精确指定」：
+		// 新增 marginX / marginY（距图片边缘的**绝对像素**）、fontFamily、fontWeight。
+		//
+		// 老配置按旧公式折算一版，让它在 1000px 宽（缩放系数正好 = 1）的图上观感不变：
+		//   旧的边距 m = round(size × 0.9)，右下角时 x 边距就是 m；
+		//   旧的 y 是文字垂直中心（h - size - m），换算成「文字底边距底边」
+		//   就是 size/2 + m ≈ size × 1.4。
+		// 图更宽时旧实现的边距会跟着字号一起变大，新实现是固定像素 ——
+		// 这正是这次要的效果：说「距右边 20px」就是 20px，不再随图浮动。
+		if wm, ok := cfg["watermark"].(map[string]any); ok {
+			fs := 22.0
+			if n, ok := wm["fontSize"].(float64); ok && n > 0 {
+				fs = n
+			}
+			if _, has := wm["marginX"]; !has {
+				wm["marginX"] = math.Round(fs * 0.9)
+			}
+			if _, has := wm["marginY"]; !has {
+				wm["marginY"] = math.Round(fs * 1.4)
+			}
+			if _, has := wm["fontFamily"]; !has {
+				wm["fontFamily"] = ""
+			}
+			if _, has := wm["fontWeight"]; !has {
+				wm["fontWeight"] = float64(600)
+			}
+		}
+		cfg["version"] = 10
+	}
 
 	list, _ := cfg["profiles"].([]any)
 	if len(list) == 0 {

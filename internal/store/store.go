@@ -32,7 +32,7 @@ import (
 // 与 Electron 版 store.js 的 DEFAULT_CONFIG 逐字段对应，改一处必须改两处。
 func Defaults() map[string]any {
 	return map[string]any{
-		"version":       9,   // 必须跟 migrate 里最新那一档一致
+		"version":       10,  // 必须跟 migrate 里最新那一档一致
 		"onboarded":     false,
 		"platform":      "github", // github | cnb
 		"owner":         "",
@@ -67,6 +67,12 @@ func Defaults() map[string]any {
 			"opacity":  0.35,
 			"fontSize": 22,
 			"color":    "#1296db",
+			// 距图片边缘的绝对像素（文字块的外边缘算起），不再由字号推导
+			"marginX": 24,
+			"marginY": 24,
+			// 空字符串 = 内置字体栈；字体名走系统字体，压缩 worker 里直接能用
+			"fontFamily": "",
+			"fontWeight": 600,
 		},
 		"rename": map[string]any{
 			"mode":       "keep",
@@ -175,7 +181,17 @@ func (s *Store) read() (map[string]any, bool) {
 		return Defaults(), false
 	}
 	before := numOf(parsed["version"])
-	merged := migrate(merge(Defaults(), parsed))
+	// 顺序很关键：**先迁移，再把默认值合上去**。
+	//
+	// 反过来的话（以前就是 `migrate(merge(Defaults(), parsed))`），迁移里那些
+	// 「这个键在不在」的判断会**永远为真** —— 默认值早把键补齐了，于是
+	// 「给老配置补新字段、并按旧值折算」这类迁移会被整条静默跳过：
+	// 用户拿到的不是折算值，而是默认值。
+	// （2026-10-05 给水印加边距时踩到：v9 的老配置本该折算出 20/31，
+	//   实际一直是默认的 24/24 —— 迁移代码没错，是它根本没看见"这个键不存在"。）
+	//
+	// 迁移本来就该针对**用户磁盘上实际存的那份**，而不是补全后的那份。
+	merged := merge(Defaults(), migrate(parsed))
 	return merged, numOf(merged["version"]) > before
 }
 

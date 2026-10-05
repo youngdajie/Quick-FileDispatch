@@ -481,7 +481,10 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
 }
 input[type="text"]:hover, input[type="password"]:hover, input[type="number"]:hover, select:hover, textarea:hover { border-color: var(--border); }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--accent); background: var(--panel);
+  border-color: var(--accent);
+  /* 用 background-color 而不是 background 简写：简写会把
+     input[type=number] 上那个加减角标的背景图一起清掉（聚焦时角标消失） */
+  background-color: var(--panel);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 input::placeholder { color: var(--placeholder); }
@@ -668,6 +671,10 @@ select.csel-native {
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 13px; min-width: 0; }
 .field-label { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 7px; }
 .field-label b { color: var(--accent); font-family: var(--mono); font-size: 11.5px; }
+/* 灰掉的标签 / 输入框：水印边距在「居中」「平铺」下没有意义，
+   灰掉而不是藏起来 —— 藏了整行栅格会跳一下，像是少了点什么 */
+.field-label.is-off { color: var(--muted); opacity: 0.55; }
+.field input:disabled { opacity: 0.45; cursor: not-allowed; }
 .checkbox-field { flex-direction: row; align-items: center; gap: 9px; }
 .checkbox-field .field-label { cursor: pointer; }
 .input-row { display: flex; gap: 8px; align-items: center; }
@@ -1043,23 +1050,27 @@ select.csel-native {
 }
 .numfield input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 
+/* 角标默认给一点存在感（0.4）：原来是 opacity 0、要鼠标划过才冒出来，
+   不用鼠标的人压根不知道这儿能点。hover / 聚焦时全亮。 */
 .nf-steps {
-  position: absolute; right: 4px; top: 3px; bottom: 3px;
+  position: absolute; right: 3px; top: 3px; bottom: 3px;
   display: flex; flex-direction: column; gap: 1px;
-  opacity: 0; transition: opacity 0.14s;
+  opacity: 0.4; transition: opacity 0.14s;
 }
 .numfield:hover .nf-steps,
 .numfield:focus-within .nf-steps { opacity: 1; }
+/* 去掉实心方块底：两个小色块并排看着比输入框还重。
+   改成「平时只有箭头，悬停才浮出一层淡底」，跟这套扁平界面更搭。 */
 .nf-btn {
-  width: 19px; flex: 1; padding: 0; cursor: pointer;
-  border: 0; border-radius: 4px;
-  background: var(--panel-3); color: var(--text-dim);
+  width: 20px; flex: 1; padding: 0; cursor: pointer;
+  border: 0; border-radius: 5px;
+  background: transparent; color: var(--muted);
   display: grid; place-items: center;
   transition: background 0.12s, color 0.12s;
 }
-.nf-btn:hover { background: var(--accent); color: #fff; }
-.nf-btn:active { transform: scale(0.9); }
-.nf-btn[disabled] { opacity: 0.3; cursor: default; background: var(--panel-3); color: var(--muted); }
+.nf-btn:hover { background: var(--accent-soft); color: var(--accent-hi); }
+.nf-btn:active { background: var(--accent); color: #fff; transform: scale(0.94); }
+.nf-btn[disabled] { opacity: 0.3; cursor: default; background: transparent; color: var(--muted); }
 .nf-btn svg { width: 9px; height: 9px; display: block; }
 
 .card {
@@ -1296,7 +1307,7 @@ html[data-theme="light"] .dropzone {
    所以 hover 只用 :hover 一个伪类（具体性低于 :checked:hover），
    并且 :checked:hover 显式再声明一次，把选中态钉死。
    ------------------------------------------------------------ */
-:is(.up-imgset, .up-lfs) input[type="checkbox"] {
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"] {
   -webkit-appearance: none; appearance: none;
   position: relative; flex: 0 0 auto;
   width: 16px; height: 16px; margin: 0;
@@ -1307,13 +1318,13 @@ html[data-theme="light"] .dropzone {
   transition: background 0.18s var(--ease), border-color 0.18s,
               box-shadow 0.18s, transform 0.1s var(--ease);
 }
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:hover { border-color: var(--text-dim); }
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:active { transform: scale(0.9); }
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:focus-visible {
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:hover { border-color: var(--text-dim); }
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:active { transform: scale(0.9); }
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:focus-visible {
   outline: none; box-shadow: 0 0 0 3px var(--accent-soft);
 }
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:checked,
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:checked:hover {
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:checked,
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:checked:hover {
   background: linear-gradient(180deg, var(--accent-hi), var(--accent));
   border-color: var(--accent);
   box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--accent) 62%, transparent);
@@ -1324,7 +1335,7 @@ html[data-theme="light"] .dropzone {
    改成 inset: 0 + margin: auto：浏览器直接把它摆在父元素（padding box）正中央。
    最后那个 -1px 上移是补**视觉重心** —— 勾是「右边 + 下边」两条边框拼的 L 形，
    绕中心转 42° 之后质心落到中心下方约 1.8px，不补看着就是往下坠。 */
-:is(.up-imgset, .up-lfs) input[type="checkbox"]::after {
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -1336,17 +1347,17 @@ html[data-theme="light"] .dropzone {
   opacity: 0;
   transition: transform 0.18s var(--ease), opacity 0.12s;
 }
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:checked::after {
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:checked::after {
   transform: translateY(-1px) rotate(42deg) scale(1);
   opacity: 1;
 }
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:disabled {
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:disabled {
   opacity: 0.45; cursor: not-allowed;
   background: var(--panel-3); border-color: var(--border); box-shadow: none;
 }
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:disabled::after { opacity: 0; }
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:disabled + .uis-block-title,
-:is(.up-imgset, .up-lfs) input[type="checkbox"]:disabled + .field-label { color: var(--muted); }
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:disabled::after { opacity: 0; }
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:disabled + .uis-block-title,
+:is(.up-imgset, .up-lfs, .wm-panel) input[type="checkbox"]:disabled + .field-label { color: var(--muted); }
 /* 关掉开关时把参数区淡下去：视线立刻知道它不参与干活（压缩 / 水印各管各的） */
 .uis-block .grid-2 { transition: opacity 0.2s ease; }
 .uis-block:has(#upCompress:not(:checked)) .grid-2,
@@ -1431,7 +1442,7 @@ html[data-theme="light"] .dropzone {
 }
 .up-lfs:hover { border-color: var(--border); }
 .up-lfs:has(input:checked) { border-color: var(--accent-line); background: var(--accent-soft); }
-/* 尺寸 / 描边 / 对勾都走上面那套共用的自绘规则（:is(.up-imgset, .up-lfs)），
+/* 尺寸 / 描边 / 对勾都走上面那套共用的自绘规则（:is(.up-imgset, .up-lfs, .wm-panel)），
    这里不再单独摆位置 —— 之前那条 margin-top: 2px 已被自绘规则的 margin: 0 盖掉 */
 .up-lfs-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .up-lfs-text b { font-size: 12.5px; color: var(--text); font-weight: 600; }
@@ -2129,6 +2140,100 @@ html[data-theme="light"] .about-logo {
 .modal.wide .modal-body { background: #060a11; padding: 0; display: grid; place-items: center; }
 .modal.wide .modal-body img { max-width: 100%; max-height: 74vh; display: block; }
 
+/* ============================================================
+   图片查看器（带水印实时编辑）
+   左边画布 + 右边参数面板。画布内部按原图分辨率开，
+   这里只管摆放 —— 显示尺寸由 JS 按比例算，避免宽图被拉变形。
+   ============================================================ */
+.modal.imgview { max-width: none; width: min(1240px, 95vw); height: min(840px, 90vh); }
+.modal.imgview .modal-body {
+  flex: 1; min-height: 0; padding: 0; overflow: hidden;
+  display: flex; background: none;
+}
+/* 压缩前后对比：同样要留出右边那条参数面板 */
+.modal.cmpwin { max-width: none; width: min(1220px, 95vw); height: min(830px, 90vh); }
+.modal.cmpwin .modal-body {
+  flex: 1; min-height: 0; padding: 0; overflow: hidden;
+  display: flex; background: none;
+}
+
+.iv-wrap { flex: 1; display: flex; min-width: 0; min-height: 0; }
+
+.iv-stage {
+  position: relative; flex: 1; min-width: 0; min-height: 0;
+  display: grid; place-items: center; padding: 14px;
+  background: #060a11; overflow: hidden;
+}
+html[data-theme="light"] .iv-stage { background: #eef1f6; }
+/* max-width / max-height 是兜底：JS 那边会按容器尺寸算一个精确的显示尺寸，
+   万一没算上（容器刚显示、尺寸还是 0），也不会铺出容器被裁成左上角一角 */
+.iv-canvas {
+  display: block; max-width: 100%; max-height: 100%;
+  border-radius: 6px; box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
+}
+.iv-tip {
+  position: absolute; left: 16px; bottom: 14px; max-width: calc(100% - 32px);
+  font-size: 11px; line-height: 1.5; color: var(--muted);
+  background: rgba(8, 12, 19, 0.74); border: 1px solid var(--border-soft);
+  padding: 4px 9px; border-radius: 6px;
+}
+html[data-theme="light"] .iv-tip { background: rgba(255, 255, 255, 0.88); }
+.iv-fail { color: var(--muted); font-size: 13px; }
+
+/* 左右两个「图 + 参数面板」的窗口共用这套侧栏：
+   面板自己滚，底部的按钮 / 提示行固定在下沿 —— 两者互不遮挡。
+   （早先底部按钮是 sticky 叠在滚动内容上，滚到底会把最后一项压住，
+     看着就像「面板伸出去半截」。） */
+:is(.iv-side, .cmp-side) {
+  flex: 0 0 auto; width: 292px; padding: 0;
+  border-left: 1px solid var(--border-soft); background: var(--panel);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* 水印参数面板（lib/wm-panel.js）—— 上面两个窗口共用同一份 DOM 与行为 */
+.wm-panel {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 13px 14px 12px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.wm-p-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12.5px; font-weight: 700; color: var(--text);
+}
+.wm-p-check {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 12px; font-weight: 400; color: var(--text-dim);
+}
+.wm-p-note {
+  font-size: 11.5px; line-height: 1.6; color: var(--warn);
+  background: rgba(221, 162, 63, 0.09); border: 1px solid rgba(221, 162, 63, 0.22);
+  border-radius: 6px; padding: 5px 8px;
+}
+.wm-p-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+/* 整行块（滑块 / 颜色）：标签在上、控件在下，控件满宽 */
+.wm-p-block { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.wm-p-sep { height: 1px; background: var(--border-soft); margin: 1px 0; }
+/* 「保存为默认」要一直看得见：参数多、面板会滚，按钮跟着滚走的话
+   用户根本不知道改完还得点一下（sticky 钉在面板底部） */
+/* 底部按钮区：面板滚、它不滚（侧栏是纵向 flex，这里 flex:0 0 auto 钉在下沿） */
+.iv-actions {
+  flex: 0 0 auto;
+  padding: 11px 14px 14px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--panel);
+  display: flex; gap: 6px; justify-content: flex-end;
+}
+
+/* 对比窗面板底部的状态行：说明「改了就会重压这张图」 */
+.cmp-wmfoot {
+  flex: 0 0 auto;
+  padding: 11px 14px 14px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--panel);
+}
+.cmp-wmhint { display: block; font-size: 11px; line-height: 1.55; color: var(--muted); }
+.cmp-wmhint.warn { color: var(--warn); }
+
 .modal .field input { width: 100%; }
 
 /* ---------------------------------------------------------------- 路径选择器 */
@@ -2753,7 +2858,13 @@ html[data-theme="dark"] .shell { background: rgba(11, 17, 26, 0.62); }
    两张图上下叠着，上面那张用 clip-path 从中间裁开。
    ============================================================ */
 
-.cmp { width: 100%; padding: 16px 18px 14px; }
+/* 左图右面板：main 只负责摆放对比图，参数面板挂在 .cmp-side 上 */
+.cmp { width: 100%; display: flex; min-height: 0; }
+.cmp-main {
+  flex: 1; min-width: 0; padding: 16px 18px 14px;
+  display: flex; flex-direction: column; justify-content: center; gap: 12px;
+  overflow: hidden;
+}
 
 .cmp-stage {
   --split: 50%;
@@ -2772,12 +2883,15 @@ html[data-theme="dark"] .shell { background: rgba(11, 17, 26, 0.62); }
   background: #0b0f16;
 }
 
-/* 特异性要压过 .modal.wide .modal-body img 那条通用规则 */
-.modal.wide .modal-body .cmp-a {
+/* 特异性要压过 .modal.wide .modal-body img 那条通用规则。
+   ⚠️ 这里必须跟着弹层自己的类名（cmpwin）走，不能再写 wide ——
+   改成 .modal.wide 挂不到类，这两条会静默失效：图片按原始尺寸铺开、
+   被 overflow:hidden 一裁，看着就是「预览框没显示完整，只剩左上角」。 */
+.modal.cmpwin .modal-body .cmp-a {
   display: block; width: auto; height: auto;
-  max-width: 100%; max-height: 62vh; margin: 0 auto;
+  max-width: 100%; max-height: min(62vh, 100%); margin: 0 auto;
 }
-.modal.wide .modal-body .cmp-b {
+.modal.cmpwin .modal-body .cmp-b {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   max-width: none; max-height: none;

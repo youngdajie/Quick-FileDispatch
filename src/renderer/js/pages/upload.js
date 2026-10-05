@@ -1,18 +1,23 @@
 /** 上传页 */
 
-import { $, $$, toast, err, ok, warn, modal, previewImage, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
+import { $, $$, toast, err, ok, warn, modal, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
+// 图片预览（带水印实时编辑）已独立成模块，签名和以前一样
+import { previewImage } from '../lib/imgview.js';
 import state from '../lib/state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from '../lib/compress.js';
 import { openColorPicker, closeColorPicker, normalizeHex } from '../lib/colorpicker.js';
 // 前后对比（含 OUT_MIME / canCompare / openCompare）已提到共享模块，
 // 主上传页与「上传到此文件夹」mini 弹窗共用一份
-import { canCompare, openCompare } from '../lib/compare.js';
+import { canCompare, openCompare, OUT_MIME } from '../lib/compare.js';
 // 上传流程与 mini 弹窗共用一份（进度、base64、结果映射、同步提示都在里面）
 import { runUpload, uploadResultMessage } from '../lib/upload-run.js';
 // LFS 开关的共享逻辑（与 mini 上传弹窗共用同一套判断和记忆）
 import * as LFS from '../lib/lfs.js';
+// 水印字体下拉要列本机真装了的字体，和设置页的「界面字体」用的是同一份枚举
+import { installedFontGroups } from '../lib/appearance.js';
 
 const CPLinks = window.CPLinks;
+const CPWm = window.CPWatermark;
 
 /** 水印配色快捷项（#1296db 是默认）——原设置页的色板跟着水印一起迁了过来 */
 const WM_PRESETS = ['#1296db', '#ffffff', '#101722', '#ff4d4f', '#20c997', '#f5a623'];
@@ -249,9 +254,23 @@ function compressOptions() {
       position: $('#upWmPosition').value || 'bottom-right',
       opacity: (Number($('#upWmOpacity').value) || 35) / 100,
       fontSize: Number($('#upWmFontSize').value) || 22,
-      color: $('#upWmColor').value || '#1296db'
+      color: $('#upWmColor').value || '#1296db',
+      // 精确边距（距图边缘的像素）与字体 —— 以前这三项一个写死、两个靠字号推导
+      marginX: wmMargin('#upWmMarginX', 24),
+      marginY: wmMargin('#upWmMarginY', 24),
+      fontFamily: $('#upWmFont').value || '',
+      fontWeight: Number($('#upWmWeight').value) || 600
     }
   };
+}
+
+/** 边距输入：空着或写了非法值就退回默认，夹在 0~999 */
+function wmMargin(sel, dflt) {
+  const raw = String($(sel).value || '').trim();
+  if (raw === '') return dflt;
+  const n = Number(raw);
+  if (!isFinite(n)) return dflt;
+  return Math.max(0, Math.min(999, Math.round(n)));
 }
 
 function ensurePool() {
@@ -378,13 +397,52 @@ async function processPending() {
 /**
  * 点缩略图：能对比就拉对比，否则退回普通放大预览。
  * 队列和结果两处共用 —— 两边的判断条件本来就是一回事。
+ *
+ * 对比窗也要把水印面板带过去：压缩一完成 `canCompare` 就为真、入口从
+ * 「图片查看器」换成这里，用户真正想调水印的时候看到的恰好是这个窗口 ——
+ * 早先对比窗没有面板，看起来就像「压缩完预览，面板消失了」。
  */
 function openThumbFor(id) {
   const it = queue.find((q) => String(q.id) === String(id));
   if (!it || !it.previewUrl) return false;
-  if (canCompare(it)) openCompare(it);
-  else previewImage(it.previewUrl);
+  if (canCompare(it)) {
+    openCompare(it, {
+      watermark: {
+        initial: compressOptions().watermark,
+        onChange: (wm) => recompressForCompare(it, wm)
+      }
+    });
+  } else {
+    previewImage(it.previewUrl);
+  }
   return true;
+}
+
+/**
+ * 对比窗里改了水印 → 立刻按新参数重压这一张，并把水印写进配置。
+ *
+ * 为什么写配置：水印是全局设置，用户在对比窗里调它，想要的是「这批图都这样」。
+ * 只重压当前这张，关掉窗口后剩下的图还是旧水印 —— 那才是更难解释的状态。
+ *
+ * 返回的是一次「快照」：对比窗自己转成 objectURL 显示。队列随后按新水印整批重算
+ * （invalidate），好让 hash 模式下的文件名、体积统计这些跟着对齐。
+ */
+async function recompressForCompare(it, wm) {
+  await state.patch({ watermark: wm });
+  const buf = await fileToArrayBuffer(it.file);
+  const res = await ensurePool().run(it.origName, buf, Object.assign({}, compressOptions(), { watermark: wm }));
+
+  invalidate();
+  scheduleProcess(300);
+
+  const ext = res.passthrough ? CPLinks.extOf(it.origName) : res.ext || CPLinks.extOf(it.origName);
+  return {
+    blob: new Blob([res.buffer], { type: OUT_MIME[ext] || res.type || '' }),
+    size: res.buffer.byteLength,
+    w: res.width || 0,
+    h: res.height || 0,
+    note: res.reason || ''
+  };
 }
 
 /* ---------------------------------------------------------------- 上传 */
@@ -635,7 +693,12 @@ function fillOptions() {
   $('#upWmOpacity').value = Math.round((wm.opacity == null ? 0.35 : wm.opacity) * 100);
   $('#upWmOpacityVal').textContent = (wm.opacity == null ? 0.35 : wm.opacity).toFixed(2);
   $('#upWmFontSize').value = wm.fontSize || 22;
+  $('#upWmMarginX').value = wm.marginX == null ? 24 : wm.marginX;
+  $('#upWmMarginY').value = wm.marginY == null ? 24 : wm.marginY;
+  ensureWmFontOptions(wm.fontFamily || '');
+  $('#upWmWeight').value = String(wm.fontWeight || 600);
   setWmColor(wm.color || '#1296db');
+  syncWmMarginLabels();
 
   $('#upRenameMode').value = ren.mode || 'keep';
   $('#upPrefix').value = ren.prefix || '';
@@ -669,7 +732,11 @@ const persistQuickOptions = debounce(() => {
       position: $('#upWmPosition').value,
       opacity: (Number($('#upWmOpacity').value) || 35) / 100,
       fontSize: Number($('#upWmFontSize').value) || 22,
-      color: $('#upWmColor').value || '#1296db'
+      color: $('#upWmColor').value || '#1296db',
+      marginX: wmMargin('#upWmMarginX', 24),
+      marginY: wmMargin('#upWmMarginY', 24),
+      fontFamily: $('#upWmFont').value || '',
+      fontWeight: Number($('#upWmWeight').value) || 600
     },
     rename: {
       mode: $('#upRenameMode').value,
@@ -706,6 +773,62 @@ function imgSetOpen() {
 
 /** 色块 / 隐藏色值 / hex 文本框三处同步（自设置页原样迁来，#upWmColor 是数据源） */
 let wmPicker = null;
+
+/* ------------------------------------------------ 精确边距 / 字体 */
+
+/**
+ * 边距那两个标签随「位置」走：右下角时它们该读作「距右边缘 / 距底边缘」，
+ * 换到左上角就成了「距左 / 距上」—— 标签不动的话，用户填 24 根本不知道
+ * 这 24 是贴着哪条边，还得自己脑补。
+ * （标签口径由 lib/watermark.js 定义，预览面板用的是同一份）
+ */
+function syncWmMarginLabels() {
+  const pos = $('#upWmPosition').value || 'bottom-right';
+  const pair = CPWm.axisLabels(pos);
+  const mxLabel = $('#upWmMxLabel');
+  const myLabel = $('#upWmMyLabel');
+  if (!mxLabel || !myLabel) return;
+  mxLabel.textContent = pair[0];
+  myLabel.textContent = pair[1];
+  // 居中 / 平铺时边距没有意义，灰掉而不是藏起来 —— 藏了会让整个栅格跳一下
+  const off = pos === 'center' || pos === 'tile';
+  ['#upWmMarginX', '#upWmMarginY'].forEach((sel) => {
+    const el = $(sel);
+    if (el) el.disabled = off;
+  });
+  mxLabel.classList.toggle('is-off', off);
+  myLabel.classList.toggle('is-off', off);
+}
+
+/** 水印字体下拉：和设置页的「界面字体」共用同一份本机字体枚举，只枚举一次 */
+let wmFontsBuilt = false;
+
+function ensureWmFontOptions(cur) {
+  const sel = $('#upWmFont');
+  if (!sel) return;
+  if (!wmFontsBuilt) {
+    let html = '<option value="">默认（雅黑 / 苹方）</option>';
+    installedFontGroups().forEach((g) => {
+      if (!g.fonts.length) return;
+      html += '<optgroup label="' + escapeHtml(g.group) + '">';
+      g.fonts.forEach((f) => {
+        html += '<option value="' + escapeHtml(f) + '">' + escapeHtml(f) + '</option>';
+      });
+      html += '</optgroup>';
+    });
+    sel.innerHTML = html;
+    wmFontsBuilt = true;
+  }
+  // 配置里那个字体如果本机没探测到也要留住，否则一打开就被重置成默认
+  const has = Array.from(sel.options).some((o) => o.value === cur);
+  if (cur && !has) {
+    const opt = document.createElement('option');
+    opt.value = cur;
+    opt.textContent = cur + '（未检测到）';
+    sel.appendChild(opt);
+  }
+  sel.value = cur || '';
+}
 
 function setWmColor(hex) {
   const norm = normalizeHex(hex) || '#1296db';
@@ -1042,9 +1165,12 @@ export default {
       persistQuickOptions();
     });
     [
-      '#upWmEnabled', '#upWmText', '#upWmPosition', '#upWmFontSize'
+      '#upWmEnabled', '#upWmText', '#upWmPosition', '#upWmFontSize',
+      '#upWmMarginX', '#upWmMarginY', '#upWmFont', '#upWmWeight'
     ].forEach((s) => {
       $(s).addEventListener('change', () => {
+        // 位置一换，「距右 / 距底」这组标签的口径得跟着变
+        if (s === '#upWmPosition') syncWmMarginLabels();
         invalidate();
         scheduleProcess(320);
         persistQuickOptions();

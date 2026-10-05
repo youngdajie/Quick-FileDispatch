@@ -5,6 +5,10 @@
  * （canvas.convertToBlob({type:'image/avif'}) 会静默返回 PNG，别被骗了）。
  */
 
+// 水印绘制是页面和 worker 共用的那一份（见 lib/watermark.js 顶部说明）——
+// worker 是 classic worker，只能用 importScripts 引经典脚本，引不来 ES module。
+importScripts('/js/lib/watermark.js');
+
 const PASSTHROUGH_EXT = new Set(['gif', 'svg']);
 
 const KEEP_MAP = {
@@ -72,49 +76,14 @@ function drawResized(ctx, bitmap, tw, th) {
   if (tmp && tmp.close) tmp.close();
 }
 
-function drawWatermark(ctx, w, h, wm) {
-  const text = String(wm.text || '').trim();
-  if (!text) return;
-  const scale = Math.max(0.6, Math.min(2.4, w / 1000));
-  const size = Math.max(10, Math.round((wm.fontSize || 22) * scale));
-  ctx.save();
-  ctx.globalAlpha = Math.max(0.03, Math.min(1, Number(wm.opacity) || 0.35));
-  ctx.fillStyle = wm.color || '#ffffff';
-  ctx.strokeStyle = 'rgba(0,0,0,0.42)';
-  ctx.lineWidth = Math.max(1, size / 12);
-  ctx.font = `600 ${size}px "Microsoft YaHei UI", "PingFang SC", sans-serif`;
-  ctx.textBaseline = 'middle';
-  const m = Math.round(size * 0.9);
+/* ------------------------------------------------------------- 水印 */
 
-  if (wm.position === 'tile') {
-    const tw = ctx.measureText(text).width;
-    ctx.translate(w / 2, h / 2);
-    ctx.rotate(-Math.PI / 7);
-    ctx.translate(-w / 2, -h / 2);
-    const stepX = tw + size * 5;
-    const stepY = size * 6;
-    for (let y = -h; y < h * 2; y += stepY) {
-      for (let x = -w; x < w * 2; x += stepX) {
-        ctx.strokeText(text, x, y);
-        ctx.fillText(text, x, y);
-      }
-    }
-    ctx.restore();
-    return;
-  }
-
-  const tw = ctx.measureText(text).width;
-  let x = w - tw - m;
-  let y = h - size - m;
-  if (wm.position === 'bottom-left') x = m;
-  else if (wm.position === 'top-right') y = size + m;
-  else if (wm.position === 'top-left') { x = m; y = size + m; }
-  else if (wm.position === 'center') { x = (w - tw) / 2; y = h / 2; }
-
-  ctx.textAlign = 'left';
-  ctx.strokeText(text, x, y);
-  ctx.fillText(text, x, y);
-  ctx.restore();
+// 具体的绘制在 lib/watermark.js 里（页面预览用的是同一份实现），
+// 这里只负责把它接到压缩流程上。
+function paintWatermark(ctx, w, h, wm) {
+  const WM = self.CPWatermark;
+  if (!WM) return;              // 脚本没引上就安静跳过，别把整个压缩搞挂
+  WM.draw(ctx, w, h, wm);
 }
 
 function resolveType(format, ext, hasAlpha) {
@@ -268,7 +237,7 @@ async function process(buffer, name, opt) {
   if (bitmap.close) bitmap.close();
 
   if (opt.watermark && opt.watermark.enabled && opt.watermark.text) {
-    drawWatermark(ctx, tw, th, opt.watermark);
+    paintWatermark(ctx, tw, th, opt.watermark);
   }
 
   let quality = Math.max(0.02, Math.min(1, (Number(opt.quality) || 80) / 100));

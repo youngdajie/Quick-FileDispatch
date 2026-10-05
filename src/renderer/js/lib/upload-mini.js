@@ -29,10 +29,11 @@
  * 连 localStorage 的键都是同一个，在哪边勾的另一个入口都认。
  */
 
-import { $, err, ok, warn, escapeHtml, friendlyError, previewImage, paintRange } from './dom.js';
+import { $, err, ok, warn, escapeHtml, friendlyError, paintRange } from './dom.js';
+import { previewImage } from './imgview.js';
 import state from './state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from './compress.js';
-import { canCompare, openCompare } from './compare.js';
+import { canCompare, openCompare, OUT_MIME } from './compare.js';
 // 与主上传页**共用一份**上传流程与 LFS 开关逻辑。
 // 两个入口对用户来说是同一件事，行为必须一致 —— 各写一份的话
 // 「主页面有进度条、右键弹窗没有」这类偏差迟早出现。
@@ -187,10 +188,10 @@ function ensureNode(it) {
     removeItem(it.id);
   };
   el.querySelector('[data-act="cmp"]').onclick = () => {
-    if (canCompare(it)) openCompare(it);
+    if (canCompare(it)) openCompareFor(it);
   };
   el.querySelector('.q-thumb').onclick = () => {
-    if (canCompare(it)) openCompare(it);
+    if (canCompare(it)) openCompareFor(it);
     else if (it.previewUrl) previewImage(it.previewUrl);
   };
   $('#miniList', wrap).appendChild(el);
@@ -274,6 +275,54 @@ function updateSummary() {
   el.textContent = bits.join(' · ');
   const start = $('#miniStart', wrap);
   if (start) start.disabled = running || !ready;
+}
+
+/* ---------------------------------------------------------------- 压缩对比 */
+
+/**
+ * 最近一次压缩实际用的参数。
+ * 用户在弹窗里可能选了「自定义」，重压时必须沿用同一份 ——
+ * 否则改一下水印，会把质量 / 格式悄悄退回配置里的默认值。
+ */
+let lastOpts = null;
+
+/**
+ * 打开压缩前后对比，并把水印面板一起带过去。
+ * 压缩一完成，缩略图点击走的就是这条路 —— 面板不跟过来，用户想调水印就没入口了
+ * （主上传页报过同样的问题，两边保持一致）。
+ */
+function openCompareFor(it) {
+  openCompare(it, {
+    watermark: {
+      initial: reuseOptions().watermark,
+      onChange: (wm) => recompressForCompare(it, wm)
+    }
+  });
+}
+
+/** 改水印 → 重压这一张，并把水印写回配置（它是全局设置，改了就该整批一致） */
+async function recompressForCompare(it, wm) {
+  await state.patch({ watermark: wm });
+  const buf = await fileToArrayBuffer(it.file);
+  const opts = Object.assign({}, lastOpts || reuseOptions(), { watermark: wm });
+  const res = await ensurePool().run(it.origName, buf, opts);
+
+  it.outBuffer = res.buffer;
+  it.outSize = res.buffer.byteLength;
+  it.outW = res.width || 0;
+  it.outH = res.height || 0;
+  it.note = res.reason || '';
+  updateItem(it);
+  updateSummary();
+
+  const ext = res.passthrough ? CPLinks.extOf(it.origName) : res.ext || CPLinks.extOf(it.origName);
+  return {
+    blob: new Blob([res.buffer], { type: OUT_MIME[ext] || res.type || '' }),
+    size: it.outSize,
+    w: it.outW,
+    h: it.outH,
+    note: it.note
+  };
 }
 
 /* ---------------------------------------------------------------- 压缩参数 */
@@ -424,6 +473,7 @@ async function skipCompress(items) {
 
 /** 图片选「压缩」：交给压缩池，与主上传页同一套结果字段 + 改名规则 */
 async function runCompress(items, opts) {
+  lastOpts = opts;   // 记下来：对比窗里改水印时要沿用同一份参数
   const cpool = ensurePool();
   const lim = limitOf();
   const ro = renameOpts();

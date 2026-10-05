@@ -9,7 +9,6 @@ import {
   toast,
   modal,
   confirmDialog,
-  previewImage,
   contextMenu,
   escapeHtml,
   debounce,
@@ -17,6 +16,8 @@ import {
   sklTiles,
   friendlyError
 } from '../lib/dom.js';
+// 图片预览已独立成模块（带水印实时编辑），别名与签名都没变
+import { previewImage } from '../lib/imgview.js';
 import { fileIcon, isImageName } from '../lib/fileicons.js';
 import { previewText } from '../lib/textview.js';
 import { openMiniUpload } from '../lib/upload-mini.js';
