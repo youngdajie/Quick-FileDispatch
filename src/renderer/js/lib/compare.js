@@ -7,7 +7,6 @@
  */
 
 import { modal, escapeHtml } from './dom.js';
-import { createWmPanel } from './wm-panel.js';
 
 const CPLinks = window.CPLinks;
 
@@ -37,21 +36,9 @@ export function canCompare(it) {
  *
  * 有一点得注意：裁切是按**外层盒子**算的，所以外层必须收缩到图片本身的显示尺寸
  * （CSS 里用 width: fit-content 做到），否则 contain 留下的空白会让中缝和图片边界对不上。
- *
- * opts.watermark（可选，上传页会传）：
- *   { initial, onChange(wm) → Promise<{ blob, size, w, h, note }> }
- * 传了就在右侧挂一块水印参数面板 —— 改水印立刻重压这张图、上层图跟着换，
- * 不用退出去改设置再回来。
- *
- * 为什么水印面板要放在这里：压缩之前点缩略图走的是图片查看器（那边也有面板），
- * **压缩一完成 `canCompare` 就为真、入口换成这个对比窗**，面板就"消失"了 ——
- * 用户真正想调水印的时候，看到的恰好是这个窗口。
  */
-export function openCompare(it, opts) {
-  const o = opts || {};
-  const wmHost = o.watermark || null;
-
-  let afterUrl = URL.createObjectURL(
+export function openCompare(it) {
+  const afterUrl = URL.createObjectURL(
     new Blob([it.outBuffer], { type: OUT_MIME[CPLinks.extOf(it.outName)] || '' })
   );
 
@@ -70,19 +57,17 @@ export function openCompare(it, opts) {
   const node = document.createElement('div');
   node.className = 'cmp';
   node.innerHTML =
-    '<div class="cmp-main">' +
     '<div class="cmp-stage">' +
     '<img class="cmp-a" src="' + escapeHtml(it.previewUrl) + '" alt="压缩前" draggable="false" />' +
     '<img class="cmp-b" src="' + escapeHtml(afterUrl) + '" alt="压缩后" draggable="false" />' +
     '<span class="cmp-tag l">压缩前 ' + escapeHtml(CPLinks.formatBytes(it.origSize)) + '</span>' +
-    '<span class="cmp-tag r" id="cmpTagR">压缩后 ' + escapeHtml(CPLinks.formatBytes(it.outSize)) + '</span>' +
+    '<span class="cmp-tag r">压缩后 ' + escapeHtml(CPLinks.formatBytes(it.outSize)) + '</span>' +
     '<div class="cmp-bar"><span class="cmp-knob"></span></div>' +
     '</div>' +
     '<div class="cmp-meta">' +
     '<span class="cmp-name">' + escapeHtml(it.outName || it.origName) + '</span>' +
-    '<span id="cmpMeta">' + meta + '</span>' +
+    meta +
     '<span class="cmp-hint">按住左右拖动中缝</span>' +
-    '</div>' +
     '</div>';
 
   const stage = node.querySelector('.cmp-stage');
@@ -119,91 +104,11 @@ export function openCompare(it, opts) {
   stage.addEventListener('pointerup', stop);
   stage.addEventListener('pointercancel', stop);
 
-  /* ------------------------------------------------ 右侧水印面板 */
-
-  let panel = null;
-  let wmTimer = 0;
-  let wmBusy = false;
-  let wmPending = null;
-
-  if (wmHost) {
-    const side = document.createElement('aside');
-    side.className = 'cmp-side';
-
-    panel = createWmPanel({
-      prefix: 'cmpWm',
-      initial: wmHost.initial,
-      onChange: (wm) => {
-        // 节流：拖一次滑块会打成几十次调用，而每次都要重压一整张图
-        wmPending = wm;
-        clearTimeout(wmTimer);
-        wmTimer = setTimeout(pumpWatermark, 260);
-      }
-    });
-    side.appendChild(panel.el);
-
-    const foot = document.createElement('div');
-    foot.className = 'cmp-wmfoot';
-    foot.innerHTML = '<span class="cmp-wmhint" id="cmpWmHint">改动会立刻重压这张图，并存为默认水印</span>';
-    side.appendChild(foot);
-
-    node.appendChild(side);
-  }
-
-  function setHint(text, kind) {
-    const el = node.querySelector('#cmpWmHint');
-    if (!el) return;
-    el.textContent = text;
-    el.classList.toggle('warn', kind === 'warn');
-  }
-
-  async function pumpWatermark() {
-    if (!wmPending || wmBusy) return;
-    const wm = wmPending;
-    wmPending = null;
-    wmBusy = true;
-    setHint('正在重新压缩…');
-    try {
-      const res = await wmHost.onChange(wm);
-      if (!res || !res.blob) {
-        setHint('没拿到新的压缩结果', 'warn');
-        return;
-      }
-      const next = URL.createObjectURL(res.blob);
-      URL.revokeObjectURL(afterUrl);
-      afterUrl = next;
-      const b = node.querySelector('.cmp-b');
-      if (b) b.src = next;
-      const tagR = node.querySelector('#cmpTagR');
-      if (tagR) tagR.textContent = '压缩后 ' + CPLinks.formatBytes(res.size || 0);
-      const metaEl = node.querySelector('#cmpMeta');
-      if (metaEl) {
-        const bits = [];
-        if (res.w && res.h) bits.push(res.w + '×' + res.h);
-        if (res.note) bits.push(res.note);
-        metaEl.innerHTML = bits.map((x) => '<span>' + escapeHtml(String(x)) + '</span>').join('');
-      }
-      setHint('已按新水印重压 · 改动已存为默认');
-    } catch (e) {
-      setHint('重新压缩失败：' + ((e && e.message) || e), 'warn');
-    } finally {
-      wmBusy = false;
-      // 压缩期间又改了参数，这一轮结束后补跑
-      if (wmPending) wmTimer = setTimeout(pumpWatermark, 120);
-    }
-  }
-
   modal({
     title: '压缩前后对比',
-    className: 'cmpwin',
+    wide: true,
     node: node,
     buttons: [{ label: '关闭', primary: true }],
-    onClose: () => {
-      if (panel) panel.dispose();
-      clearTimeout(wmTimer);
-      wmTimer = 0;
-      wmPending = null;
-      URL.revokeObjectURL(afterUrl);
-    }
+    onClose: () => URL.revokeObjectURL(afterUrl)
   });
 }

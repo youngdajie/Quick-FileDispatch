@@ -1,14 +1,12 @@
 /** 上传页 */
 
-import { $, $$, toast, err, ok, warn, modal, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
-// 图片预览（带水印实时编辑）已独立成模块，签名和以前一样
-import { previewImage } from '../lib/imgview.js';
+import { $, $$, toast, err, ok, warn, modal, previewImage, escapeHtml, debounce, pulse, friendlyError } from '../lib/dom.js';
 import state from '../lib/state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from '../lib/compress.js';
 import { openColorPicker, closeColorPicker, normalizeHex } from '../lib/colorpicker.js';
 // 前后对比（含 OUT_MIME / canCompare / openCompare）已提到共享模块，
 // 主上传页与「上传到此文件夹」mini 弹窗共用一份
-import { canCompare, openCompare, OUT_MIME } from '../lib/compare.js';
+import { canCompare, openCompare } from '../lib/compare.js';
 // 上传流程与 mini 弹窗共用一份（进度、base64、结果映射、同步提示都在里面）
 import { runUpload, uploadResultMessage } from '../lib/upload-run.js';
 // LFS 开关的共享逻辑（与 mini 上传弹窗共用同一套判断和记忆）
@@ -397,52 +395,13 @@ async function processPending() {
 /**
  * 点缩略图：能对比就拉对比，否则退回普通放大预览。
  * 队列和结果两处共用 —— 两边的判断条件本来就是一回事。
- *
- * 对比窗也要把水印面板带过去：压缩一完成 `canCompare` 就为真、入口从
- * 「图片查看器」换成这里，用户真正想调水印的时候看到的恰好是这个窗口 ——
- * 早先对比窗没有面板，看起来就像「压缩完预览，面板消失了」。
  */
 function openThumbFor(id) {
   const it = queue.find((q) => String(q.id) === String(id));
   if (!it || !it.previewUrl) return false;
-  if (canCompare(it)) {
-    openCompare(it, {
-      watermark: {
-        initial: compressOptions().watermark,
-        onChange: (wm) => recompressForCompare(it, wm)
-      }
-    });
-  } else {
-    previewImage(it.previewUrl);
-  }
+  if (canCompare(it)) openCompare(it);
+  else previewImage(it.previewUrl);
   return true;
-}
-
-/**
- * 对比窗里改了水印 → 立刻按新参数重压这一张，并把水印写进配置。
- *
- * 为什么写配置：水印是全局设置，用户在对比窗里调它，想要的是「这批图都这样」。
- * 只重压当前这张，关掉窗口后剩下的图还是旧水印 —— 那才是更难解释的状态。
- *
- * 返回的是一次「快照」：对比窗自己转成 objectURL 显示。队列随后按新水印整批重算
- * （invalidate），好让 hash 模式下的文件名、体积统计这些跟着对齐。
- */
-async function recompressForCompare(it, wm) {
-  await state.patch({ watermark: wm });
-  const buf = await fileToArrayBuffer(it.file);
-  const res = await ensurePool().run(it.origName, buf, Object.assign({}, compressOptions(), { watermark: wm }));
-
-  invalidate();
-  scheduleProcess(300);
-
-  const ext = res.passthrough ? CPLinks.extOf(it.origName) : res.ext || CPLinks.extOf(it.origName);
-  return {
-    blob: new Blob([res.buffer], { type: OUT_MIME[ext] || res.type || '' }),
-    size: res.buffer.byteLength,
-    w: res.width || 0,
-    h: res.height || 0,
-    note: res.reason || ''
-  };
 }
 
 /* ---------------------------------------------------------------- 上传 */

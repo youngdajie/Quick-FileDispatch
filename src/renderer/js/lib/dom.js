@@ -198,9 +198,33 @@ export function confirmDialog(title, message, confirmLabel) {
   });
 }
 
-/* 图片预览（previewImage）已经独立成 lib/imgview.js —— 它现在带一整套
-   水印实时编辑，塞在这里会把通用弹层工具撑得太大。
-   调用方从 '../lib/imgview.js' 引入即可（签名没变）。 */
+/**
+ * 图片预览。
+ * link 给了就在标题栏挂一个「浏览器打开」—— 和文本预览保持同一套位置与图标，
+ * 不然同一个页面上两种预览框的按钮一个在右上、一个没有，用起来要重新找。
+ */
+export function previewImage(src, name, link) {
+  modal({
+    title: name || '预览',
+    wide: true,
+    html: `<img src="${escapeHtml(src)}" alt="" />`,
+    actions: link
+      ? [
+          {
+            icon:
+              '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
+              'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+              '<path d="M13.5 4H20v6.5"/><path d="M20 4l-8.6 8.6"/>' +
+              '<path d="M18.5 14v5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>',
+            label: '浏览器打开',
+            title: '用系统默认浏览器打开这个文件',
+            onClick: () => window.cloudpic.shell.openExternal(link)
+          }
+        ]
+      : [],
+    buttons: [{ label: '关闭', primary: true }]
+  });
+}
 
 /* ---------------------------------------------------------------- 右键菜单 */
 
