@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/netproxy"
 )
 
 /* ------------------------------------------------------------ 常量 */
@@ -220,7 +221,9 @@ func fetch(ctx context.Context, u string) ([]byte, error) {
 	req.Header.Set("User-Agent", "QuickFileDispatch/"+Version)
 	req.Header.Set("Accept", "application/octet-stream,*/*")
 
-	client := &http.Client{Timeout: 3 * time.Minute}
+	// Transport 走 netproxy：LFS 的下载源在 GitHub Releases（国内经常连不上），
+	// 用户在设置里填了代理就用它
+	client := &http.Client{Timeout: 3 * time.Minute, Transport: netproxy.Transport()}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

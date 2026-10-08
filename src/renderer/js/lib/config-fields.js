@@ -32,12 +32,12 @@ export const SYNC_STRATEGIES = [
 
 export const TOKEN_HELP = {
   github:
-    'GitHub 需要 <b>Personal Access Token</b>（经典版或细粒度均可），至少勾选 <b>repo</b>（读写仓库内容）。' +
+    'GitHub 需要 <b>Personal Access Token</b>（经典版或细粒度均可），至少勾选 <b>repo</b>（读写仓库内容）' +
     '申请地址：<a href="#" data-ext="https://github.com/settings/tokens/new?scopes=repo&description=JIE-Dispatch">github.com/settings/tokens</a>' +
     '<br>Token 只保存在本机，用 Windows 系统级加密（DPAPI）存储，不会写到任何仓库里',
   cnb:
-    'CNB 需要 <b>访问令牌</b>，在「个人设置 → 访问令牌」创建，勾选 <b>repo-code</b>（仓库代码读写）等权限。' +
-    '注意必须用<b>经典令牌</b>——MCP 令牌调不了 REST 接口（会一路 404）。' +
+    'CNB 需要 <b>访问令牌</b>，在「个人设置 → 访问令牌」创建，勾选 <b>repo-code</b>（仓库代码读写）等权限' +
+    '注意必须用<b>经典令牌</b>——MCP 令牌调不了 REST 接口（会一路 404）' +
     '申请地址：<a href="#" data-ext="https://cnb.cool/profile/token">cnb.cool/profile/token</a>' +
     '<br>Token 只保存在本机，用 Windows 系统级加密存储，不会写到任何仓库里'
 };

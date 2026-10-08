@@ -94,7 +94,7 @@ func (e *Env) profileCheck(payload map[string]any) (any, error) {
 			out["cloud"] = map[string]any{
 				"ok": false, "code": "no-token", "owner": owner, "repo": repo,
 				"message": owner + "/" + repo + "：本机没有可用 Token",
-				"fix": "把「归档配置」切到这一份，在「仓库信息 → 访问令牌」补上 Token 后点「验证并归档」。" +
+				"fix": "把「归档配置」切到这一份，在「仓库信息 → 访问令牌」补上 Token 后点「验证并归档」" +
 					"（若这份是从配置文件导入的，说明导出时那份配置本身就没带 Token）",
 			}
 		} else {

@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/netproxy"
 )
 
 // extraPath 是追加到 git 子进程 PATH **最前面**的目录。
@@ -48,6 +50,10 @@ func gitEnv() []string {
 		"GIT_ASKPASS=echo",
 		"LANG=en_US.UTF-8",
 	)
+	// 用户在设置里填了代理就带上。
+	// git 自己不读 Windows「设置 → 代理」那套（它在注册表里），只认环境变量 ——
+	// 而这里是 os.Environ() 全量继承再追加，塞进去就能生效（见 internal/netproxy）。
+	env = append(env, netproxy.Env()...)
 	return env
 }
 

@@ -66,9 +66,9 @@ export function lfsEnabled(cfg, box) {
 export async function confirmLfsEnable() {
   const ok = await confirmDialog(
     '用 LFS 对象存储？',
-    '文件会存进 CNB 的对象存储（不占仓库额度）。\n\n' +
-      '但要注意：对象存储里的文件无法被 jsdmirror 加速，直链下载走对象存储。\n' +
-      '如果这些文件要配 CDN 加速，建议不要走 LFS。',
+    '文件会存进 CNB 的对象存储（不占仓库额度） \n\n' +
+      '但要注意：对象存储里的文件无法被 jsdmirror 加速，直链下载走对象存储 \n' +
+      '如果这些文件要配 CDN 加速，建议不要走 LFS',
     '继续'
   );
   return ok;

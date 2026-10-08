@@ -102,24 +102,22 @@
   /* 明度差是「高级感」的第一来源：卡面必须明显亮于大背景（#0e1622），
      否则一屏灰糊糊的，再精致的描边也救不回来。所以上端给到 #1c2a3d，
      再往下沉回 panel-2，卡面自己就有厚度 */
-  --pc-bg-a: #1c2a3d;
-  --pc-bg-b: #131e2e;
+  /* 配置卡片：干净底色 + 低对比实描边 + 三层柔和阴影。
+     取代早先那套「点阵纹理 + 顶部高光 + 150° 渐变假边框 + 大负扩散阴影」——
+     那套出来是塑料感和一团死黑，像十年前的拟物皮肤。
+     层次靠明度和间距拉开，不靠纹理和光晕。 */
+  --card-bg: #141b26;
+  --card-line: rgba(255, 255, 255, 0.075);
+  --card-line-hi: rgba(255, 255, 255, 0.15);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px -6px rgba(0, 0, 0, 0.34), 0 16px 32px -24px rgba(0, 0, 0, 0.5);
+  --card-shadow-hi: 0 2px 5px rgba(0, 0, 0, 0.32), 0 10px 22px -10px rgba(0, 0, 0, 0.42), 0 24px 44px -28px rgba(0, 0, 0, 0.55);
+  --card-shadow-on: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 20px -10px rgba(78, 155, 234, 0.34), 0 20px 40px -26px rgba(0, 0, 0, 0.5);
   /* 描边做成「左上被侧光照到」的斜切光：起点够亮、右下几乎化没，
      这一条亮边就是整张卡的立体感来源 */
-  --pc-edge-hi: rgba(140, 186, 246, 0.55);
-  --pc-edge-top: rgba(180, 216, 255, 0.66);
-  --pc-edge: rgba(126, 172, 236, 0.32);
-  --pc-edge-b: rgba(126, 172, 236, 0.05);
-  --pc-sheen: rgba(78, 155, 234, 0.16);
-  --pc-top: rgba(255, 255, 255, 0.08);
   /* 底部内侧再压一道暗影：卡面上下两端一明一暗，整张卡才有「厚度」，
      只靠一个投影是压不出立体感的 */
-  --pc-inner: inset 0 -16px 24px -20px rgba(0, 0, 0, 0.85);
   /* 卡面的点阵：密度 13px、亮度放到「知道有、但不抢戏」的程度。
      它不承担信息，只负责让一大片深色不那么"哑" */
-  --pc-dots: rgba(190, 220, 255, 0.075);
-  --pc-lift: 0 12px 26px -20px rgba(0, 0, 0, 0.95);
-  --pc-lift-hi: 0 18px 34px -18px rgba(0, 0, 0, 1);
 }
 
 /* ============================================================
@@ -195,18 +193,12 @@ html[data-theme="light"] {
 
   /* 浅色下同一套结构，只是把「侧光」换成浅蓝白：
      卡面自上而下由纯白过渡到极淡的蓝灰，描边用低饱和的蓝，投影更软 */
-  --pc-bg-a: #ffffff;
-  --pc-bg-b: #f2f6fb;
-  --pc-edge-hi: rgba(47, 127, 214, 0.42);
-  --pc-edge-top: rgba(47, 127, 214, 0.55);
-  --pc-edge: rgba(47, 127, 214, 0.18);
-  --pc-edge-b: rgba(47, 127, 214, 0.03);
-  --pc-sheen: rgba(255, 255, 255, 0.95);
-  --pc-top: rgba(255, 255, 255, 0.9);
-  --pc-inner: inset 0 -16px 24px -20px rgba(20, 42, 74, 0.14);
-  --pc-dots: rgba(30, 70, 130, 0.075);
-  --pc-lift: 0 10px 22px -18px rgba(20, 42, 74, 0.42);
-  --pc-lift-hi: 0 16px 32px -18px rgba(20, 42, 74, 0.5);
+  --card-bg: #ffffff;
+  --card-line: rgba(20, 42, 74, 0.1);
+  --card-line-hi: rgba(20, 42, 74, 0.19);
+  --card-shadow: 0 1px 2px rgba(20, 42, 74, 0.05), 0 4px 12px -6px rgba(20, 42, 74, 0.1), 0 16px 32px -24px rgba(20, 42, 74, 0.16);
+  --card-shadow-hi: 0 2px 5px rgba(20, 42, 74, 0.07), 0 10px 22px -10px rgba(20, 42, 74, 0.15), 0 24px 44px -28px rgba(20, 42, 74, 0.2);
+  --card-shadow-on: 0 1px 2px rgba(20, 42, 74, 0.05), 0 8px 20px -10px rgba(47, 127, 214, 0.26), 0 20px 40px -26px rgba(20, 42, 74, 0.18);
 }
 
 * { box-sizing: border-box; }
@@ -724,21 +716,19 @@ select.csel-native {
  * ⚠️ background-clip / background-size 必须按同样的顺序写满四段，漏一段就整体错位
  * （比如点阵的尺寸套到描边层上）。
  */
+/* 配置卡片
+   现代做法：干净底色 + 1px 低对比实描边 + 三层柔和阴影。
+   早先那版是「点阵纹理 + 顶部高光 + 150° 渐变假边框 + 大负扩散阴影」，
+   露出来是塑料感和一团死黑 —— 层次现在靠明度和间距拉开，不靠纹理和光晕。 */
 .pf-row {
   position: relative;
   display: flex; flex-direction: column; gap: 6px;
   aspect-ratio: 1 / 1;
-  padding: 12px 13px 11px; cursor: pointer;
-  border: 1px solid transparent; border-radius: 10px;
-  background-image:
-    radial-gradient(120% 78% at 50% -22%, var(--pc-sheen), transparent 60%),
-    radial-gradient(circle at 50% 50%, var(--pc-dots) 0.9px, transparent 1.3px),
-    linear-gradient(180deg, var(--pc-bg-a) 0%, var(--pc-bg-b) 100%),
-    linear-gradient(150deg, var(--pc-edge-hi) 0%, var(--pc-edge) 26%, var(--pc-edge-b) 64%, rgba(0, 0, 0, 0) 90%);
-  background-clip: padding-box, padding-box, padding-box, border-box;
-  background-size: auto, 13px 13px, auto, auto;
-  box-shadow: var(--pc-lift), inset 0 1px 0 var(--pc-top), var(--pc-inner);
-  transition: transform 0.16s var(--ease), box-shadow 0.16s, background-image 0.16s;
+  padding: 14px 14px 12px; cursor: pointer;
+  border: 1px solid var(--card-line); border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s, border-color 0.18s, background 0.18s;
   /* fill-mode 必须是 backwards，不能是 both ——
      rowIn 的 to 帧写着 `transform: none`，用 both（含 forwards）的话动画结束后
      这一帧会一直挂在那儿，把下面 :hover 的 translateY 整个压死（动画优先级高于
@@ -748,36 +738,41 @@ select.csel-native {
 }
 .pf-row:hover {
   transform: translateY(-2px);
-  box-shadow: var(--pc-lift-hi), inset 0 1px 0 var(--pc-top), var(--pc-inner);
-  background-image:
-    radial-gradient(120% 78% at 50% -22%, var(--pc-sheen), transparent 60%),
-    radial-gradient(circle at 50% 50%, var(--pc-dots) 0.9px, transparent 1.3px),
-    linear-gradient(180deg, var(--pc-bg-a) 0%, var(--pc-bg-b) 100%),
-    linear-gradient(150deg, var(--pc-edge-top) 0%, var(--pc-edge-hi) 28%, var(--pc-edge-b) 66%, rgba(0, 0, 0, 0) 90%);
+  border-color: var(--card-line-hi);
+  box-shadow: var(--card-shadow-hi);
 }
-/* 「使用中」：描边整条换成强调色 + 顶部透出一点品牌蓝的辉光，
-   不去改卡面底色 —— 底色一动，里面的徽章、文字对比度全得跟着重算 */
+/* 选中：描边换强调色 + 顶部一层极淡的主色渐变，点到为止。
+   早先那版是「整条渐变描边 + 一圈 30px 光晕」，暗色下像机箱灯效 */
 .pf-row.active {
-  background-image:
-    radial-gradient(120% 78% at 50% -22%, var(--accent-soft), transparent 60%),
-    radial-gradient(circle at 50% 50%, var(--pc-dots) 0.9px, transparent 1.3px),
-    linear-gradient(180deg, var(--pc-bg-a) 0%, var(--pc-bg-b) 100%),
-    linear-gradient(150deg, var(--accent-hi) 0%, var(--accent-line) 32%, var(--pc-edge-b) 68%, rgba(0, 0, 0, 0) 90%);
-  box-shadow: var(--pc-lift), inset 0 1px 0 var(--pc-top), var(--pc-inner), 0 0 30px -14px var(--accent);
+  border-color: var(--accent-line);
+  background: linear-gradient(180deg, var(--accent-soft), transparent 46%), var(--card-bg);
+  box-shadow: var(--card-shadow-on);
 }
 
-/* ①顶部：平台 pill 在左，「使用中」徽章顶到右边 */
+/* ①顶部：平台 pill 居中（「当前」角标已经挪到卡片左上角，见下） */
 .pf-top { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+
+/* 「当前」角标：贴在卡片左上角的小胶囊。
+   原先它只是平台名旁边的一行小字（右侧那颗发光点），卡片一多就淹没在
+   徽章行里了；挪到左上角做成标签，扫一眼就知道哪张在用。
+   用绝对定位挂在 .pf-row 上，不参与顶部那行的排版 —— 否则平台名会被挤偏。 */
 .pf-cur {
-  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
-  font-size: 10px; font-weight: 600; letter-spacing: 0.2px;
-  color: var(--accent-hi); white-space: nowrap;
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 8px 2px 6px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
+  color: #fff; white-space: nowrap;
+  background: linear-gradient(135deg, var(--accent-hi), var(--accent));
+  border-radius: 999px;
+  box-shadow: 0 2px 9px -3px var(--accent), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
 }
-/* 一颗发光的小实心点：比「使用中」三个字更先被眼睛抓到。
-   只在选中那张卡上出现，其余卡片保持安静 */
+/* 一个白色小勾：比「当前」两个字更先被眼睛抓到 */
 .pf-cur::before {
-  content: ''; width: 5px; height: 5px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 7px var(--accent);
+  content: ''; width: 7px; height: 4px;
+  border-left: 1.7px solid currentColor;
+  border-bottom: 1.7px solid currentColor;
+  transform: rotate(-45deg) translate(0.5px, -1px);
 }
 
 /* 云端 ↕ 本地 小图（杰哥定的版式）：只画图标和字，路径不写上来，

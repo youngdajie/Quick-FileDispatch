@@ -136,7 +136,7 @@ export function notifySync(sync) {
   if (!sync) return;
   if (sync.skipped) {
     if (sync.message && sync.message.indexOf('未启用') >= 0) {
-      toast('已上传到云端。本地目录未同步（设置里关掉了自动拉取）', 'warn');
+      toast('已上传到云端 本地目录未同步（设置里关掉了自动拉取）', 'warn');
     }
     return;
   }

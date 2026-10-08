@@ -54,7 +54,16 @@ func (c *Client) UploadBatch(files []File, message string, onProgress ProgressFu
 }
 
 func (c *Client) uploadGitData(files []File, message string, onProgress ProgressFunc) ([]Result, error) {
-	refPath := "/repos/" + c.Owner + "/" + c.Repo + "/git/ref/heads/" + url.PathEscape(c.Branch)
+	// ⚠️ 这里必须是 refs（**复数**）。GitHub 的两个接口路径不一样：
+	//     GET   /git/refs/{ref}   读引用（实测单数 /git/ref/ 它也认）
+	//     PATCH /git/refs/{ref}   更新引用 —— **只认复数**，写单数直接 404
+	//
+	// 早先 GET 和 PATCH 共用了一个 "…/git/refs/heads/xxx"（抄的是 GET 那边的写法），
+	// 于是：blob 建好了、tree 建好了、commit 也建好了，**最后那一步 PATCH 404** ——
+	// 用户看到的是「上传失败：仓库或分支不存在，请检查用户名 / 仓库名 / 分支名」，
+	// 可分支明明是好的、Token 也有权限。前面每一步都不报错，只错最后一下，
+	// 是最难查的那种（2026-10-08 实测 curl 确认：PATCH 单数 404、复数 401=路由存在）。
+	refPath := "/repos/" + c.Owner + "/" + c.Repo + "/git/refs/heads/" + url.PathEscape(c.Branch)
 	parentSHA, err := c.refSHA(refPath)
 	if err != nil {
 		return nil, err
@@ -160,7 +169,7 @@ func (c *Client) MoveBatch(items []MoveItem, message string) ([]Result, error) {
 		return nil, ErrCNBWrite
 	}
 
-	refPath := "/repos/" + c.Owner + "/" + c.Repo + "/git/ref/heads/" + url.PathEscape(c.Branch)
+	refPath := "/repos/" + c.Owner + "/" + c.Repo + "/git/refs/heads/" + url.PathEscape(c.Branch)
 	parentSHA, err := c.refSHA(refPath)
 	if err != nil {
 		return nil, err

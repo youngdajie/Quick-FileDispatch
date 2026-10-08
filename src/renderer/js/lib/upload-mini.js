@@ -600,7 +600,7 @@ function build() {
     '<input type="checkbox" id="miniLfs" />' +
     '<span class="up-lfs-text">' +
     '<b>用 LFS 对象存储</b>' +
-    '<span class="hint">文件内容存进 CNB 对象存储（独立额度），仓库里只留一个指针。首次使用会自动下载 git-lfs。</span>' +
+    '<span class="hint">文件内容存进 CNB 对象存储（独立额度），仓库里只留一个指针 首次使用会自动下载 git-lfs</span>' +
     '</span>' +
     '</label>' +
     // 实时进度。与主上传页同一套结构和样式（.up-progress）。

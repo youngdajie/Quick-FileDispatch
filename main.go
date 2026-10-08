@@ -34,6 +34,7 @@ import (
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/ipc"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/lfs"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/netproxy"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/progress"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/webui"
@@ -42,7 +43,7 @@ import (
 
 // 版本号规则：3.0.0 起去掉 -go 后缀（2.8.1~2.9.0 的 -go 是
 // 与 Electron 时代 v* 标签区分发布线的过渡写法）。
-const version = "3.4.6"
+const version = "3.4.7"
 
 // appName 沿用 Electron 时代定下的 userData 目录名（appData + 应用名）：
 // 两边对不上就会各自读一份配置，看起来像「配置丢了」——老用户升级到 Go 版
@@ -85,6 +86,12 @@ func run(headless, check, dev bool, port int, profile string, debugPort int) err
 	// --profile 指向临时目录时，这一整套也跟着走，不会碰本机的真实加密材料。
 	vault := dpapi.New(cfgDir)
 	st := store.New(filepath.Join(cfgDir, "config.json"), vault)
+	// 出站代理交给 netproxy，三条通道（REST API / git 子进程 / LFS 下载）共用这一份。
+	// 放在这里是为了**在任何网络请求之前**就绪 —— 启动时那次自动拉取也要用上它。
+	// 空的 proxyUrl 表示不干预，仍按 Go 默认走（只认 HTTPS_PROXY 那类环境变量）。
+	if p, _ := st.Raw()["proxyUrl"].(string); p != "" {
+		netproxy.Set(p)
+	}
 	// 解不开老 Token 时打一句原因：这种情况界面只显示「没有 Token」，
 	// 不打日志的话完全查不出是「换了用户」还是「我们的代码解错了」
 	st.SetTokenFailHook(func(err error) {

@@ -86,13 +86,15 @@ function profileRow(p) {
   const cloudTitle = cloudVal || '未填写仓库';
   const localTitle = localVal || '未绑定本地目录';
 
-  /* 正方形卡片：①平台 + 使用中 ②「云端 ↕ 本地」小图（不写长路径，悬停看完整）
-     ③别名 ④状态徽章行 ⑤链接规则 ⑥操作按钮沉底 */
+  /* 正方形卡片：①左上角「当前」角标（选中时）②平台 ③「云端 ↕ 本地」小图
+     ④别名 ⑤状态徽章行 ⑥链接规则 ⑦操作按钮沉底
+     角标单独拎到 .pf-row 的直接子级：它要绝对定位贴左上角，
+     留在 .pf-top 里就得跟着那行的居中和间距走 */
   return (
     '<div class="pf-row' + (p.isActive ? ' active' : '') + '" data-id="' + escapeHtml(p.id) + '">' +
+    (p.isActive ? '<span class="pf-cur">当前</span>' : '') +
     '<div class="pf-top">' +
     '<span class="pf-platform pf-' + escapeHtml(p.platform || 'github') + '">' + plat + '</span>' +
-    (p.isActive ? '<span class="pf-cur">使用中</span>' : '') +
     '</div>' +
     '<div class="pf-cd">' +
     '<div class="pf-cd-row' + (cloudVal ? '' : ' bad') + '">' +
@@ -198,7 +200,7 @@ async function removeProfile(id) {
   if (!p) return;
   const yes = await confirmDialog(
     '删除配置',
-    '将从本机移除「' + profileLabel(p) + '」及其 Token。仓库里的文件不受影响',
+    '将从本机移除「' + profileLabel(p) + '」及其 Token 仓库里的文件不受影响',
     '删除'
   );
   if (!yes) return;
@@ -410,13 +412,18 @@ async function setFont(font) {
   applyFont(font);
 }
 
-/** 全局项：改动即存（目前只剩提交信息） */
+/** 全局项：改动即存（提交信息、网络代理） */
 function globalAutoSave() {
   const patch = {};
   const msg = $('#cfgCommitMessage');
   if (msg) {
     const v = msg.value.trim();
     if (v !== (state.cfg.commitMessage || '')) patch.commitMessage = v;
+  }
+  const proxy = $('#cfgProxy');
+  if (proxy) {
+    const v = proxy.value.trim();
+    if (v !== (state.cfg.proxyUrl || '')) patch.proxyUrl = v;
   }
   if (Object.keys(patch).length) {
     state.patch(patch).catch((e) => err(e.message || String(e)));
@@ -431,6 +438,9 @@ function fillGlobal() {
   ensureFontOptions(ui.font || PRIMARY_FONT_NAME);
   const msg = $('#cfgCommitMessage');
   if (msg) msg.value = c.commitMessage || '';
+  // 代理：正在输入时别回写，否则光标会跳到末尾
+  const proxy = $('#cfgProxy');
+  if (proxy && document.activeElement !== proxy) proxy.value = c.proxyUrl || '';
   // 0-100 的「面板不透明度」（老配置的 0-24 强度值由 store 那边迁移过）
   const blur = ui.bgBlur == null ? 50 : Number(ui.bgBlur);
   const slider = $('#cfgBgBlur');
@@ -611,6 +621,7 @@ export default {
     // 提交信息（全局项，改动即存）
     autoSave = debounce(globalAutoSave, 500);
     $('#cfgCommitMessage').addEventListener('input', autoSave);
+    $('#cfgProxy').addEventListener('input', autoSave);
 
     // 外观：主题卡片
     $('#themeCards').addEventListener('click', (e) => {

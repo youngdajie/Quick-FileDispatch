@@ -26,6 +26,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/netproxy"
 )
 
 const (
@@ -103,7 +105,9 @@ func New(platform, owner, repo, branch, token, apiBase string) *Client {
 		Branch:   branch,
 		Token:    token,
 		APIBase:  strings.TrimRight(apiBase, "/"),
-		http:     &http.Client{Timeout: 60 * time.Second},
+		// Transport 走 netproxy：用户在设置里填了代理就带上；没填则保持 Go 的默认
+		// （默认只认 HTTPS_PROXY 这类环境变量，**不认 Windows 系统代理**）
+		http: &http.Client{Timeout: 60 * time.Second, Transport: netproxy.Transport()},
 	}
 	if c.Branch == "" {
 		c.Branch = "main"

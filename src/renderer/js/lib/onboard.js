@@ -28,13 +28,13 @@ const PLATFORMS = [
   {
     id: 'github',
     name: 'GitHub',
-    desc: '全球最大代码托管平台，私有仓库免费。raw 域名国内访问偶有波动，可切 CDN',
+    desc: '全球最大代码托管平台，私有仓库免费 raw 域名国内访问偶有波动，可切 CDN',
     tip: '单文件 ≤ 100MB · 单仓库建议 ≤ 1GB'
   },
   {
     id: 'cnb',
     name: 'CNB',
-    desc: '腾讯云原生构建的代码托管，国内直连快。写入通过 Git 完成，需要本机装了 Git',
+    desc: '腾讯云原生构建的代码托管，国内直连快 写入通过 Git 完成，需要本机装了 Git',
     tip: '单文件 ≤ 200MB · 仓库存储免费 100GB'
   }
 ];
@@ -106,7 +106,7 @@ function panePlatform() {
   return (
     '<div class="ob-pane">' +
     '<p style="margin:0 0 12px;color:var(--text-dim);font-size:12.5px;line-height:1.9">' +
-    '把免费的代码托管仓库当成文件仓库来用 —— 仓库装得下的东西，这里都能分发。先选一个平台，后面随时能换</p>' +
+    '把免费的代码托管仓库当成文件仓库来用 —— 仓库装得下的东西，这里都能分发 先选一个平台，后面随时能换</p>' +
     '<div class="plat-cards">' + cards + '</div>' +
     '<div class="ob-note" style="margin-top:14px">程序不会限制你能传什么，真正的边界在平台那边：' +
     '<b>' + escapeHtml(CPLinks.FILE_LIMITS.github.note) + '</b>（GitHub） / ' +
@@ -157,7 +157,7 @@ function paneLocal() {
     '<div class="ob-pane">' +
     '<p style="margin:0 0 12px;color:var(--text-dim);font-size:12.5px;line-height:1.9">' +
     '把仓库拉到本地，文件管理界面就读本地磁盘（打开即见、翻页零延迟），' +
-    '而且本地改了文件也能直接推回云端。<b>建议映射</b>；实在不想也可以先只用云端浏览</p>' +
+    '而且本地改了文件也能直接推回云端<b>建议映射</b>；实在不想也可以先只用云端浏览</p>' +
     '<div class="input-row" style="margin-bottom:10px">' +
     '<input type="text" id="obLocalDir" placeholder="例如 D:\\my-files" value="' + escapeHtml(draft.localDir) + '" />' +
     '<button class="btn btn-ghost btn-sm" id="obPickDir">选择…</button>' +
@@ -464,7 +464,7 @@ function bindPane() {
           const note = $('#obLocalNote');
           if (note) {
             note.innerHTML =
-              '已选择仅云端浏览：文件管理会直接读云端接口，速度取决于网络。之后想映射本地目录，去「设置」页选一个目录即可';
+              '已选择仅云端浏览：文件管理会直接读云端接口，速度取决于网络 之后想映射本地目录，去「设置」页选一个目录即可';
           }
           refreshNext();
           return;

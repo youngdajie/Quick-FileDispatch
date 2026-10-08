@@ -17,6 +17,7 @@ import (
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/cloud"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dialog"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/netproxy"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/progress"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/winfont"
@@ -247,12 +248,20 @@ func Register(r *Registry, env *Env) {
 				env.OnBackground(themeBackground(theme))
 			}
 		}
+		// 代理是全局出站设置，改完立刻生效：下一次建 API 客户端、下一个 git 子进程
+		// 就认新值（git 那边每次执行时现读 netproxy，所以自然跟上），不用重启
+		if v, ok := out["proxyUrl"].(string); ok {
+			netproxy.Set(v)
+		}
 		env.cache.Invalidate()
 		return out, nil
 	})
 
 	r.Handle("config:reset", func(json.RawMessage) (any, error) {
-		return env.Store.Reset()
+		out, err := env.Store.Reset()
+		// 重置会把 proxyUrl 一起清掉，出站设置得跟着回到默认（不干预）
+		netproxy.Set("")
+		return out, err
 	})
 
 	/* ---------------------------------------------------------- 系统交互 */

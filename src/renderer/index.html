@@ -199,13 +199,13 @@
             <span class="up-lfs-text">
               <b>用 LFS 对象存储</b>
               <span class="hint">
-                文件内容存进 CNB 对象存储（独立 100GiB 免费额度），仓库里只留一个指针。
-                大文件推荐开启 —— 不占仓库额度，别人 clone 时也不会把大文件一起拖下来。
+                文件内容存进 CNB 对象存储（独立 100GiB 免费额度），仓库里只留一个指针
+                大文件推荐开启 —— 不占仓库额度，别人 clone 时也不会把大文件一起拖下来
               </span>
             </span>
           </label>
           <p class="field-note" id="upLfsHint" hidden>
-            首次使用会自动下载 git-lfs（约 6MB），之后就不再需要了。
+            首次使用会自动下载 git-lfs（约 6MB），之后就不再需要了
           </p>
 
           <!-- 图片设置：压缩 + 水印全部集中在这里（原设置页两块卡整体迁入），
@@ -512,7 +512,7 @@
             <div class="card-body">
               <div class="prof-list" id="profileList"></div>
               <div class="prof-empty" id="profileEmpty" hidden>
-                还没有归档的配置。把上面填好，点「验证并归档」——验证通过后会出现在这里，点一下卡片就能切换
+                还没有归档的配置把上面填好，点「验证并归档」——验证通过后会出现在这里，点一下卡片就能切换
               </div>
             </div>
           </section>
@@ -527,6 +527,28 @@
                 <span class="field-label">提交信息</span>
                 <input type="text" id="cfgCommitMessage" placeholder="chore: 通过 JIE 分发服务上传" />
               </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>网络代理</h2>
+              <p>访问 GitHub 慢或连不上时填；CNB 是国内平台，会自动直连</p>
+            </div>
+            <div class="card-body">
+              <label class="field">
+                <span class="field-label">代理地址</span>
+                <input type="text" id="cfgProxy" spellcheck="false" placeholder="127.0.0.1:7890" />
+              </label>
+              <p class="hint">
+                常见填法：<b>127.0.0.1:7890</b>（Clash 默认的 HTTP 端口）、
+                <b>socks5://127.0.0.1:7891</b>（Clash 默认的 SOCKS 端口）<br />
+                填了之后，上传、推送、以及下载 git-lfs 都会走它，<b>改完立即生效、不用重启</b><br />
+                <b>CNB 不受影响</b>：它是国内平台，流量一律直连 —— 走代理只会更慢
+                代理只作用于 GitHub 这类境外地址<br />
+                还有一点：<b>只开代理软件里的「系统代理」开关是不够的</b> —— 那项改的是
+                Windows 自己的设置（存在注册表里），本程序不读它在这里填上地址才算数
+              </p>
             </div>
           </section>
 
@@ -618,7 +640,7 @@
           <section class="card">
             <div class="card-head">
               <h2>大文件上传（git-lfs）</h2>
-              <p>上传时勾选「用 LFS 对象存储」才会用到它。装一次就一直有效</p>
+              <p>上传时勾选「用 LFS 对象存储」才会用到它装一次就一直有效</p>
             </div>
             <div class="card-body">
               <div class="lfs-row">
@@ -627,8 +649,8 @@
                 <button type="button" class="btn btn-sm" id="btnLfsInstall" hidden>立即安装</button>
               </div>
               <p class="field-note">
-                CNB 的对象存储与仓库存储是<b>两笔独立额度</b>（各 100 GiB）。
-                大文件走 LFS 不占仓库额度，别人 clone 时也不会把大文件一起拖下来。
+                CNB 的对象存储与仓库存储是<b>两笔独立额度</b>（各 100 GiB）
+                大文件走 LFS 不占仓库额度，别人 clone 时也不会把大文件一起拖下来
               </p>
             </div>
           </section>
