@@ -37,11 +37,6 @@
         <path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>
       </svg>
     </button>
-    <button class="icon-btn" id="btnOpenLocalDir" title="打开本地目录">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 7.5A2 2 0 0 1 5 5.5h3.6a2 2 0 0 1 1.4.6l1 1a2 2 0 0 0 1.4.6H19a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-      </svg>
-    </button>
     <button class="icon-btn" id="btnRefreshAll" title="刷新当前页">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>
@@ -383,6 +378,10 @@
             <button class="icon-btn" id="btnMgUp" title="返回上级">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6"/><path d="M6 11.5 12 5.5l6 6"/></svg>
             </button>
+            <!-- 打开本地目录：开的是**当前目录**对应的本地路径，不是根目录 -->
+            <button class="icon-btn" id="btnMgOpenLocal" title="在资源管理器里打开当前目录">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 18.5V6.8c0-.7.6-1.3 1.3-1.3h3.9l1.6 2h9.4c.7 0 1.3.6 1.3 1.3v9.7c0 .7-.6 1.3-1.3 1.3H4.8c-.7 0-1.3-.6-1.3-1.3z"/><path d="M3.5 10.6h17"/></svg>
+            </button>
             <button class="icon-btn" id="btnMgRefresh" title="刷新">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
             </button>
@@ -462,19 +461,6 @@
         </div>
 
         <div class="settings-wrap">
-
-          <!-- 引导条：一句话说清「一份配置是什么、怎么用」，独立成卡比挤在标题下更容易被读到 -->
-          <section class="card guide-card">
-            <span class="gc-ico" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 7.5 12 3.5l8 4-8 4z"/><path d="M4 12.5 12 16.5l8-4"/><path d="M4 17 12 21l8-4"/>
-              </svg>
-            </span>
-            <div class="gc-text">
-              <b>一份配置 = 仓库信息 + 本地目录 + 文件链接</b>
-              <span>三样东西合成一份配置，验证通过后归档保存；归档好的都收在下面的「全部配置」里，点一下就切换</span>
-            </div>
-          </section>
 
           <!-- ============ 仓库设置：仓库信息 + 本地目录 + 文件链接 ============ -->
           <section class="card repo-module">

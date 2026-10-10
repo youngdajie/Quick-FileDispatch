@@ -1663,6 +1663,29 @@ function bind() {
     parts.pop();
     navigate(parts.join('/'));
   };
+
+  /*
+   * 在资源管理器里打开**当前目录**（不是本地根目录）。
+   * 按钮原来挂在顶栏，那会儿拿不到「当前在哪个目录」，只能开根 ——
+   * 挪到这里之后按 view.dir 精确打开，人在三级目录里点它，开的就是三级目录。
+   * 后端会做防穿越校验，目标还不存在时逐级往上退到最近的存在目录。
+   */
+  $('#btnMgOpenLocal').onclick = async () => {
+    const cfg = state.cfg || {};
+    if (!cfg.localDir) {
+      warn('还没配置本地目录，先到设置页选一个');
+      return;
+    }
+    if (view.source === 'remote') {
+      warn('当前是「仅云端浏览」，这一份没有对应的本地目录');
+      return;
+    }
+    try {
+      await window.cloudpic.shell.openLocalDir(view.dir || '');
+    } catch (e) {
+      err(e.message || String(e));
+    }
+  };
   $('#btnMgRefresh').onclick = () => load();
   $('#btnMgPull').onclick = pullLatest;
 

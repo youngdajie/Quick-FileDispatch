@@ -18,6 +18,7 @@ import (
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/dialog"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/netproxy"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/paths"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/progress"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/winfont"
@@ -277,7 +278,7 @@ func Register(r *Registry, env *Env) {
 		return true, openExternal(target)
 	})
 
-	r.Handle("shell:openLocalDir", func(json.RawMessage) (any, error) {
+	r.Handle("shell:openLocalDir", func(payload json.RawMessage) (any, error) {
 		dir, _ := env.Store.Get()["localDir"].(string)
 		if dir == "" {
 			return false, fmt.Errorf("还没有绑定本地目录")
@@ -285,7 +286,29 @@ func Register(r *Registry, env *Env) {
 		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 			return false, fmt.Errorf("本地目录不存在：%s", dir)
 		}
-		return true, openExternal(dir)
+
+		// 可选参数：仓库里的相对目录。管理页那个按钮要停在**当前目录**，
+		// 不能一律打开根 —— 人在三级目录里点它，就该打开三级目录。
+		var sub string
+		_ = json.Unmarshal(payload, &sub)
+		target := dir
+		if sub = paths.Normalize(sub); sub != "" {
+			joined := filepath.Join(dir, filepath.FromSlash(sub))
+			// 防目录穿越：Normalize 已剥掉 ..，这里再确认拼出来的结果仍在 localDir 之内
+			if rel, err := filepath.Rel(dir, joined); err == nil &&
+				rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				target = joined
+			}
+		}
+		// 目标可能还不存在（云端刚建的目录、本地没同步下来）。逐级往上退到存在的为止 ——
+		// 打开一个不存在的路径，资源管理器会弹个很难看的一级错误框。
+		for target != dir {
+			if st, err := os.Stat(target); err == nil && st.IsDir() {
+				break
+			}
+			target = filepath.Dir(target)
+		}
+		return true, openExternal(target)
 	})
 
 	// 在资源管理器里定位某个文件：用 /select, 让它在所在目录里被选中

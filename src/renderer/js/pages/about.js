@@ -126,6 +126,31 @@ const CORE_TECH = [
   ['Git CLI', '把仓库拉到本地，让本地目录与云端仓库始终对齐；CNB 的写入也由它完成']
 ];
 
+/**
+ * 每条技术的许可与出处。**不确定的宁可不写** —— 写错比不写更糟。
+ * 带链接的都是官方许可证页或项目主页，点过去能自己核对；
+ * 开放标准（Web Worker 之类）没有单独的许可证，就直说。
+ *
+ * 这段内容会当 HTML 插进卡片，所以只放这里写死的常量，不掺任何外部输入。
+ */
+const TECH_LIC = {
+  'Go': 'BSD-3-Clause · <a href="#" data-ext="https://go.dev/LICENSE">go.dev/LICENSE</a>',
+  'WebView2': 'Microsoft 软件许可条款 · <a href="#" data-ext="https://learn.microsoft.com/microsoft-edge/webview2/">官方文档</a>',
+  'Electron': 'MIT · <a href="#" data-ext="https://github.com/electron/electron/blob/main/LICENSE">LICENSE</a>',
+  'Node.js': 'MIT · <a href="#" data-ext="https://github.com/nodejs/node/blob/main/LICENSE">LICENSE</a>',
+  '127.0.0.1 本地服务': '本程序自己的组件，随程序一同授权',
+  '本地 127.0.0.1 服务': '本程序自己的组件，随程序一同授权',
+  'Web Worker': 'WHATWG 开放标准，无附加许可',
+  'OffscreenCanvas': 'W3C / WHATWG 开放标准，无附加许可',
+  'Canvas 2D': 'W3C 开放标准，无附加许可',
+  'Web Crypto': 'W3C 开放标准，无附加许可',
+  'GitHub REST v3': '受 <a href="#" data-ext="https://docs.github.com/site-policy/github-terms/github-terms-of-service">GitHub 服务条款</a> 约束',
+  'CNB Open API': '受 <a href="#" data-ext="https://cnb.cool/">CNB 服务条款</a> 约束',
+  'Git CLI': 'GPL-2.0 · <a href="#" data-ext="https://git-scm.com/about/free-and-open-source">git-scm.com</a>',
+  'DPAPI': 'Windows 系统 API，随系统授权',
+  'safeStorage': 'Windows 系统 API（经 Electron 封装），随系统授权'
+};
+
 /** Token 加密那一格：机制两版一样（都是 Windows DPAPI），名字跟着外壳走 */
 function tailTech(info) {
   return [
@@ -196,7 +221,9 @@ function toggleTech(idx) {
   if (!t) return;
   techOpen = idx;
   tags.forEach((el, i) => el.classList.toggle('active', i === idx));
-  card.innerHTML = '<b>' + escapeHtml(t[0]) + '</b>' + escapeHtml(t[1]);
+  card.innerHTML =
+    '<b>' + escapeHtml(t[0]) + '</b>' + escapeHtml(t[1]) +
+    (TECH_LIC[t[0]] ? '<div class="tech-lic"><span>许可</span>' + TECH_LIC[t[0]] + '</div>' : '');
   fold.classList.add('open');
 }
 
@@ -236,7 +263,8 @@ function render() {
     '把免费的代码托管仓库当成文件仓库来用：图片在本机用多核 CPU 压缩好再推上去，其他文件原样上传，' +
     '仓库装得下的东西这里都能分发' +
     '<p style="margin:11px 0 2px;color:var(--text-dim)">这程序主要是自用，也会给我妹用——细节上多磨一磨，用起来就事半功倍</p>' +
-    '<button type="button" class="about-fold-toggle" id="aboutFoldToggle" aria-expanded="false">' +
+    '<button type="button" class="about-fold-toggle" id="aboutFoldToggle" data-fold="aboutFold"' +
+    ' data-text-open="展开看看都支持什么" data-text-close="收起" aria-expanded="false">' +
     '<span class="aft-text">展开看看都支持什么</span>' + ICON_CHEVRON +
     '</button>' +
     '<div class="about-fold" id="aboutFold"><div class="about-fold-clip">' +
@@ -267,7 +295,15 @@ function render() {
     '<section class="card">' +
     '<div class="card-head"><h2>免费额度边界</h2>' +
     '<p>程序本身不设限，但仓库是别人的服务，这几条是官方红线，越过去会推不上去</p></div>' +
-    '<div class="card-body" style="padding:0">' + quotaTable() + '</div>' +
+    '<div class="card-body">' +
+    '<button type="button" class="about-fold-toggle" data-fold="quotaFold"' +
+    ' data-text-open="展开看两个平台的具体额度" data-text-close="收起" aria-expanded="false">' +
+    '<span class="aft-text">展开看两个平台的具体额度</span>' + ICON_CHEVRON +
+    '</button>' +
+    '<div class="about-fold" id="quotaFold"><div class="about-fold-clip">' +
+    quotaTable() +
+    '</div></div>' +
+    '</div>' +
     '</section>' +
 
     /* 致敬 */
@@ -317,13 +353,15 @@ function render() {
     '</div>' +
     '</section>' +
 
-    /* 说明 */
+    /* 免责声明 */
     '<section class="card">' +
-    '<div class="card-head"><h2>说明</h2></div>' +
+    '<div class="card-head"><h2>免责声明</h2>' +
+    '<p>用之前请过一眼，这几条是使用边界</p></div>' +
     '<div class="card-body" style="font-size:12.5px;color:var(--muted);line-height:2">' +
-    '本程序只读写你自己配置的仓库，不做任何数据上传或统计' +
-    '删除与替换操作会真实提交到你的仓库，请谨慎操作——不过 Git 有历史记录，误删是可以找回的' +
-    '使用第三方免费服务时，请遵守对应平台的服务条款，不要用它存放违规内容' +
+    '本程序只读写你自己配置的仓库，不做任何数据上传或统计；' +
+    '删除与替换操作会真实提交到你的仓库，请谨慎操作——Git 保留完整历史记录，误删可以找回；' +
+    '使用第三方免费服务时请遵守对应平台的服务条款，不要存放违规内容；' +
+    '因上传违规内容被平台处置，或因此触犯相关法律法规的，均与本程序无关，责任由使用者自行承担' +
     '</div>' +
     '</section>';
 }
@@ -337,12 +375,16 @@ export default {
         toggleTech(Number(tag.dataset.tech));
         return;
       }
-      const foldBtn = e.target.closest('#aboutFoldToggle');
+      // 折叠：按 data-fold 找目标块，所以一个页面可以有好几个（额度边界也用它）
+      const foldBtn = e.target.closest('.about-fold-toggle');
       if (foldBtn) {
-        const open = $('#aboutFold').classList.toggle('open');
+        const target = document.getElementById(foldBtn.dataset.fold);
+        if (!target) return;
+        const open = target.classList.toggle('open');
         foldBtn.classList.toggle('open', open);
         foldBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        foldBtn.querySelector('.aft-text').textContent = open ? '收起' : '展开看看都支持什么';
+        const txt = foldBtn.querySelector('.aft-text');
+        if (txt) txt.textContent = open ? (foldBtn.dataset.textClose || '收起') : (foldBtn.dataset.textOpen || '展开');
         return;
       }
       const logo = e.target.closest('.about-logo');

@@ -18,8 +18,9 @@
 
 > **这条分支（`go`）是主线：Go 版。**
 > 从 2.8.0 起，这个项目全面转向 **Go + WebView2**，不再更新 Electron 版。
-> Electron 版定格在 **v2.8.0**，仍可从 Releases 下载，源码在 git 历史（v2.8.0 标签）里；
-> 当前版本 **3.4.7** 功能完整，日常使用请用它。
+> Electron 版定格在 **v2.8.0**，源码在 git 历史（`v2.8.0` 标签）里 ——
+> 安装包已不再随 Release 提供，仓库只保留最新一版。
+> 当前版本 **3.4.8** 功能完整，日常使用请用它。
 
 ## 它是什么
 
@@ -73,10 +74,11 @@
 
 到 [Releases](https://cnb.cool/youngdajie/Quick-FileDispatch/-/releases) 按需要挑一个：
 
-| 版本 | 给谁 | 形态 |
-| --- | --- | --- |
-| **3.4.7**（Go 版，当前） | 日常用 | NSIS 安装包（约 7 MB）或免安装单 exe（约 16 MB） |
-| **v2.8.0**（Electron 版，定格） | 备用 | `QuickFileDispatch-Setup-2.8.0.exe`，NSIS 安装包（106 MB） |
+| 版本 | 形态 |
+| --- | --- |
+| **3.4.8**（当前，也是唯一在维护的版本） | NSIS 安装包（约 7 MB）或免安装单 exe（约 16 MB） |
+
+> Release 里**只保留最新一版**，旧版本会随新版本发布自动清理（含 Electron 线）。
 
 - 系统要求：Windows 10 / 11（x64）
 - 建议装好 [Git](https://git-scm.com/)：CNB 平台的写入依赖它，没装也能浏览云端，只是慢一些
@@ -106,7 +108,7 @@ go build -o qfd-go.exe .    # Go 1.24+，零第三方依赖
 bash tools/installer/build.sh   # 出 NSIS 安装包（需要 NSIS 与 rcedit）
 ```
 
-Electron 版的源码定格在 v2.8.0 标签的 git 历史里。
+Electron 版的源码定格在 `v2.8.0` 标签的 git 历史里（安装包不再提供）。
 
 ## 技术栈
 

@@ -158,7 +158,10 @@ type msg struct {
 }
 
 var (
-	minTrackW   int32 = 1080 // 与 Electron 版一致，DPI 换算在消息里做
+	// 宽度从 1080 提到 1120（2026-10-10）：文件管理页在 1080 下太挤，
+	// 顶部工具栏会折行，整页高度被顶出去，于是平白多出一条滚动条。
+	// 高度保持 680 不变；DPI 换算在消息里做。
+	minTrackW   int32 = 1120
 	minTrackH   int32 = 680
 	windowTitle       = "快捷文件分发服务@JIE"
 )

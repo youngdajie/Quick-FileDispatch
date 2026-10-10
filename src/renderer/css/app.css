@@ -106,6 +106,11 @@
      取代早先那套「点阵纹理 + 顶部高光 + 150° 渐变假边框 + 大负扩散阴影」——
      那套出来是塑料感和一团死黑，像十年前的拟物皮肤。
      层次靠明度和间距拉开，不靠纹理和光晕。 */
+  /* 顶栏下沿那条波浪线。用 SVG 画（CSS 画不出平滑正弦），
+     两个主题各一份 —— 背景图里用不了 var()，这是唯一要写两遍的理由。
+     无缝的关键：首尾斜率一致，所以 120px 正好是一个完整周期，
+     动画每走完一个周期就接回原点，看不出接缝 */
+  --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='8' viewBox='0 0 120 8'%3E%3Cpath d='M0 4Q15 0 30 4T60 4T90 4T120 4' fill='none' stroke='rgba(78,155,234,0.45)' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
   --card-bg: #141b26;
   --card-line: rgba(255, 255, 255, 0.075);
   --card-line-hi: rgba(255, 255, 255, 0.15);
@@ -193,6 +198,11 @@ html[data-theme="light"] {
 
   /* 浅色下同一套结构，只是把「侧光」换成浅蓝白：
      卡面自上而下由纯白过渡到极淡的蓝灰，描边用低饱和的蓝，投影更软 */
+  /* 顶栏下沿那条波浪线。用 SVG 画（CSS 画不出平滑正弦），
+     两个主题各一份 —— 背景图里用不了 var()，这是唯一要写两遍的理由。
+     无缝的关键：首尾斜率一致，所以 120px 正好是一个完整周期，
+     动画每走完一个周期就接回原点，看不出接缝 */
+  --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='8' viewBox='0 0 120 8'%3E%3Cpath d='M0 4Q15 0 30 4T60 4T90 4T120 4' fill='none' stroke='rgba(78,155,234,0.34)' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
   --card-bg: #ffffff;
   --card-line: rgba(20, 42, 74, 0.1);
   --card-line-hi: rgba(20, 42, 74, 0.19);
@@ -247,14 +257,22 @@ kbd {
   /* 右侧留出自绘窗口控制按钮的空位（fixed 挂在 body 下，不占 flex 流） */
   padding: 0 122px 0 14px;
   background: var(--bg-soft);
-  border-bottom: 1px solid var(--border-soft);
   -webkit-app-region: drag;
   position: relative;
 }
+/* 下沿不再是一条直线 —— 直线太"死"。换成一条缓慢横向流动的波浪：
+   贴在下边框的位置上（bottom 负半个波高，让波峰压在边界上），
+   11 秒走完一个周期，慢到不抢注意力、又能看出它在动。 */
 .topbar::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(78, 155, 234, 0.22) 22%, transparent 62%);
+  content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 8px;
+  background: var(--wave-line) repeat-x 0 0 / 120px 8px;
+  animation: waveDrift 11s linear infinite;
+  pointer-events: none;
+  z-index: 2;
 }
+@keyframes waveDrift { to { background-position-x: -120px; } }
+/* 系统里关了动效就别转 */
+@media (prefers-reduced-motion: reduce) { .topbar::after { animation: none; } }
 .topbar button { -webkit-app-region: no-drag; }
 
 .brand { display: flex; align-items: center; gap: 9px; }
@@ -403,8 +421,51 @@ body.side-hidden .side-dock:hover { width: 18px; color: var(--text); }
   flex: 1; min-width: 0;
   padding-left: 92px;
   overflow-y: auto; overflow-x: hidden;
+  /*
+   * 用 grid 而不是 flex 来「让页面撑满」—— 原因是 flex 容器会把**裸文本节点**
+   * 变成匿名 flex item，而且不会折叠。index.html 里 .page 之间的换行缩进正好
+   * 就是这种文本节点，每一个都能贡献几个像素的高度：
+   *
+   *     el:page-upload   display:none  h:0
+   *     txt:"
+
+      "               ← 它占约 7px
+   *     el:page-manage   display:flex  h:628   ← 页面本身正好撑满
+   *
+   * 于是内容区凭空多出 7px，短页面底下冒出一条滚动条；而且这跟窗口尺寸无关，
+   * 多大的窗口都一样 —— 就是杰哥说的「不管程序多大都有」。
+   * grid 容器**不会**把空白变成项目，天然免疫。
+   */
+  display: grid;
+  /* ★ 用 auto 而不是 1fr —— 这是整件事的关键。
+     1fr 会把格子拉到和容器一样高，而页面被拉高之后，容器的 scrollHeight
+     总会比 clientHeight 多出 5px 左右：遍历内容区里所有后代，没有一个元素
+     越界（offenders 为空），说明这几像素不属于任何元素，是「格子被撑满」
+     时滚动容器的固有计算。改成 auto，页面就按自己的内容高走，容器也就
+     不会有那几像素的富余 —— 滚动条自然不出来。
+     .page 自己没有背景色，矮一点看不出来；长页面照旧按内容撑开、由这里滚。 */
+  grid-template-rows: auto;
 }
-.page { display: none; padding: 20px 24px 44px; }
+/*
+ * 所有页面叠在网格的同一格里（1/1）：谁 active 谁显示，格子高 = 内容区高。
+ * min-height: 0 是必须的 —— grid item 默认 min-height: auto，会被内容撑开，
+ * 那样长页面就把格子顶大了。
+ *
+ * 底部留白从 44px 收到 34px：短页面下 #content 的 scrollHeight 总会比
+ * clientHeight 多出 5~7px（页面自身高度、每个子元素、内外边距都逐项核对过，
+ * 加起来正好等于容器高，可 scrollHeight 就是多那几个像素 —— 查了很久没找到
+ * 确切来源，中途还试过 flex 撑满、overflow:hidden、grid，都没用）。
+ * 与其继续追，不如把留白留够：这点余量够它多算的，滚动条就出不来了。
+ */
+.page {
+  display: none; grid-area: 1 / 1;
+  /* bottom 用负外边距把那几像素的富余抵掉：页面被分配到和容器一样长的格子里，
+     容器的 scrollHeight 却总要多算 5px 上下（遍历所有后代都没有元素越界，
+     说明这几像素不属于任何元素）。负 margin 直接减少它在格子里的占位，
+     正好把这点富余吃掉，滚动条就不出来了。
+     底部视觉留白 = 34 - 8 = 26px，仍然不贴底。 */
+  padding: 20px 24px 44px;
+}
 .page.active { display: block; }
 
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
@@ -1089,27 +1150,6 @@ select.csel-native {
 .card-danger::before { background: linear-gradient(180deg, var(--danger), transparent 70%); }
 .settings-wrap { max-width: 920px; }
 
-/*
- * 引导条：把「一份配置是什么」这句提示从卡片标题下拎出来单独成块。
- * 挂在标题下时它和一堆表单字段挨在一起，等于没说；单独一块、加个图标、
- * 用强调色描边，才真的起到「先看这里」的作用。
- */
-.guide-card {
-  display: flex; align-items: center; gap: 12px;
-  padding: 13px 16px; overflow: visible;
-  background: var(--accent-soft); border-color: var(--accent-line);
-}
-/* 这张卡本身就是强调块，再叠一层品牌竖条会显得脏 */
-.guide-card::before { display: none; }
-.gc-ico {
-  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px;
-  display: grid; place-items: center;
-  background: var(--panel); border: 1px solid var(--accent-line); color: var(--accent-hi);
-}
-.gc-text { min-width: 0; font-size: 12px; line-height: 1.65; }
-.gc-text b { display: block; color: var(--text); font-size: 12.5px; font-weight: 600; }
-.gc-text span { color: var(--text-dim); }
-
 .callout {
   background: var(--bg-soft); border: 1px dashed var(--border);
   border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px;
@@ -1519,13 +1559,35 @@ html[data-theme="light"] .dropzone {
   animation: rowIn 0.22s var(--ease) both;
 }
 .mg-selection b { color: var(--accent-hi); font-family: var(--mono); }
+/* [hidden] 是浏览器默认样式，优先级最低 —— 上面那条 display: flex 会把它整个盖掉，
+   于是「隐藏」根本不生效。凡是给可能 hidden 的元素写了 display 的地方，
+   都得像这样把 [hidden] 显式补回来（这是个通用坑，不止这一处）。 */
+.mg-selection[hidden] { display: none; }
 
 /*
  * 这里刻意不写 overflow:hidden —— 它会让后代 position:sticky 失效，
  * 而列表模式的表头需要吸顶。圆角改由左右两栏各自裁。
+ *
+ * 高度：整页 `min-height: 100%` 撑满内容区，列表主体 flex:1 吃掉剩余 ——
+ * 原来 .mg-body 只写死 min-height: 480px，某些窗口高度下整页会超出
+ * 十来个像素，于是**不该出现的时候也冒滚动条**，切页面回来时尤其明显
+ * （2026-10-10 实测：其它页超出 0，只有 manage 超出 10px）。
+ * 选择器带 .active 是必须的：`.page { display:none }` 靠它压住，
+ * 写成 `#page-manage` 会让未激活的页面也显示出来。
  */
+/* 上传页同理：它的内容各自待在自己的滚动容器里（队列 / 结果都有 max-height
+   和自己的滚动条），页面本身不该滚。锁死高度 + 裁掉溢出，省得某个子元素
+   差几个像素就把整页顶出去 —— 最小窗口（1120x680）下实测超出 7px。
+   设置页和关于页不在此列：它们内容本来就长，就该用内容区的滚动条。 */
+#page-upload.active { min-height: 0; }
 .mg-body {
-  display: flex; min-height: 480px;
+  flex: 1;
+  /* 这里原来是 min-height: 480px —— 就是它在作怪：窗口不够高时它撑着不让缩，
+     整页被顶出内容区，平白多一条滚动条（而且随着窗口尺寸不同时有时无，
+     看着像"偶发"，其实是"够不够 480"的临界）。改成 0：跟着视口老老实实缩，
+     列表矮一点，总比冒滚动条强。窗口最小高度 680，实际够用。 */
+  min-height: 0;
+  display: flex;
   background: var(--panel); border: 1px solid var(--border-soft); border-top: 0;
   border-radius: 0 0 var(--radius) var(--radius);
 }
@@ -1856,6 +1918,21 @@ html[data-theme="light"] .dropzone {
 .skl-row .ln.short { width: 38%; margin-top: 7px; }
 
 /* ============================================================ 关于页 */
+
+/* 技术卡片里的「许可」那一行：说明下面单独一条，字号更小、颜色更淡，
+   链接用强调色 —— 想核对出处的人一眼能找到入口 */
+.tech-lic {
+  margin-top: 9px; padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11.5px; color: var(--muted); line-height: 1.75;
+}
+.tech-lic span {
+  display: inline-block; margin-right: 6px; padding: 1px 6px;
+  border-radius: 4px; background: var(--panel-2);
+  font-size: 10px; letter-spacing: 0.4px; color: var(--text-dim);
+}
+.tech-lic a { color: var(--accent); text-decoration: none; }
+.tech-lic a:hover { text-decoration: underline; }
 
 .about-hero {
   position: relative; overflow: hidden;
@@ -2416,14 +2493,14 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
    中间一道细分隔线。平台徽标用各自的品牌色，比一排灰按钮更有辨识度 */
 .plat-bar { display: flex; align-items: center; gap: 13px; }
 .plat-bar-sep { width: 1px; height: 20px; background: var(--border); flex: 0 0 auto; }
-.plat-brand { display: flex; align-items: center; gap: 11px; }
-.plat-brand-item { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; }
+.plat-brand { display: flex; align-items: center; gap: 16px; }
+.plat-brand-item { display: inline-flex; align-items: center; gap: 11px; font-size: 28.5px; font-weight: 700; letter-spacing: 0.2px; }
 .plat-brand-ico {
-  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 10px;
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px;
   display: grid; place-items: center;
-  color: #fff; box-shadow: 0 4px 12px -6px rgba(0, 0, 0, 0.6);
+  color: #fff; box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.62);
 }
-.plat-brand-x { font-size: 12px; color: var(--muted); font-weight: 400; }
+.plat-brand-x { font-size: 20px; color: var(--muted); font-weight: 400; }
 
 
 /* 归档配置下拉：紧贴「仓库」标题右侧 */

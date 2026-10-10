@@ -40,6 +40,65 @@ const PAGES = {
 
 let current = 'upload';
 
+/**
+ * 内容区的滚动分流：短页面铺满、不滚；真长起来的内容照常滚。
+ *
+ * 为什么不靠纯 CSS：短页面在内容区底下总会多算 5px 上下的 scrollHeight ——
+ * 遍历内容区所有后代都没元素越界（offenders 为空），说明那几像素不属于任何元素，
+ * 是滚动容器自己的计算。min-height / height / flex / grid / overflow / 负 margin /
+ * 收 padding 全试过，按不住。所以按「溢出量」分流：十几像素以内的一律当
+ * 「本该铺满」，把滚动关掉 —— 就多那几像素，裁掉也看不见。
+ *
+ * ⚠️ 内容**变化时也要重算**：上传页的「图片设置」是可以展开的，展开后页面长高，
+ * 这里要跟着把滚动放开，否则鼠标滚不动、设置项够不着（就是漏了这一点出的问题）。
+ */
+/**
+ * 量一次并决定要不要滚。
+ *
+ * ⚠️ 只在**值真的变化**时才写 style —— 这是必须的：
+ * 写 overflowY 会让滚动条出现/消失，进而改变 clientHeight，
+ * 而 ResizeObserver 正盯着这块；每次无条件改写就形成
+ * 「改 → 触发 RO → 再改」的自激循环，浏览器直接报
+ *   ResizeObserver loop completed with undelivered notifications
+ * （2026-10-10 实测，就是这个原因）。
+ */
+function applyFit() {
+  const content = $('#content');
+  if (!content) return;
+  if (content.style.overflowY !== '') content.style.overflowY = '';
+  const slack = content.scrollHeight - content.clientHeight;
+  const want = (slack > 0 && slack < 20) ? 'hidden' : '';
+  if (content.style.overflowY !== want) {
+    content.style.overflowY = want;
+  }
+  if (want === 'hidden') content.scrollTop = 0;
+}
+
+/**
+ * 量一次不够 —— 切页后布局往往还在动（字体、缩略图、折叠动画 0.34s），
+ * 当下量到的还没到最终高度。所以要等一下按「稳定后」的高度再量一次，
+ * 否则会出现「明明该滚却滚不动」或者相反的情况。
+ */
+function fitContentScroll() {
+  applyFit();
+  setTimeout(applyFit, 450);
+}
+
+/** 页面里任何一次点击之后也复核一遍：展开 / 收起这类动作都会改变高度 */
+document.addEventListener('click', () => setTimeout(applyFit, 500), true);
+
+/** 盯住当前页面：长高/变矮（展开、收起、列表加载完）都重新分流一次 */
+let contentRO = null;
+function watchActivePage() {
+  const content = $('#content');
+  const page = content && content.querySelector('.page.active');
+  if (!page || typeof ResizeObserver === 'undefined') return;
+  if (contentRO) contentRO.disconnect();
+  // 回调里用 rAF 挪到下一帧再处理：RO 回调中同步改布局同样容易触发上面那个循环
+  contentRO = new ResizeObserver(() => requestAnimationFrame(applyFit));
+  contentRO.observe(page);
+}
+
 function go(name) {
   if (!PAGES[name]) return;
   const first = current !== name;
@@ -48,6 +107,15 @@ function go(name) {
   document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.page === name));
   document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
   $('#content').scrollTop = 0;
+  // 短页面在内容区底下总会多算 5px 上下的 scrollHeight —— 遍历内容区里所有后代，
+  // 没有任何元素越界（offenders 为空），说明这几像素不属于任何元素，是滚动容器
+  // 自己的计算。CSS 那边试过 min-height / height / flex / grid / overflow /
+  // 负 margin / 收 padding，全都按不住它。
+  //
+  // 所以这里按「溢出量」分流：十几像素以内的一律当「本该铺满」，直接把滚动关掉
+  // （内容只多出那几像素，裁掉也看不见）；真需要滚的长页面（溢出成百上千）不碰。
+  // 用 rAF 等一帧再量，这时布局已经稳定。
+  requestAnimationFrame(() => { fitContentScroll(); watchActivePage(); });
 
   if (first && PAGES[name].onEnter) {
     try {
@@ -99,16 +167,6 @@ function bindChrome() {
     clearTimeout(rippleTimer);
     rippleTimer = setTimeout(() => btnTheme.classList.remove('ripple'), 700);
     state.patch({ ui: { theme: themeIsLight() ? 'dark' : 'light' } }).catch((e) => err(e.message || String(e)));
-  };
-
-  $('#btnOpenLocalDir').onclick = async () => {
-    const cfg = state.cfg || {};
-    if (!cfg.localDir) {
-      toast('还没配置本地目录，先到设置里选一个', 'warn');
-      go('settings');
-      return;
-    }
-    await window.cloudpic.shell.openLocalDir();
   };
 
   $('#btnRefreshAll').onclick = async () => {
