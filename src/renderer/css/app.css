@@ -2494,7 +2494,7 @@ html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 .plat-bar { display: flex; align-items: center; gap: 13px; }
 .plat-bar-sep { width: 1px; height: 20px; background: var(--border); flex: 0 0 auto; }
 .plat-brand { display: flex; align-items: center; gap: 16px; }
-.plat-brand-item { display: inline-flex; align-items: center; gap: 11px; font-size: 28.5px; font-weight: 700; letter-spacing: 0.2px; }
+.plat-brand-item { display: inline-flex; align-items: center; gap: 11px; font-size: 20.5px; font-weight: 700; letter-spacing: 0.2px; }
 .plat-brand-ico {
   flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px;
   display: grid; place-items: center;
