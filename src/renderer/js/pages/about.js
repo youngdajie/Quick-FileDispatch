@@ -361,6 +361,7 @@ function render() {
     '<div class="upd-row">' +
     '<button type="button" class="btn btn-ghost" id="btnCheckUpdate">检查更新</button>' +
     '<span class="upd-status" id="updStatus">当前 ' + escapeHtml(info.version || '-') + '</span>' +
+    '<a class="upd-link" href="#" data-ext="https://cnb.cool/youngdajie/Quick-FileDispatch/-/releases">各版本发布页</a>' +
     '</div>' +
     '</div>' +
     '</section>' +
@@ -379,6 +380,9 @@ function render() {
 }
 
 const fmtMB = (n) => (n > 0 ? (n / 1048576).toFixed(1) + ' MB' : '—');
+
+// 换行：写成转义序列而不是真的按回车 —— 这段字符串在外面还套着几层引号
+const JL = '\n';
 
 /**
  * 检查更新 → 提示 → 下载 → 静默安装。
@@ -401,10 +405,10 @@ async function checkUpdateFlow() {
     st.textContent = '发现新版本 ' + escapeHtml(r.latest);
     const yes = await confirmDialog(
       '发现新版本 ' + r.latest,
-      '当前 ' + r.current + ' → 最新 ' + r.latest + '\n\n' +
-        '点「立即更新」后会下载安装包并自动静默安装，程序会自己退出再起来\n' +
-        '（想留个底就先把手头的活干完 —— 安装期间程序会用不了）' +
-        (r.notes ? '\n\n更新说明：\n' + String(r.notes).slice(0, 600) : ''),
+      '当前 ' + r.current + ' → 最新 ' + r.latest + JL +
+        '点「立即更新」后会下载安装包并自动静默安装，程序会自己退出再起来' + JL +
+        '（想留个底就先把手头的活干完 —— 安装期间程序会用不了）' + JL + JL +
+        '各版本的更新说明见 CNB 发布页：' + JL + (r.releaseUrl || ''),
       '立即更新'
     );
     if (!yes) {

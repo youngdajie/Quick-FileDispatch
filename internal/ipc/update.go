@@ -132,6 +132,8 @@ func buildUpdateResult(latest, current, notes string) map[string]any {
 		"source":    "CNB",
 		"assetName": name,
 		"url":       "https://cnb.cool/" + updateRepoSlug + "/-/releases/download/v" + latest + "/" + name,
+		// 各版本的更新说明统一去 Release 页看 —— 弹窗里不铺开正文
+		"releaseUrl": updateCNBWeb,
 	}
 }
 
