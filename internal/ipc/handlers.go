@@ -154,6 +154,8 @@ func copyFile(src, dst string) error {
 // 通道名逐字对照 src/main/preload.js 与 main.js 里的 ipcMain.handle，
 // 别自己改名 —— 渲染层是按名字调的，改一个字母就是「点了没反应」。
 func Register(r *Registry, env *Env) {
+	registerUpdate(r, env)
+
 	if env.cache == nil {
 		env.cache = newRepoCache()
 	}

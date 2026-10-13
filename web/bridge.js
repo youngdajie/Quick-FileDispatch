@@ -167,6 +167,13 @@
       showItem: call('shell:showItem'),
       openLocalDir: call('shell:openLocalDir')
     },
+    /** 自动更新：查最新版 → 下载安装包 → 静默装上 */
+    update: {
+      check: call('update:check'),
+      download: call('update:download'),
+      progress: call('update:progress'),
+      install: call('update:install')
+    },
     fs: {
       exportText: call('fs:exportText'),
       /** 本地目录内的改名 / 移动 */

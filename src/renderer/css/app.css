@@ -1919,6 +1919,10 @@ html[data-theme="light"] .dropzone {
 
 /* ============================================================ 关于页 */
 
+/* 版本更新那一行：按钮 + 状态文字并排 */
+.upd-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.upd-status { font-size: 12.5px; color: var(--muted); }
+
 /* 技术卡片里的「许可」那一行：说明下面单独一条，字号更小、颜色更淡，
    链接用强调色 —— 想核对出处的人一眼能找到入口 */
 .tech-lic {

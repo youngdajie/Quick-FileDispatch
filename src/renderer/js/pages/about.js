@@ -353,6 +353,18 @@ function render() {
     '</div>' +
     '</section>' +
 
+    /* 版本更新 */
+    '<section class="card">' +
+    '<div class="card-head"><h2>版本更新</h2>' +
+    '<p>从 GitHub 的 Release 取最新版；有新版会提示，确认后自动下载并静默安装</p></div>' +
+    '<div class="card-body">' +
+    '<div class="upd-row">' +
+    '<button type="button" class="btn btn-ghost" id="btnCheckUpdate">检查更新</button>' +
+    '<span class="upd-status" id="updStatus">当前 ' + escapeHtml(info.version || '-') + '</span>' +
+    '</div>' +
+    '</div>' +
+    '</section>' +
+
     /* 免责声明 */
     '<section class="card">' +
     '<div class="card-head"><h2>免责声明</h2>' +
@@ -366,6 +378,76 @@ function render() {
     '</section>';
 }
 
+const fmtMB = (n) => (n > 0 ? (n / 1048576).toFixed(1) + ' MB' : '—');
+
+/**
+ * 检查更新 → 提示 → 下载 → 静默安装。
+ * 下载是后台的（后端异步跑），这里轮询 update:progress 显示进度 ——
+ * 安装包 7 MB 上下，国内没代理时可能要等一会儿，不给进度的话像卡死了。
+ */
+async function checkUpdateFlow() {
+  const btn = $('#btnCheckUpdate');
+  const st = $('#updStatus');
+  if (!btn || !st) return;
+  btn.disabled = true;
+  st.textContent = '正在检查…';
+  try {
+    const r = await window.cloudpic.update.check();
+    if (!r.hasUpdate) {
+      st.textContent = '已经是最新版（' + escapeHtml(r.current || '-') + '）';
+      btn.disabled = false;
+      return;
+    }
+    st.textContent = '发现新版本 ' + escapeHtml(r.latest);
+    const yes = await confirmDialog(
+      '发现新版本 ' + r.latest,
+      '当前 ' + r.current + ' → 最新 ' + r.latest + '\n\n' +
+        '点「立即更新」后会下载安装包并自动静默安装，程序会自己退出再起来\n' +
+        '（想留个底就先把手头的活干完 —— 安装期间程序会用不了）' +
+        (r.notes ? '\n\n更新说明：\n' + String(r.notes).slice(0, 600) : ''),
+      '立即更新'
+    );
+    if (!yes) {
+      st.textContent = '当前 ' + escapeHtml(r.current || '-');
+      btn.disabled = false;
+      return;
+    }
+    await runDownload(r);
+  } catch (e) {
+    st.textContent = '检查失败';
+    err(e.message || String(e));
+    btn.disabled = false;
+  }
+}
+
+async function runDownload(info) {
+  const btn = $('#btnCheckUpdate');
+  const st = $('#updStatus');
+  st.textContent = '正在下载 ' + escapeHtml(info.latest) + '…';
+  await window.cloudpic.update.download({ url: info.url, name: info.assetName, ver: info.latest });
+  const timer = setInterval(async () => {
+    try {
+      const p = await window.cloudpic.update.progress();
+      if (p.status === 'downloading') {
+        const pct = p.total > 0 ? Math.round((p.got / p.total) * 100) + '%' : '';
+        st.textContent = '正在下载… ' + pct + '（' + fmtMB(p.got) + ' / ' + fmtMB(p.total) + '）';
+      } else if (p.status === 'ready') {
+        clearInterval(timer);
+        st.textContent = '下载完成，正在安装…';
+        await window.cloudpic.update.install();
+        // 安装脚本会等两秒再跑，主程序这会儿马上退出
+      } else if (p.status === 'error') {
+        clearInterval(timer);
+        st.textContent = '下载失败';
+        err(p.error || '下载失败');
+        if (btn) btn.disabled = false;
+      }
+    } catch (e) {
+      /* 轮询失败就等下一轮 */
+    }
+  }, 400);
+}
+
 export default {
   init() {
     render();
@@ -376,6 +458,11 @@ export default {
         return;
       }
       // 折叠：按 data-fold 找目标块，所以一个页面可以有好几个（额度边界也用它）
+      const updBtn = e.target.closest('#btnCheckUpdate');
+      if (updBtn) {
+        checkUpdateFlow();
+        return;
+      }
       const foldBtn = e.target.closest('.about-fold-toggle');
       if (foldBtn) {
         const target = document.getElementById(foldBtn.dataset.fold);

@@ -1,0 +1,85 @@
+name: Release
+
+# 跟 CNB 的 tag_push 流水线干同一件事：构建 → 建 Release → 挂附件 → 清理旧版本。
+#
+# 用 ubuntu runner 而不是 windows：build.sh 本身就是跨平台的（CNB 那条流水线
+# 也跑在 Linux 上），两边跑**同一份脚本**，产物才谈得上一致。
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write        # 建 Release、删旧 Release 都要
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # 取全历史，构建脚本偶尔要读 git 信息
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'    # 跟 go.mod 的 go 指令保持一致
+          cache: true
+
+      - name: 装 NSIS 与 python3
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            nsis python3 ca-certificates
+
+      - name: 构建（跟 CNB 跑的是同一份脚本）
+        run: bash tools/installer/build.sh
+
+      - name: 确认产物
+        run: ls -lh dist-go/*.exe
+
+      # 版本说明在 docs/releases/<版本>.md，而标签带 v 前缀 —— 跟 CNB 那边
+      # 踩过的坑一样：只查带 v 的名字永远匹配不上，会静默退回空正文。
+      - name: 取出 Release 正文
+        id: notes
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          if [ -f "docs/releases/${VER}.md" ]; then
+            echo "path=docs/releases/${VER}.md" >> "$GITHUB_OUTPUT"
+            echo "版本正文取自 docs/releases/${VER}.md"
+          else
+            echo "没找到 docs/releases/${VER}.md，退回标签名当正文"
+            printf '%s\n' "${GITHUB_REF_NAME}" > /tmp/notes.md
+            echo "path=/tmp/notes.md" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 建 Release 并挂附件
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: ${{ steps.notes.outputs.path }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: |
+            dist-go/QuickFileDispatch-Setup-*.exe
+            dist-go/QuickFileDispatch-[0-9]*.exe
+
+      # 只保留最新一版 —— 跟 CNB 的策略一致（2026-10-10 起定死）：
+      # 「Release 页只该有当前能用的那一版」，两个仓库都守同一条规矩。
+      # 这里删的是 **Release**，tag 留着（--cleanup-tag=false）——
+      # 发布策略管的是「提供哪些安装包下载」，不是抹掉历史。
+      - name: 清理旧版本
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          KEEP="${GITHUB_REF_NAME}"
+          echo "保留 ${KEEP}，其余 Release 全删"
+          gh release list --limit 200 --json tagName --jq '.[].tagName' | while read -r TAG; do
+            [ -z "$TAG" ] && continue
+            [ "$TAG" = "$KEEP" ] && { echo "  保留 $TAG"; continue; }
+            if gh release delete "$TAG" --yes --cleanup-tag=false 2>/dev/null; then
+              echo "  已删 $TAG"
+            else
+              echo "  删 $TAG 失败（不影响本次发布）"
+            fi
+          done
+          exit 0
