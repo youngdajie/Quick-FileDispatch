@@ -12,7 +12,7 @@ func TestNewerThan(t *testing.T) {
 		{"3.4.8", "v3.4.9", false},
 		{"v3.4.8", "3.4.8", false}, // 一样新
 		{"3.5.0", "3.4.99", true},  // 比的是每段数字，不是字符串
-		{"3.4.10", "3.4.9", true},  // 10 > 9（字符串比会说 "10" < "9"）
+		{"3.4.10", "3.4.9", true},  // 10 > 9（按字符串比会说 "10" < "9"）
 		{"4.0.0", "3.99.99", true},
 		{"3.4.8-go", "3.4.7", true},
 		{"坏数据", "3.4.8", false}, // 解析不了就不说"有新版本"
@@ -24,7 +24,53 @@ func TestNewerThan(t *testing.T) {
 	}
 }
 
-// 从 Release 页面里抠版本号。这是「不用令牌也能查更新」的核心，
+// 从 main.go 源码里抠 const version —— 这是查更新的首选路径，最要紧的一条。
+func TestPickGoVersion(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "真实 main.go 的样子",
+			src: "package main\n\nimport (\n\t\"flag\"\n)\n\n" +
+				"const version = \"3.4.9\"\n\nfunc main() {}\n",
+			want: "3.4.9",
+		},
+		{
+			name: "前面还有别的常量",
+			src:  "const appName = \"x\"\nconst version = \"1.2.3\"\n",
+			want: "1.2.3",
+		},
+		{
+			name: "带缩进的（写在函数里）",
+			src:  "func f() {\n\tconst version = \"9.9.9\"\n}\n",
+			want: "9.9.9",
+		},
+		{
+			name: "文件里没有版本号",
+			src:  "package main\n\nfunc main() {}\n",
+			want: "",
+		},
+		{
+			name: "引号不闭合（坏文件）",
+			src:  "const version = \"3.4.9\n",
+			want: "",
+		},
+		{
+			name: "拿到的是网页壳子而不是源码",
+			src:  "<!DOCTYPE html><html lang=\"zh\"></html>",
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		if got := pickGoVersion(c.src); got != c.want {
+			t.Errorf("%s：pickGoVersion = %q，期望 %q", c.name, got, c.want)
+		}
+	}
+}
+
+// 从 Release 页面里抠版本号（兜底路径）。
 // 页面长得五花八门也不能抠错。
 func TestPickSetupVersion(t *testing.T) {
 	cases := []struct {

@@ -38,9 +38,19 @@ const (
 	updateCNBAPI   = "https://api.cnb.cool/" + updateRepoSlug + "/-/releases"
 	updateGHLatest = "https://api.github.com/repos/" + updateRepoSlug + "/releases/latest"
 
-	// Release 列表的**网页**地址。它不需要登录（实测 200），所以「查有没有新版」
-	// 这件事本身不该依赖令牌 —— 令牌只是拿更新说明正文时的一条加分路。
+	// Release 列表的**网页**地址。它不需要登录（实测 200）。
 	updateCNBWeb = "https://cnb.cool/" + updateRepoSlug + "/-/releases"
+
+	/*
+	 * 仓库里 main.go 的**原始文件**地址（杰哥提醒的：版本号就在源码里写着）。
+	 * 这条是首选 —— 比解析 Release 页面稳得多：
+	 *   - 页面是渲染出来的，改版就会变；源码里的 `const version` 不会
+	 *   - 返回的是 text/plain 的真源码（实测 18 KB），不用去 HTML 里捞
+	 *   - 同样**不需要令牌**
+	 * 注意路径是 `/-/git/raw/<ref>/<path>` —— 少一个 `git` 就返回 SPA 的
+	 * HTML 壳子（200 但内容是网页），这是试了几种才试出来的。
+	 */
+	updateCNBRaw = "https://cnb.cool/" + updateRepoSlug + "/-/git/raw/go/main.go"
 
 	// 下载超时给足：安装包 7 MB 出头，但国内直连没代理时可能要几分钟
 	updateDownloadTimeout = 15 * time.Minute
@@ -68,51 +78,107 @@ type updateAsset struct {
 }
 
 /*
- * checkCNBPublic 不登录也能查：读 Release 网页，从 HTML 里抠出安装包的版本号。
+ * checkCNBRaw 读 go 分支上的 main.go，从 `const version = "X.Y.Z"` 里抠版本号。
  *
- * 为什么这样做：CNB 的 API 要认证（不带令牌直接 401），但**网页是公开的**，
- * 页面里就带着 QuickFileDispatch-Setup-3.4.8.exe 这样的文件名；
- * 附件下载地址有固定格式，版本号抠出来就能拼出来 —— 用户什么都不用配。
- *
- * 这里刻意**不用正则**：Go 的 raw string 要嵌反斜杠，而这个文件是在一堆
- * 转义层里改出来的，用纯字符串查找反而更不容易出错。
- * 页面改版会让这条失效，所以后面还留着「用令牌走 API」和 GitHub 两条兜底。
+ * 这是查更新的**首选路径**：源码里的常量，不会因为页面改版而失效；
+ * 也不用令牌（实测 text/plain、200、18 KB）。下载地址按固定格式拼出来。
  */
-func checkCNBPublic(current string) (map[string]any, error) {
-	client := &http.Client{Timeout: 20 * time.Second, Transport: netproxy.Transport()}
-	req, err := http.NewRequest("GET", updateCNBWeb, nil)
+func checkCNBRaw(current string) (map[string]any, error) {
+	text, err := fetchText(updateCNBRaw, current, 1<<20)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "QuickFileDispatch/"+current)
+	ver := pickGoVersion(text)
+	if ver == "" {
+		return nil, fmt.Errorf("main.go 里没找到 const version")
+	}
+	return buildUpdateResult(ver, current, ""), nil
+}
+
+// pickGoVersion 从 Go 源码里抠 `const version = "X.Y.Z"`。
+// 逐行找标记再取引号里的内容 —— 老规矩，不用正则。
+func pickGoVersion(src string) string {
+	const marker = "const version"
+	for _, ln := range strings.Split(src, "\n") {
+		k := strings.Index(ln, marker)
+		if k < 0 {
+			continue
+		}
+		rest := ln[k+len(marker):]
+		a := strings.Index(rest, "\"")
+		if a < 0 {
+			continue
+		}
+		b := strings.Index(rest[a+1:], "\"")
+		if b < 0 {
+			continue
+		}
+		if v := rest[a+1 : a+1+b]; v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// buildUpdateResult 把「最新版本号」组装成前端要的样子。下载地址是固定格式，
+// 不需要再去问接口。
+func buildUpdateResult(latest, current, notes string) map[string]any {
+	name := "QuickFileDispatch-Setup-" + latest + ".exe"
+	return map[string]any{
+		"hasUpdate": newerThan(latest, current),
+		"current":   current,
+		"latest":    latest,
+		"notes":     notes,
+		"source":    "CNB",
+		"assetName": name,
+		"url":       "https://cnb.cool/" + updateRepoSlug + "/-/releases/download/v" + latest + "/" + name,
+	}
+}
+
+// fetchText 拉一个纯文本资源（带 UA、限长、走代理）。
+func fetchText(url, ua string, limit int64) (string, error) {
+	client := &http.Client{Timeout: 20 * time.Second, Transport: netproxy.Transport()}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "QuickFileDispatch/"+ua)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("CNB 网页返回 %d", resp.StatusCode)
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	// 页面正常 180 KB 上下，给 4 MB 余量足够，也防着被塞个超大响应
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, limit))
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+/*
+ * checkCNBPublic 是第二条路：读 Release 网页，从 HTML 里抠安装包文件名。
+ *
+ * 首选其实是上面的 checkCNBRaw（直接读源码）—— 这条留着兜底，
+ * 万一 go 分支改名 / main.go 挪位置，Release 页还在就能查。
+ *
+ * 为什么不用 CNB 的 API：它要认证（不带令牌直接 401），而网页是公开的。
+ *
+ * 这里刻意**不用正则**：Go 的 raw string 要嵌反斜杠，而这个文件是在一堆
+ * 转义层里改出来的，用纯字符串查找反而更不容易出错。
+ */
+func checkCNBPublic(current string) (map[string]any, error) {
+	body, err := fetchText(updateCNBWeb, current, 4<<20)
 	if err != nil {
 		return nil, err
 	}
-
-	best := pickSetupVersion(string(body))
+	best := pickSetupVersion(body)
 	if best == "" {
 		return nil, fmt.Errorf("页面里没找到安装包信息")
 	}
-	name := "QuickFileDispatch-Setup-" + best + ".exe"
-	return map[string]any{
-		"hasUpdate": newerThan(best, current),
-		"current":   current,
-		"latest":    best,
-		"notes":     "", // 网页里没有结构化正文，留空；有令牌时会补上
-		"source":    "CNB",
-		"assetName": name,
-		"url":       "https://cnb.cool/" + updateRepoSlug + "/-/releases/download/v" + best + "/" + name,
-	}, nil
+	return buildUpdateResult(best, current, ""), nil
 }
 
 // pickSetupVersion 在页面里找所有 QuickFileDispatch-Setup-<版本>.exe，取最大的那个。
@@ -370,14 +436,21 @@ func registerUpdate(r *Registry, env *Env) {
 // checkUpdate 问「最新版是多少」，跟当前版本比一比。
 // 先试 CNB（国内直连），不行再退 GitHub。
 func checkUpdate(env *Env, current string) (any, error) {
-	// ① 公开网页 —— 门槛最低，用户什么都不用配（推荐路径）
+	// ① 读仓库里 main.go 的源码 —— 版本号是写在里面的常量，最稳，也不用令牌
+	if out, err := checkCNBRaw(current); err == nil {
+		return out, nil
+	} else if env.Verbose {
+		fmt.Fprintf(os.Stderr, "[update] 读 main.go 失败：%v", err)
+	}
+
+	// ② Release 网页 —— 也不用令牌，兜底
 	if out, err := checkCNBPublic(current); err == nil {
 		return out, nil
 	} else if env.Verbose {
 		fmt.Fprintf(os.Stderr, "[update] CNB 网页源不可用：%v", err)
 	}
 
-	// ② 有令牌就走 API —— 能顺带拿到更新说明正文
+	// ③ 有令牌就走 API —— 能顺带拿到更新说明正文
 	if token := cnbToken(env.Store); token != "" {
 		if out, err := checkCNB(token, current); err == nil {
 			return out, nil
