@@ -356,7 +356,7 @@ function render() {
     /* 版本更新 */
     '<section class="card">' +
     '<div class="card-head"><h2>版本更新</h2>' +
-    '<p>从 GitHub 的 Release 取最新版；有新版会提示，确认后自动下载并静默安装</p></div>' +
+    '<p>从 CNB 的 Release 取最新版（国内直连）；有新版会提示，确认后自动下载并静默安装</p></div>' +
     '<div class="card-body">' +
     '<div class="upd-row">' +
     '<button type="button" class="btn btn-ghost" id="btnCheckUpdate">检查更新</button>' +

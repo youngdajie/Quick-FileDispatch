@@ -1,14 +1,15 @@
 package ipc
 
 /*
- * 自动更新：查 GitHub 的 Release、下载安装包、静默装上去。
+ * 自动更新：查最新版、下载安装包、静默装上去。
  *
- * 为什么更新源选 GitHub 而不是 CNB：GitHub 有现成的 `/releases/latest` 接口，
- * 一个 GET 就能拿到「最新版本号 + 附件直链」；CNB 那边要自己从列表里挑。
- * 两个仓库的 Release 内容是一样的（两边跑同一份构建脚本）。
+ * **首选 CNB 源**（2026-10-13 改）：国内直连，不用碰 GitHub。
+ * CNB 的 Release 列表接口直接带 `is_latest` 标记，还给出附件的**公开下载地址**
+ * （browser_download_url），下载那一步连令牌都不用。
+ * 拿不到 CNB 令牌（或 CNB 那边暂时不通）时退回 GitHub —— 两个仓库的 Release
+ * 内容是一样的（两边跑同一份构建脚本），互为备份。
  *
- * 下载走 netproxy.Transport()，用户在设置里配了代理就会生效 ——
- * 国内直连 github.com 的 release 下载经常很慢，这一步必须能走代理。
+ * 下载走 netproxy.Transport()，用户在设置里配了代理就会生效。
  */
 
 import (
@@ -27,13 +28,213 @@ import (
 
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/git"
 	"cnb.cool/youngdajie/Quick-FileDispatch/internal/netproxy"
+	"cnb.cool/youngdajie/Quick-FileDispatch/internal/store"
 )
 
 const (
-	updateAPILatest = "https://api.github.com/repos/youngdajie/Quick-FileDispatch/releases/latest"
+	// 本程序的仓库（更新源）。跟用户自己配的仓库无关 —— 这儿查的是「程序有没有新版」
+	updateRepoSlug = "youngdajie/Quick-FileDispatch"
+
+	updateCNBAPI   = "https://api.cnb.cool/" + updateRepoSlug + "/-/releases"
+	updateGHLatest = "https://api.github.com/repos/" + updateRepoSlug + "/releases/latest"
+
+	// Release 列表的**网页**地址。它不需要登录（实测 200），所以「查有没有新版」
+	// 这件事本身不该依赖令牌 —— 令牌只是拿更新说明正文时的一条加分路。
+	updateCNBWeb = "https://cnb.cool/" + updateRepoSlug + "/-/releases"
+
 	// 下载超时给足：安装包 7 MB 出头，但国内直连没代理时可能要几分钟
 	updateDownloadTimeout = 15 * time.Minute
 )
+
+// cnbToken 找一个能用的 CNB 令牌：当前配置就挂在 CNB 上最好，否则翻归档配置。
+func cnbToken(s *store.Store) string {
+	if strOf(s.Get()["platform"]) == "cnb" {
+		if t := s.GetToken(); t != "" {
+			return t
+		}
+	}
+	if p := s.FindByPlatform("cnb"); p != nil {
+		if t := s.GetProfileToken(strOf(p["id"])); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+type updateAsset struct {
+	Name string
+	Size int64
+	URL  string
+}
+
+/*
+ * checkCNBPublic 不登录也能查：读 Release 网页，从 HTML 里抠出安装包的版本号。
+ *
+ * 为什么这样做：CNB 的 API 要认证（不带令牌直接 401），但**网页是公开的**，
+ * 页面里就带着 QuickFileDispatch-Setup-3.4.8.exe 这样的文件名；
+ * 附件下载地址有固定格式，版本号抠出来就能拼出来 —— 用户什么都不用配。
+ *
+ * 这里刻意**不用正则**：Go 的 raw string 要嵌反斜杠，而这个文件是在一堆
+ * 转义层里改出来的，用纯字符串查找反而更不容易出错。
+ * 页面改版会让这条失效，所以后面还留着「用令牌走 API」和 GitHub 两条兜底。
+ */
+func checkCNBPublic(current string) (map[string]any, error) {
+	client := &http.Client{Timeout: 20 * time.Second, Transport: netproxy.Transport()}
+	req, err := http.NewRequest("GET", updateCNBWeb, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "QuickFileDispatch/"+current)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("CNB 网页返回 %d", resp.StatusCode)
+	}
+	// 页面正常 180 KB 上下，给 4 MB 余量足够，也防着被塞个超大响应
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+
+	best := pickSetupVersion(string(body))
+	if best == "" {
+		return nil, fmt.Errorf("页面里没找到安装包信息")
+	}
+	name := "QuickFileDispatch-Setup-" + best + ".exe"
+	return map[string]any{
+		"hasUpdate": newerThan(best, current),
+		"current":   current,
+		"latest":    best,
+		"notes":     "", // 网页里没有结构化正文，留空；有令牌时会补上
+		"source":    "CNB",
+		"assetName": name,
+		"url":       "https://cnb.cool/" + updateRepoSlug + "/-/releases/download/v" + best + "/" + name,
+	}, nil
+}
+
+// pickSetupVersion 在页面里找所有 QuickFileDispatch-Setup-<版本>.exe，取最大的那个。
+// 纯字符串扫描：找前缀 → 往后吃数字和点 → 看后面是不是 .exe。
+func pickSetupVersion(html string) string {
+	const tag = "QuickFileDispatch-Setup-"
+	best := ""
+	for i := 0; i < len(html); {
+		j := strings.Index(html[i:], tag)
+		if j < 0 {
+			break
+		}
+		start := i + j + len(tag)
+		end := start
+		for end < len(html) {
+			c := html[end]
+			if (c >= '0' && c <= '9') || c == '.' {
+				end++
+				continue
+			}
+			break
+		}
+		/*
+		 * 这里的边界容易想当然：扫描循环把 `3.4.8.exe` 里结尾那个点**也吃进去了**，
+		 * 所以 end 停在 'e' 上，而不是点前面。于是：
+		 *   - 版本号是 html[start : end-1]（砍掉那个点）
+		 *   - 后面要匹配的是 "exe"，不是 ".exe"
+		 *   - 再排除 "exe." 开头的情况（`Setup-3.4.8.exe.bak` 不是附件）
+		 * 这三行是照着单元测试的失败信息一点点校出来的。
+		 */
+		if end > start && html[end-1] == '.' {
+			v := html[start : end-1]
+			rest := html[end:]
+			if v != "" && strings.HasPrefix(rest, "exe") && !strings.HasPrefix(rest, "exe.") {
+				if best == "" || newerThan(v, best) {
+					best = v
+				}
+			}
+		}
+		if end <= i {
+			break
+		}
+		i = end
+	}
+	return best
+}
+
+// checkCNB 向 CNB 要版本列表，挑出被标了 is_latest 的那一版。
+func checkCNB(token, current string) (map[string]any, error) {
+	client := &http.Client{Timeout: 20 * time.Second, Transport: netproxy.Transport()}
+	req, err := http.NewRequest("GET", updateCNBAPI+"?pageSize=20", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.cnb.api+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("CNB 返回 %d", resp.StatusCode)
+	}
+
+	// 这个接口返回的是**裸数组**，不是 {data:[...]} —— cnb CLI 打印的 data: 那层
+	// 信封是它自己加的，照那个写会解析不出来
+	var list []struct {
+		TagName  string `json:"tag_name"`
+		Body     string `json:"body"`
+		IsLatest bool   `json:"is_latest"`
+		Assets   []struct {
+			Name               string `json:"name"`
+			Size               int64  `json:"size"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, fmt.Errorf("解析 CNB 返回失败：%v", err)
+	}
+	if len(list) == 0 {
+		return nil, fmt.Errorf("CNB 上还没有 Release")
+	}
+
+	// 优先信 is_latest；万一没有标记，退回「按版本号挑最大的」
+	pick := -1
+	for i, r := range list {
+		if r.IsLatest {
+			pick = i
+			break
+		}
+	}
+	if pick < 0 {
+		for i, r := range list {
+			if pick < 0 || newerThan(r.TagName, list[pick].TagName) {
+				pick = i
+			}
+		}
+	}
+	rel := list[pick]
+
+	latest := strings.TrimPrefix(rel.TagName, "v")
+	out := map[string]any{
+		"hasUpdate": newerThan(rel.TagName, current),
+		"current":   current,
+		"latest":    latest,
+		"notes":     rel.Body,
+		"source":    "CNB",
+	}
+	for _, a := range rel.Assets {
+		if strings.HasPrefix(a.Name, "QuickFileDispatch-Setup-") && strings.HasSuffix(a.Name, ".exe") {
+			out["assetName"] = a.Name
+			out["assetSize"] = a.Size
+			out["url"] = a.BrowserDownloadURL // 公开地址，下载不用令牌
+			break
+		}
+	}
+	if _, ok := out["url"]; !ok {
+		return nil, fmt.Errorf("最新版本没有可用的安装包")
+	}
+	return out, nil
+}
 
 // ---------- 版本比较 ----------
 
@@ -111,7 +312,7 @@ func snapshotUpdate() map[string]any {
 
 func registerUpdate(r *Registry, env *Env) {
 	r.Handle("update:check", func(json.RawMessage) (any, error) {
-		return checkUpdate(env.Version)
+		return checkUpdate(env, env.Version)
 	})
 
 	// 开始下载（异步，立刻返回）。进度用 update:progress 轮询。
@@ -166,10 +367,31 @@ func registerUpdate(r *Registry, env *Env) {
 	})
 }
 
-// checkUpdate 问 GitHub 要最新版，跟当前版本比一比。
-func checkUpdate(current string) (any, error) {
+// checkUpdate 问「最新版是多少」，跟当前版本比一比。
+// 先试 CNB（国内直连），不行再退 GitHub。
+func checkUpdate(env *Env, current string) (any, error) {
+	// ① 公开网页 —— 门槛最低，用户什么都不用配（推荐路径）
+	if out, err := checkCNBPublic(current); err == nil {
+		return out, nil
+	} else if env.Verbose {
+		fmt.Fprintf(os.Stderr, "[update] CNB 网页源不可用：%v", err)
+	}
+
+	// ② 有令牌就走 API —— 能顺带拿到更新说明正文
+	if token := cnbToken(env.Store); token != "" {
+		if out, err := checkCNB(token, current); err == nil {
+			return out, nil
+		} else if env.Verbose {
+			fmt.Fprintf(os.Stderr, "[update] CNB 源不可用，退回 GitHub：%v\n", err)
+		}
+	}
+	return checkGitHub(current)
+}
+
+// checkGitHub 是备用源。国内直连 github.com 经常不通，所以它排在 CNB 后面。
+func checkGitHub(current string) (any, error) {
 	client := &http.Client{Timeout: 20 * time.Second, Transport: netproxy.Transport()}
-	req, err := http.NewRequest("GET", updateAPILatest, nil)
+	req, err := http.NewRequest("GET", updateGHLatest, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +429,7 @@ func checkUpdate(current string) (any, error) {
 		"current":   current,
 		"latest":    latest,
 		"notes":     rel.Body,
+		"source":    "GitHub",
 	}
 	// 挑安装包（不是那个免安装单 exe）
 	for _, a := range rel.Assets {
