@@ -65,6 +65,13 @@ var known = []string{
 	"git:pull",
 	"git:commit",
 
+	// 自动更新（3.4.9 起）。以前漏登记，启动时「已实现 52/52」其实是错的 ——
+	// 这四条注册了却没进清单，进度统计把它们当空气。
+	"update:check",
+	"update:download",
+	"update:progress",
+	"update:install",
+
 	// 剪贴板：由 web/bridge.js 直接在前端做，不经过后端（见该文件说明）
 	"clipboard:write",
 

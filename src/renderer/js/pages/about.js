@@ -1,6 +1,6 @@
 /** 关于页：作者、技术栈、免费额度边界、致敬 PicX */
 
-import { $, escapeHtml } from '../lib/dom.js';
+import { $, escapeHtml, err, confirmDialog } from '../lib/dom.js';
 import state from '../lib/state.js';
 
 const APP = '快捷文件分发服务@JIE';
