@@ -496,6 +496,16 @@ async function createFolder(handle) {
  */
 let localNoticeTimer = 0;
 
+/** 收起提示条 —— 状态好了就得让它走，别一直挂着过时的报错 */
+function clearLocalNotice() {
+  const el = $('#mgLocalNotice');
+  if (!el) return;
+  clearTimeout(localNoticeTimer);
+  el.hidden = true;
+  el.className = 'side-local-notice';
+  el.textContent = '';
+}
+
 function showLocalNotice(kind, text) {
   const el = $('#mgLocalNotice');
   if (!el) return;
@@ -503,11 +513,78 @@ function showLocalNotice(kind, text) {
   el.hidden = false;
   el.className = 'side-local-notice ' + kind;
   el.textContent = text;
-  // 完成态自动收起，别一直占着左侧；错误态留着，让人看清该改哪里
+  // 完成态自动收起，别一直占着左侧；错误态由 syncLocalNotice 按状态复核
   if (kind === 'done') {
     localNoticeTimer = setTimeout(() => {
       el.hidden = true;
     }, 6000);
+  }
+}
+
+/**
+ * 让提示条始终反映**当前**的本地目录状态（只读，不执行克隆）。
+ *
+ * 这条以前是「一次性写入、永不清除」：空目录克隆成功后、或用户自己把目录
+ * 变成仓库之后，旧的那条红字会一直挂着；而「检测」按钮只刷新云端对比，
+ * 根本不碰提示条 —— 杰哥截图里「本地与云端一致」却还挂着「非空且不是
+ * Git 仓库」就是这个。
+ *
+ * 判定以 git:inspect 的四态为准；但当它说「不是 Git 仓库」、而 git:status
+ * 明确说 isRepo 时，以 status 为准（云端检测器用的也是这份数据），
+ * 免得两个数据源打架时把用户困在一条错误信息里。
+ */
+async function syncLocalNotice() {
+  const cfg = state.cfg || {};
+  if (!cfg.localDir) {
+    clearLocalNotice();
+    return;
+  }
+  let ins;
+  try {
+    ins = await window.cloudpic.git.inspect();
+  } catch (e) {
+    return; // 探测不了就别乱改，维持现状
+  }
+  const stt = ins && ins.state;
+
+  // 两个数据源打架时以 status 为准
+  if (stt === 'not-empty' || stt === 'empty' || stt === 'unreadable') {
+    try {
+      const st = await window.cloudpic.git.status();
+      if (st && st.isRepo) {
+        clearLocalNotice();
+        return;
+      }
+    } catch (e) {
+      /* status 也读不了就按 inspect 的结论走 */
+    }
+  }
+
+  switch (stt) {
+    case 'ready': {
+      const el = $('#mgLocalNotice');
+      // 刚克隆完的绿色完成态让它把动效播完（6 秒后自己收起），别立刻抹掉
+      if (el && !el.hidden && el.classList.contains('done')) break;
+      clearLocalNotice();
+      break;
+    }
+    case 'no-dir':
+      clearLocalNotice();
+      break;
+    case 'foreign-repo':
+      showLocalNotice(
+        'bad',
+        '这个目录是别处的 Git 仓库，不能当成本配置的本地目录（' + (ins.remote || 'remote 不匹配') + '）'
+      );
+      break;
+    case 'not-empty':
+      showLocalNotice('bad', '本地目录非空且不是 Git 仓库；为免覆盖已有文件没有自动拉取，请换一个空目录');
+      break;
+    case 'empty':
+      // 交给 prepareLocal 的 busy / done 流程，别在这儿覆盖
+      break;
+    default:
+      break;
   }
 }
 
@@ -516,6 +593,7 @@ async function prepareLocal() {
   const sync = cfg.sync || {};
   // 没绑目录、或用户自己关了自动拉取 → 什么都不做，照常读列表
   if (!cfg.localDir || sync.autoPull === false) {
+    clearLocalNotice();
     await load();
     return;
   }
@@ -524,7 +602,8 @@ async function prepareLocal() {
   try {
     ins = await window.cloudpic.git.inspect();
   } catch (e) {
-    // 探测不了就照旧，别因为一次 IPC 失败把整个页面卡住
+    // 探测不了就照旧，也别把上一次的报错一直挂着（确认不了的错误不该报错）
+    clearLocalNotice();
     await load();
     return;
   }
@@ -551,7 +630,8 @@ async function prepareLocal() {
       }
       break;
     case 'ready':
-      // 本地就是这份配置的仓库：按策略正常拉取（网络不通就照常用本地这一份）
+      // 本地就是这份配置的仓库：过时提示收起来，再按策略正常拉取
+      clearLocalNotice();
       try {
         await window.cloudpic.git.pull();
       } catch (e) {
@@ -559,6 +639,7 @@ async function prepareLocal() {
       }
       break;
     default:
+      clearLocalNotice();
       break;
   }
   await load();
@@ -623,6 +704,9 @@ async function load() {
 /** 左侧只留「状态」+ 云端检测器：目录位置由面包屑负责，这里不再重复一遍 */
 async function loadSide() {
   await refreshGitState();
+  // 每次重画左侧都复核一遍本地目录状态 —— 提示条不能是「一次性写入、永不清除」；
+  // 状态恢复成仓库后，这里会主动把过时的红字收起来
+  await syncLocalNotice();
   // 本地状态和云端比对并行不了：都要跑 git / 网络，串行更省事
   await refreshCloudDetect();
 }
@@ -1743,7 +1827,14 @@ function bind() {
   });
 
   const detectBtn = $('#btnMgDetect');
-  if (detectBtn) detectBtn.onclick = () => refreshCloudDetect(true);
+  if (detectBtn) {
+    detectBtn.onclick = () => {
+      refreshCloudDetect(true);
+      // 「检测」不只是比对云端 sha，也要复核本地目录那条提示：
+      // 之前它只刷新对比，红字就一直赖着不走
+      syncLocalNotice();
+    };
+  }
   $('#breadcrumb').addEventListener('click', (e) => {
     const b = e.target.closest('.bc-item');
     if (b) navigate(b.dataset.path);
