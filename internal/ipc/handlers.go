@@ -658,6 +658,9 @@ func Register(r *Registry, env *Env) {
 
 	r.Handle("git:pull", func(json.RawMessage) (any, error) { return env.gitPull() })
 
+	// 只读：回答本地目录是什么状态，供管理页决定要不要克隆、要不要报错
+	r.Handle("git:inspect", func(json.RawMessage) (any, error) { return env.inspectLocalDir(), nil })
+
 	r.Handle("git:commit", func(payload json.RawMessage) (any, error) {
 		obj, err := decodeObject(payload)
 		if err != nil {

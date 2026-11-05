@@ -52,36 +52,62 @@ func (e *Env) profileCheck(payload map[string]any) (any, error) {
 		},
 	}
 
-	/* ---- 本地目录 ---- */
+	/* ---- 本地目录 ----
+	 * 判定统一走 inspectDir（和 git:inspect 同一套），别在这边另写一套：
+	 * 管理页说「能克隆」、向导最后一步却说「不行」这种自相矛盾最烦人。
+	 * 特别是 foreign-repo：目录有 .git 但属于**别处**的仓库，绝不能当成
+	 * 本配置已就绪，也不能往里克隆（非空目录会被 git 拒绝，还会吓到用户）。 */
 	dir := strOf(p["localDir"])
 	if dir != "" {
 		if !local.Exists(dir) {
 			out["local"] = map[string]any{
 				"ok": false, "code": "not-exist", "dir": dir,
 				"message": "目录不存在：" + dir,
-				"fix":     "点「选择…」重新指到本机的仓库目录，或点「克隆到此处」把仓库拉下来",
-			}
-		} else if !git.IsRepo(context.Background(), dir) {
-			out["local"] = map[string]any{
-				"ok": false, "code": "not-repo", "dir": dir,
-				"message": "目录存在，但不是 Git 仓库（没有 .git）",
-				"fix":     "点「克隆到此处」把仓库克隆到这个目录",
+				"fix":     "重新选一个本机目录",
 			}
 		} else {
-			sum := git.RepoSummary(context.Background(), dir)
-			st := git.Status(context.Background(), dir)
-			dirty, _ := st["dirty"].(bool)
-			branch := ""
-			if sum != nil {
-				branch = strOf(sum["branch"])
-			}
-			msg := "本地仓库就绪"
-			if branch != "" {
-				msg += "（分支 " + branch + "）"
-			}
-			out["local"] = map[string]any{
-				"ok": true, "code": "ready", "dir": dir, "branch": branch,
-				"dirty": dirty, "message": msg,
+			st := inspectDir(p, dir)
+			switch strOf(st["state"]) {
+			case "foreign-repo":
+				out["local"] = map[string]any{
+					"ok": false, "code": "foreign-repo", "dir": dir, "remote": st["remote"],
+					"message": "这个目录是别处的 Git 仓库（" + strOf(st["remote"]) + "）",
+					"fix":     "换一个空目录，或把仓库信息改成它对应的那个仓库",
+				}
+			case "empty":
+				out["local"] = map[string]any{
+					"ok": false, "code": "not-repo", "dir": dir, "canClone": true,
+					"message": "目录存在，但不是 Git 仓库（没有 .git）",
+					"fix":     "把云端仓库克隆到这个目录",
+				}
+			case "not-empty":
+				out["local"] = map[string]any{
+					"ok": false, "code": "not-repo-nonempty", "dir": dir,
+					"message": "目录非空且不是 Git 仓库",
+					"fix":     "换一个空目录再克隆，免得覆盖已有文件",
+				}
+			case "unreadable":
+				out["local"] = map[string]any{
+					"ok": false, "code": "unreadable", "dir": dir,
+					"message": strOf(st["message"]),
+					"fix":     "检查目录权限，或重新选一个目录",
+				}
+			default: // ready
+				sum := git.RepoSummary(context.Background(), dir)
+				st2 := git.Status(context.Background(), dir)
+				dirty, _ := st2["dirty"].(bool)
+				branch := ""
+				if sum != nil {
+					branch = strOf(sum["branch"])
+				}
+				msg := "本地仓库就绪"
+				if branch != "" {
+					msg += "（分支 " + branch + "）"
+				}
+				out["local"] = map[string]any{
+					"ok": true, "code": "ready", "dir": dir, "branch": branch,
+					"dirty": dirty, "message": msg,
+				}
 			}
 		}
 	}

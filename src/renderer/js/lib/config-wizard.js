@@ -66,6 +66,7 @@ export function openConfigWizard(opts) {
   let busy = false;
   let animating = false;
   let result = null; // 验证结果（最后一屏用）
+  let justCloned = false; // 这次验证里的本地目录是刚克隆好的 → 结果行播个动效
 
   /**
    * 换页：当前这一屏往左滑出去，下一屏从右边登场（回退时方向反过来）。
@@ -119,15 +120,27 @@ export function openConfigWizard(opts) {
       btn.disabled = true;
       btn.textContent = '克隆中…';
       try {
-        // 克隆读的是「已落盘」的配置，所以先把这份配置存下来
-        await persist();
-        const r = await window.cloudpic.git.clone({ dir: draft.localDir.trim() });
-        if (r && r.ok) ok('克隆完成');
+        // 克隆读的是「已落盘」的配置，所以先把这份配置存下来；
+        // 带上 profileId，后端才会按**这份**归档的仓库和 Token 去拉
+        const id = await persist();
+        const r = await window.cloudpic.git.clone({
+          dir: draft.localDir.trim(),
+          profileId: id || ''
+        });
+        if (r && r.ok) {
+          btn.classList.add('done');
+          btn.textContent = '已克隆';
+          ok('克隆完成');
+          setTimeout(() => {
+            btn.classList.remove('done');
+            btn.textContent = '克隆到该目录';
+          }, 2200);
+        }
       } catch (e) {
         err(e.message || String(e));
       } finally {
         btn.disabled = false;
-        btn.textContent = '克隆到该目录';
+        if (!btn.classList.contains('done')) btn.textContent = '克隆到该目录';
       }
     }
   };
@@ -248,12 +261,27 @@ export function openConfigWizard(opts) {
         '</div>'
       );
     }
-    const line = (title, part) =>
-      '<div class="wz-check ' + (part && part.ok ? 'ok' : 'bad') + '">' +
-      '<span class="mk">' + (part && part.ok ? TICK : CROSS) + '</span>' +
-      '<div class="tx"><b>' + escapeHtml(title) + '</b>：' + escapeHtml((part && part.message) || '未检查') +
-      (part && !part.ok && part.fix ? '<em>→ ' + escapeHtml(part.fix) + '</em>' : '') +
-      '</div></div>';
+    /**
+     * 每一条检查结果。本地目录那行有个特例：目录是空的、可以克隆时，
+     * 以前只在下面挂一句「点『克隆到此处』把仓库克隆到这个目录」的红字，
+     * 用户还得自己回上一屏找按钮。现在直接把这句做成一个能点的执行按钮
+     * （文案精简成「克隆到此处」），点完就地拉取、重新验证。
+     */
+    const line = (title, part, done) => {
+      const canClone = !!(part && !part.ok && part.canClone);
+      const fixHtml = canClone
+        ? '<button type="button" class="wz-clone-btn" id="wzResultClone">克隆到此处</button>'
+        : part && !part.ok && part.fix
+          ? '<em>→ ' + escapeHtml(part.fix) + '</em>'
+          : '';
+      return (
+        '<div class="wz-check ' + (part && part.ok ? 'ok' : 'bad') + (done ? ' wz-just-done' : '') + '">' +
+        '<span class="mk">' + (part && part.ok ? TICK : CROSS) + '</span>' +
+        '<div class="tx"><b>' + escapeHtml(title) + '</b>：' + escapeHtml((part && part.message) || '未检查') +
+        fixHtml +
+        '</div></div>'
+      );
+    };
     const rule = CPLinks.LINK_RULES.find((r) => r.id === draft.linkRule);
     return (
       '<div class="wz-final">' +
@@ -263,7 +291,7 @@ export function openConfigWizard(opts) {
         : '<p class="wz-note">配置已经存下来了（状态是「待验证」），把下面的问题修好再验证一次即可</p>') +
       '<div class="wz-checks">' +
       line('仓库信息', result.cloud) +
-      line('本地目录', result.local) +
+      line('本地目录', result.local, justCloned) +
       '<div class="wz-check ok"><span class="mk">' + TICK + '</span><div class="tx"><b>文件链接</b>：规则「' +
       escapeHtml(rule ? rule.name : draft.linkRule) + '」</div></div>' +
       '</div>' +
@@ -372,11 +400,14 @@ export function openConfigWizard(opts) {
         m.close();
       };
     }
+    const cloneBtn = $('#wzResultClone', m.body);
+    if (cloneBtn) cloneBtn.onclick = () => cloneFromResult(cloneBtn);
     const fix = $('#wzFix', m.body);
     if (fix) {
       fix.onclick = () => {
         const target = resultWhichStep();
         result = null;
+        justCloned = false;
         goTo(target);
       };
     }
@@ -443,10 +474,52 @@ export function openConfigWizard(opts) {
     return editing ? editing.id : '';
   }
 
+  /**
+   * 最后一屏里直接把仓库克隆到这个目录，然后就地重新验证。
+   *
+   * 传 profileId 是关键：向导可能在新建 / 修改一份**还没激活**的配置，
+   * 后端按这份归档去取仓库信息和它自己的 Token，不会误克隆当前激活的那份。
+   * 克隆完 result 从 ✗ 变 ✓，配合 .wz-just-done 播一个短动效。
+   */
+  async function cloneFromResult(btn) {
+    if (busy) return;
+    busy = true;
+    btn.disabled = true;
+    btn.textContent = '正在拉取…';
+    try {
+      const id = await persist(); // 克隆读的是已落盘的配置
+      const r = await window.cloudpic.git.clone({
+        dir: draft.localDir.trim(),
+        profileId: id || ''
+      });
+      if (!r || !r.ok) {
+        err((r && r.message) || '克隆失败');
+        return;
+      }
+      justCloned = true;
+      const chk = id ? await window.cloudpic.profile.check({ id: id }) : null;
+      if (chk) result = chk;
+      if (chk && chk.ok) {
+        await state.verifyProfile(id, {
+          userName: (chk.cloud && chk.cloud.userName) || '',
+          repo: (chk.cloud && chk.cloud.repoInfo) || { fullName: draft.owner + '/' + draft.repo }
+        });
+        ok('已归档：' + draft.owner + '/' + draft.repo);
+      }
+      if (o.onDone) o.onDone();
+    } catch (e) {
+      err(e.message || String(e));
+    } finally {
+      busy = false;
+      draw('forward');
+    }
+  }
+
   /** 保存 + 真实校验（仓库可达、Token 有效、本地目录是 git 仓库） */
   async function commit() {
     if (busy) return;
     busy = true;
+    justCloned = false;
     const btn = $('#wzSave', m.body);
     if (btn) {
       btn.disabled = true;
@@ -469,6 +542,11 @@ export function openConfigWizard(opts) {
         ok('已归档：' + draft.owner + '/' + draft.repo);
       }
       result = chk || { ok: false, cloud: { ok: false, message: '没有拿到验证结果' } };
+      // 别处的 Git 仓库必须「直接报错」：光在结果行里摆一行红字不够醒目，
+      // 这类目录还不能被克隆（非空），用户得知道要回去换一个空目录
+      if (chk && chk.local && chk.local.code === 'foreign-repo') {
+        err('这个本地目录属于别的 Git 仓库，请换一个空目录');
+      }
       if (o.onDone) o.onDone();
     } catch (e) {
       err(e.message || String(e));

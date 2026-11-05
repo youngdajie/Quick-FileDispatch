@@ -399,7 +399,7 @@ function blankMenuItems() {
     {
       label: '新建文件夹',
       icon: ICONS.folderPlus,
-      hint: view.dir || '仓库根目录',
+      hint: (view.dir || '仓库根目录') + ' · Ctrl+N',
       onClick: newFolder
     },
     { sep: true },
@@ -480,6 +480,88 @@ async function createFolder(handle) {
   } catch (e) {
     err((e && e.message) || '创建文件夹失败');
   }
+}
+
+/* ---------------------------------------------------------------- 本地目录就绪 */
+
+/*
+ * 「打开管理页时自动拉取云端」真正要做的事：让本地目录变成这份配置对应的仓库。
+ *
+ * 以前 syncLocal 碰到「不是 Git 仓库」直接 skipped，于是管理页左边认出来了、
+ * 却什么也没发生 —— 杰哥点名的就是这个。现在先问后端一句四态（git:inspect）：
+ *   empty        空目录 → 显示提示并从云端克隆下来，完成时有动效
+ *   ready        已是这份配置的仓库 → 按设置里的策略 pull
+ *   foreign-repo 是**别处**的 Git 仓库 → 直接报错，绝不覆盖
+ *   not-empty    非空又不是 Git 仓库 → 报错，别碰用户已有文件
+ */
+let localNoticeTimer = 0;
+
+function showLocalNotice(kind, text) {
+  const el = $('#mgLocalNotice');
+  if (!el) return;
+  clearTimeout(localNoticeTimer);
+  el.hidden = false;
+  el.className = 'side-local-notice ' + kind;
+  el.textContent = text;
+  // 完成态自动收起，别一直占着左侧；错误态留着，让人看清该改哪里
+  if (kind === 'done') {
+    localNoticeTimer = setTimeout(() => {
+      el.hidden = true;
+    }, 6000);
+  }
+}
+
+async function prepareLocal() {
+  const cfg = state.cfg || {};
+  const sync = cfg.sync || {};
+  // 没绑目录、或用户自己关了自动拉取 → 什么都不做，照常读列表
+  if (!cfg.localDir || sync.autoPull === false) {
+    await load();
+    return;
+  }
+
+  let ins;
+  try {
+    ins = await window.cloudpic.git.inspect();
+  } catch (e) {
+    // 探测不了就照旧，别因为一次 IPC 失败把整个页面卡住
+    await load();
+    return;
+  }
+
+  switch (ins && ins.state) {
+    case 'foreign-repo':
+      showLocalNotice(
+        'bad',
+        '这个目录是别处的 Git 仓库，不能当成本配置的本地目录（' + (ins.remote || 'remote 不匹配') + '）'
+      );
+      err('本地目录属于别的仓库，请到设置里换一个空目录');
+      break;
+    case 'not-empty':
+      showLocalNotice('bad', '本地目录非空且不是 Git 仓库；为免覆盖已有文件没有自动拉取，请换一个空目录');
+      break;
+    case 'empty':
+      showLocalNotice('busy', '本地是空的文件夹（不是Git仓库本地目录），正在向云端拉取文件，请稍后');
+      try {
+        const r = await window.cloudpic.git.clone({ dir: cfg.localDir });
+        if (r && r.ok) showLocalNotice('done', '已从云端拉取完成，本地仓库就绪');
+        else showLocalNotice('bad', (r && r.message) || '拉取失败，请稍后重试');
+      } catch (e) {
+        showLocalNotice('bad', (e && e.message) || String(e));
+      }
+      break;
+    case 'ready':
+      // 本地就是这份配置的仓库：按策略正常拉取（网络不通就照常用本地这一份）
+      try {
+        await window.cloudpic.git.pull();
+      } catch (e) {
+        /* 拉取失败不挡着浏览 */
+      }
+      break;
+    default:
+      break;
+  }
+  await load();
 }
 
 /* ---------------------------------------------------------------- 数据加载 */
@@ -1642,6 +1724,24 @@ async function pullLatest() {
 /* ---------------------------------------------------------------- 事件 */
 
 function bind() {
+  /*
+   * Ctrl / Cmd + N：在**当前目录**下新建文件夹。
+   * 只在管理页是激活页时生效；弹窗开着、或焦点正在输入框里时让给它们，
+   * 免得在搜索框里打字把新建弹窗顶出来。
+   */
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+    if ((e.key || '').toLowerCase() !== 'n') return;
+    const page = document.getElementById('page-manage');
+    if (!page || !page.classList.contains('active')) return;
+    const mw = document.getElementById('modalWrap');
+    if (mw && !mw.hidden) return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+    e.preventDefault();
+    newFolder();
+  });
+
   const detectBtn = $('#btnMgDetect');
   if (detectBtn) detectBtn.onclick = () => refreshCloudDetect(true);
   $('#breadcrumb').addEventListener('click', (e) => {
@@ -1897,7 +1997,9 @@ export default {
   },
 
   onEnter() {
-    load();
+    // 先让本地目录就绪（空目录会自动克隆），再读列表 ——
+    // 反过来会先渲染一屏「空」，等克隆完再跳一下
+    prepareLocal();
   },
 
   onConfigChanged() {

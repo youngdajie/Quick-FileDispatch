@@ -1609,6 +1609,60 @@ html[data-theme="light"] .dropzone {
   padding: 0 6px; word-break: break-all;
 }
 .side-git { font-size: 11px; color: var(--muted); line-height: 1.8; padding: 0 6px; }
+
+/*
+ * 本地目录就绪提示（空目录自动克隆 / 别处仓库报错）。
+ * 三态各有各的样子：busy 有个转圈的小点，done 从蓝转绿并「啪」地弹一下，
+ * bad 用红边但不用刺眼的底色 —— 这三条都是短停的消息，不是常驻面板。
+ */
+.side-local-notice {
+  position: relative;
+  margin: 0 0 10px; padding: 9px 11px 9px 26px;
+  border: 1px solid var(--border-soft); border-radius: 9px;
+  background: var(--panel-2);
+  font-size: 11.5px; line-height: 1.7; color: var(--text-dim);
+}
+.side-local-notice::before {
+  content: ""; position: absolute; left: 10px; top: 13px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted);
+}
+.side-local-notice.busy {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.side-local-notice.busy::before {
+  background: transparent;
+  border: 2px solid var(--accent-line);
+  border-top-color: var(--accent);
+  animation: local-spin 0.7s linear infinite;
+}
+.side-local-notice.done {
+  border-color: rgba(64, 185, 128, 0.35);
+  background: rgba(64, 185, 128, 0.09);
+  color: var(--text);
+  animation: local-done 0.5s var(--ease) both;
+}
+.side-local-notice.done::before {
+  background: var(--ok);
+  animation: local-tick 0.42s var(--ease-pop) both;
+}
+.side-local-notice.bad {
+  border-color: rgba(239, 85, 96, 0.3);
+  background: rgba(239, 85, 96, 0.06);
+  color: var(--text);
+}
+.side-local-notice.bad::before { background: var(--danger); }
+@keyframes local-spin { to { transform: rotate(360deg); } }
+@keyframes local-done {
+  from { transform: translateY(-4px); opacity: 0.35; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes local-tick {
+  from { transform: scale(0.2); }
+  to { transform: scale(1); }
+}
 /* 「状态」和「云端检测器」合并后，两块内容靠间距分开（原来是一条分隔线） */
 .side-git-cloud { margin-top: 10px; }
 .side-git .ok { color: var(--ok); }
@@ -2804,42 +2858,28 @@ html[data-theme="dark"] .topbar { background: rgba(10, 16, 25, 0.78); }
 html[data-theme="dark"] .card { background: rgba(14, 22, 34, 0.88); }
 html[data-theme="dark"] .shell { background: rgba(11, 17, 26, 0.62); }
 
-/* ------------------------------------------------ 昼夜按钮的涟漪
-   点一下：一圈从图标中心向外炸开并淡出，同时一圈光晕从外向内收回来，
-   快照一样把「正在切换」这件事交代清楚。伪元素不占 innerHTML，
-   顶栏每次重画图标都不会把它冲掉。 */
+/* ------------------------------------------------ 昼夜按钮
+   以前这里是一圈 0.62s 的双向涟漪（细圈炸开 + 光晕收回）再加 0.42s 图标弹跳，
+   连点快切时几层半透明圆叠在一起，又慢又糊 —— 那种「网页塑料感」就是它。
+   现在只留一个 0.16s 的图标缩放，点到即到。 */
 #btnTheme { position: relative; }
-#btnTheme::before,
-#btnTheme::after {
-  content: ""; position: absolute; left: 50%; top: 50%;
-  width: 32px; height: 32px; margin: -16px 0 0 -16px;
-  border-radius: 50%; pointer-events: none; opacity: 0;
-  transform: scale(0.35);
-}
-#btnTheme::before { border: 1px solid currentColor; }
-/* 收缩的那一层得是「光晕」不是「实心圆」：实心圆的边缘太硬，
-   看上去就是个带边的盘子，跟涟漪没关系 */
-#btnTheme::after {
-  background: radial-gradient(circle, currentColor 0%, currentColor 42%, transparent 72%);
-}
-
-#btnTheme.ripple::before { animation: theme-breath-out 0.62s var(--ease) both; }
-#btnTheme.ripple::after { animation: theme-breath-in 0.62s var(--ease) both; }
-#btnTheme.ripple svg { animation: theme-icon-pop 0.42s var(--ease-pop) both; }
-
-/* 一散一收：细圈从小放大冲出去，光晕从大往回收。
-   两者起点拉开距离，中途才不会糊成「一个带边的圆盘」。 */
-@keyframes theme-breath-out {
-  from { opacity: 0.6; transform: scale(0.35); }
-  to { opacity: 0; transform: scale(2.5); }
-}
-@keyframes theme-breath-in {
-  from { opacity: 0.3; transform: scale(2.7); }
-  to { opacity: 0; transform: scale(0.45); }
-}
-@keyframes theme-icon-pop {
-  from { transform: rotate(-35deg) scale(0.6); opacity: 0.35; }
+#btnTheme.tick svg { animation: theme-tick 0.16s var(--ease) both; }
+@keyframes theme-tick {
+  from { transform: scale(0.7); opacity: 0.45; }
   to { transform: none; opacity: 1; }
+}
+
+/*
+ * 换主题的那一瞬：把全站 transition 全掐掉，颜色「啪」地切过去。
+ * 不掐的话几十处 background / color 过渡会一起慢慢爬，看起来像卡顿，
+ * 也像网页而不是桌面程序。这个类只挂 90ms（见 app.js 的 paintThemeNow）。
+ * 只禁 transition，不动 animation —— 图标那一下短反馈照常播。
+ */
+html.theme-instant,
+html.theme-instant *,
+html.theme-instant *::before,
+html.theme-instant *::after {
+  transition: none !important;
 }
 
 /* ============================================================
@@ -3261,6 +3301,35 @@ input, textarea, [contenteditable="true"] { cursor: text; }
 .wz-check .tx { font-size: 11.5px; line-height: 1.7; color: var(--text-dim); min-width: 0; }
 .wz-check .tx b { color: var(--text); }
 .wz-check .tx em { display: block; font-style: normal; color: var(--danger); }
+
+/* 最后一屏里「克隆到此处」的直接执行按钮。
+   以前是一句红字让人回上一屏找按钮，现在就地做完、就地重新验证 */
+.wz-clone-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 8px; padding: 5px 11px;
+  border: 1px solid var(--accent-line); border-radius: 7px;
+  background: var(--accent-soft); color: var(--accent-hi);
+  font-size: 11.5px; font-family: inherit; cursor: pointer;
+  transition: background 0.14s, transform 0.1s;
+}
+.wz-clone-btn:hover { background: var(--panel-2); }
+.wz-clone-btn:active { transform: scale(0.97); }
+.wz-clone-btn:disabled { opacity: 0.6; cursor: wait; }
+
+/* 第 6 步那个「克隆到该目录」完成时的短动效：绿一下、轻轻弹一下 */
+.wz-dirrow .btn.done {
+  color: var(--ok);
+  border-color: rgba(64, 185, 128, 0.4);
+  animation: wz-done-pulse 0.6s var(--ease) both;
+}
+
+/* 克隆完成、结果行从 ✗ 变 ✓ 时播一下：底色由红转绿 + 轻轻弹入 */
+.wz-check.wz-just-done { animation: wz-done-pulse 0.6s var(--ease) both; }
+@keyframes wz-done-pulse {
+  0%   { background: rgba(239, 85, 96, 0.1); transform: scale(0.985); }
+  55%  { background: rgba(64, 185, 128, 0.16); transform: scale(1.006); }
+  100% { background: var(--panel-2); transform: none; }
+}
 
 .wz-foot {
   display: flex; align-items: center; gap: 8px;

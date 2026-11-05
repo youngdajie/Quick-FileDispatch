@@ -344,6 +344,7 @@ function render() {
     '<div class="card-head"><h2>快捷键与小技巧</h2></div>' +
     '<div class="card-body" style="font-size:13px;color:var(--text-dim);line-height:2.2">' +
     '<div><kbd>Ctrl</kbd> + <kbd>V</kbd>　把剪贴板里的截图直接塞进上传队列</div>' +
+    '<div><kbd>Ctrl</kbd> + <kbd>N</kbd>　在文件管理页的当前目录下新建文件夹</div>' +
     '<div>拖拽　从资源管理器拖一堆文件到窗口任意位置即可</div>' +
     '<div>双击　在文件管理里进入文件夹，或放大看图片</div>' +
     '<div>单击　选中文件（可多选），然后在顶部批量复制链接 / 导出 / 改名 / 删除</div>' +

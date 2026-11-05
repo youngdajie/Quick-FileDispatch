@@ -155,18 +155,69 @@ function bindChrome() {
     };
   });
 
-  // 昼夜切换：这里只改配置，界面颜色交给 state.on → applyAppearance 去落。
-  // 顺带的好处是设置页里那两张主题卡片也会跟着亮（它走 onConfigChanged）。
-  // 图标外面那圈涟漪是纯装饰：先摘类再强制重排一次，连点也能重新播。
+  /*
+   * 昼夜切换：**即时响应优先**。
+   *
+   * 旧做法是「点一下 → 等 config.set 这个 IPC 回来 → emit → applyAppearance」，
+   * 全程异步；而 themeIsLight() 又读异步才更新的 cfg，连点几下读到的全是同一个
+   * 旧值，于是「点了没反应、过一会儿连着跳」，还每次都把 applyGlass、各页
+   * onConfigChanged、paintRanges 整套重活跑一遍 —— 那就是卡顿的来源。
+   *
+   * 现在分两层：
+   *   - 界面层：点击当场把 theme 乐观写进 state.cfg 并同步换色；换色那一下给
+   *     <html> 挂 .theme-instant 掐掉全站 transition，颜色「啪」地切过去，
+   *     不是几十处 background/color 一起慢慢爬（那种渐变正是塑料感）。
+   *   - 配置层：合并连点，只把最终主题写一次盘；写完 emit 一次，顺带让设置页
+   *     的主题卡片、毛玻璃层这些重活对齐。
+   */
   const btnTheme = $('#btnTheme');
-  let rippleTimer = 0;
+  let themeQueued = null; // 待落盘的主题
+  let themeWriting = false;
+  let themeSaved = themeIsLight() ? 'light' : 'dark';
+  let instantTimer = 0;
+
+  function paintThemeNow(t) {
+    const light = t === 'light';
+    btnTheme.innerHTML = light ? ICON_MOON : ICON_SUN;
+    btnTheme.title = light ? '切换到深色模式' : '切换到浅色模式';
+    const root = document.documentElement;
+    root.classList.add('theme-instant');
+    // 只换变量和窗口底色，不跑毛玻璃那套遍历 DOM 的重活（留给 emit 那一次）
+    appearance.applyTheme(t);
+    clearTimeout(instantTimer);
+    instantTimer = setTimeout(() => root.classList.remove('theme-instant'), 90);
+  }
+
+  async function flushTheme() {
+    if (themeWriting || themeQueued === null || themeQueued === themeSaved) return;
+    themeWriting = true;
+    const t = themeQueued;
+    try {
+      await state.patch({ ui: { theme: t } });
+      themeSaved = t;
+    } catch (e) {
+      err(e.message || String(e));
+    } finally {
+      themeWriting = false;
+      // 连点期间主题又变了 → 补写最后一次（中间的都会被合并掉）
+      if (themeQueued !== themeSaved) flushTheme();
+    }
+  }
+
   btnTheme.onclick = () => {
-    btnTheme.classList.remove('ripple');
+    const next = themeIsLight() ? 'dark' : 'light';
+    const cfg = state.cfg || {};
+    // 乐观更新：让 themeIsLight() 当场反映新值，连点才会一下一变
+    state.cfg = Object.assign({}, cfg, {
+      ui: Object.assign({}, cfg.ui || {}, { theme: next })
+    });
+    paintThemeNow(next);
+    // 一个干脆的短反馈；没有涟漪、没有光晕
+    btnTheme.classList.remove('tick');
     void btnTheme.offsetWidth;
-    btnTheme.classList.add('ripple');
-    clearTimeout(rippleTimer);
-    rippleTimer = setTimeout(() => btnTheme.classList.remove('ripple'), 700);
-    state.patch({ ui: { theme: themeIsLight() ? 'dark' : 'light' } }).catch((e) => err(e.message || String(e)));
+    btnTheme.classList.add('tick');
+    themeQueued = next;
+    flushTheme();
   };
 
   $('#btnRefreshAll').onclick = async () => {

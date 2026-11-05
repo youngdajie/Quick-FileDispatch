@@ -957,9 +957,35 @@ func (e *Env) syncLocal(reason string) any {
 	if dir == "" || !local.Exists(dir) {
 		return map[string]any{"skipped": true, "message": "本地目录不存在"}
 	}
-	if !git.IsRepo(context.Background(), dir) {
-		return map[string]any{"skipped": true, "message": "本地目录不是 Git 仓库，跳过同步"}
+
+	/*
+	 * 以前这里只判 IsRepo，不是就直接 skipped —— 「打开管理页时自动拉取云端」
+	 * 于是永远不生效（杰哥点名的）。现在按四态走：
+	 *   empty        空目录 → 直接从云端克隆下来
+	 *   foreign-repo 别处的仓库 → 报错，绝不 pull（否则拉的是别人的仓库）
+	 *   not-empty    非空又不是仓库 → 报错，别动用户文件
+	 *   ready        本配置的仓库 → 按策略 pull
+	 */
+	st := inspectDir(cfg, dir)
+	switch strOf(st["state"]) {
+	case "foreign-repo":
+		return map[string]any{"reason": reason, "ok": false, "skipped": true,
+			"message": "这个目录是别处的 Git 仓库，请换一个空目录"}
+	case "not-empty":
+		return map[string]any{"reason": reason, "ok": false, "skipped": true,
+			"message": "目录非空且不是 Git 仓库，为避免覆盖已有文件没有自动拉取"}
+	case "empty", "unreadable":
+		if strOf(st["state"]) == "unreadable" {
+			return map[string]any{"reason": reason, "ok": false, "message": strOf(st["message"])}
+		}
+		r, err := e.gitClone(map[string]any{"dir": dir})
+		if err != nil {
+			return map[string]any{"reason": reason, "ok": false, "message": err.Error()}
+		}
+		res, _ := r.(git.OpResult)
+		return map[string]any{"reason": reason, "ok": res.OK, "cloned": res.OK, "message": res.Message}
 	}
+
 	strategy := "pull"
 	if sync, ok := cfg["sync"].(map[string]any); ok {
 		if s, is := sync["strategy"].(string); is && s != "" {
@@ -978,21 +1004,53 @@ func (e *Env) syncLocal(reason string) any {
 
 func (e *Env) gitClone(payload map[string]any) (any, error) {
 	cfg := e.Store.Raw()
-	if strOf(cfg["owner"]) == "" || strOf(cfg["repo"]) == "" {
-		return nil, errors.New("请先配置用户名与仓库名")
-	}
 	dir := defStr2(payload["dir"], strOf(cfg["localDir"]))
 	if dir == "" {
 		return nil, errors.New("请先选择本地目录")
 	}
+
+	/*
+	 * 默认按「当前激活的配置」克隆；但配置向导可能在新建或修改一份**还没激活**
+	 * 的配置，那时顶层 cfg 指向的是旧仓库，照它克隆就拉错了。
+	 * 所以允许带 profileId，从那份归档里取仓库信息和它自己的 Token。
+	 */
+	platform := strOf(cfg["platform"])
+	owner := strOf(cfg["owner"])
+	repo := strOf(cfg["repo"])
+	branch := defStr2(cfg["branch"], "main")
+	token := e.Store.GetToken()
+	if id := strOf(payload["profileId"]); id != "" {
+		if list, ok := cfg["profiles"].([]any); ok {
+			for _, it := range list {
+				p, ok := it.(map[string]any)
+				if !ok || strOf(p["id"]) != id {
+					continue
+				}
+				platform = strOf(p["platform"])
+				owner = strOf(p["owner"])
+				repo = strOf(p["repo"])
+				branch = defStr2(p["branch"], "main")
+				token = e.Store.GetProfileToken(id)
+				break
+			}
+		}
+	}
+	if owner == "" || repo == "" {
+		return nil, errors.New("请先配置用户名与仓库名")
+	}
+
 	r := git.Clone(context.Background(), git.CloneParams{
-		Platform: strOf(cfg["platform"]), Owner: strOf(cfg["owner"]), Repo: strOf(cfg["repo"]),
-		Branch: defStr2(cfg["branch"], "main"), Token: e.Store.GetToken(), Dir: dir,
+		Platform: platform, Owner: owner, Repo: repo,
+		Branch: branch, Token: token, Dir: dir,
 	})
 	if r.OK {
-		// 克隆成功就把这个目录记成本地目录 —— 用户原本可能没绑
-		if _, err := e.Store.Patch(map[string]any{"localDir": dir}); err != nil {
-			return nil, err
+		// 克隆成功就把这个目录记成本地目录 —— 用户原本可能没绑。
+		// 但指定 profileId 时（向导里在编辑另一份配置），目录已经写在那份
+		// 归档里了，别把**当前激活**配置的 localDir 顺手改掉。
+		if strOf(payload["profileId"]) == "" {
+			if _, err := e.Store.Patch(map[string]any{"localDir": dir}); err != nil {
+				return nil, err
+			}
 		}
 		e.allowRoot(dir)
 		e.cache.Invalidate()

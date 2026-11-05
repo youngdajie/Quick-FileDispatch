@@ -61,6 +61,7 @@ var known = []string{
 	"git:version",
 	"git:status",
 	"git:clone",
+	"git:inspect",
 	"git:pull",
 	"git:commit",
 

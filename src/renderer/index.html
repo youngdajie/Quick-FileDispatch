@@ -169,7 +169,7 @@
               <span class="field-label">目标目录 <span class="hint">留空 = 仓库根目录</span></span>
               <div class="dir-input-row">
                 <input type="text" id="upDir" placeholder="留空 = 仓库根目录，如 blog/2026" />
-                <button type="button" class="btn btn-ghost btn-sm" id="btnUpDirPick" title="浏览本地目录里现有的子目录">浏览目录...</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnUpDirPick" title="浏览本地目录里现有的子目录">浏览目录</button>
               </div>
             </div>
             <label class="field">
@@ -421,6 +421,9 @@
               <span>云端 · 本地检测器</span>
               <button type="button" class="side-mini" id="btnMgDetect" title="重新检测本地与云端的提交差异">检测</button>
             </div>
+            <!-- 本地目录四态提示（空目录自动拉取 / 别处仓库报错）。
+                 单独一块、不塞进 mgGitState —— 那个每次 load 都会被重画覆盖。 -->
+            <div class="side-local-notice" id="mgLocalNotice" hidden></div>
             <div class="side-git" id="mgGitState">—</div>
             <div class="side-git side-git-cloud" id="mgCloudState">
               <span class="txt">正在检测本地与云端…</span>

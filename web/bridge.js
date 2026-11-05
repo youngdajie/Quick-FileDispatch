@@ -156,6 +156,7 @@
       version: call('git:version'),
       status: call('git:status'),
       clone: call('git:clone'),
+      inspect: call('git:inspect'),
       pull: call('git:pull'),
       commit: call('git:commit')
     },
