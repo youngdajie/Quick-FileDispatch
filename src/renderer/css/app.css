@@ -1800,6 +1800,30 @@ html[data-theme="light"] .dropzone {
 .fi-default { --fc: #7f93ad; }
 
 /*
+ * 浅色主题下的图标色。
+ *
+ * 深色那套是为暗背景挑的「亮而透」的颜色（#e3a33f 之类），直接放到白底上
+ * 会被背景吃掉饱和度，看起来发灰、发土（杰哥截图点名的「浅色下 SVG 这么淡」）。
+ * 白底要的是**更深、更饱和**：同样是橙，深色用 #e3a33f，浅色用 #d97706。
+ */
+html[data-theme="light"] .fi-dir { --fc: #d97706; }
+html[data-theme="light"] .fi-image { --fc: #1a73e8; }
+html[data-theme="light"] .fi-video { --fc: #7c3aed; }
+html[data-theme="light"] .fi-audio { --fc: #db2777; }
+html[data-theme="light"] .fi-archive { --fc: #b45309; }
+html[data-theme="light"] .fi-code { --fc: #0d9488; }
+html[data-theme="light"] .fi-text { --fc: #475569; }
+html[data-theme="light"] .fi-pdf { --fc: #dc2626; }
+html[data-theme="light"] .fi-word { --fc: #2563eb; }
+html[data-theme="light"] .fi-excel { --fc: #15803d; }
+html[data-theme="light"] .fi-ppt { --fc: #ea580c; }
+html[data-theme="light"] .fi-font { --fc: #7e22ce; }
+html[data-theme="light"] .fi-ebook { --fc: #92400e; }
+html[data-theme="light"] .fi-app { --fc: #475569; }
+html[data-theme="light"] .fi-data { --fc: #0e7490; }
+html[data-theme="light"] .fi-default { --fc: #64748b; }
+
+/*
  * 复选框（OpenList 那种）：圆角方块 + 自绘对勾。
  * 网格里悬浮/选中才露头，避免平时糊在缩略图上；列表里常驻。
  */
@@ -1894,19 +1918,30 @@ html[data-theme="light"] .dropzone {
 .mg-listhead .lh-time { width: var(--col-time); flex: 0 0 auto; justify-content: flex-end; padding-right: 4px; }
 
 /*
- * 列宽拖拽把手：骑在列边界上的一条细线，不占布局宽度（9px 宽 + 负外边距）。
- * 拖「大小」的右边界改大小列，拖「修改时间」的右边界改时间列；
- * 名称列是 flex:1，会自己吸收剩余空间 —— 所以三种宽度其实都能调。
+ * 列宽拖拽把手。
+ *
+ * 参考 Windows 资源管理器：表头里一条**贯穿的竖线**，一眼能看出这里能拖；
+ * 命中区做到 14px 宽（负外边距骑在边界上，不占布局宽度），比原来 9px 宽容得多
+ * —— 之前「大小」那个把手只有 9px，实际点在按钮右边缘的空白上根本抓不到。
+ *
+ * 光标用自定义 SVG：深灰箭头 + 白描边，浅色主题下不会变成一只看不清的白箭头。
  */
 .mg-listhead .lh-grip {
-  width: 9px; flex: 0 0 auto; align-self: stretch;
-  margin: 0 -4px 0 -5px;
-  cursor: col-resize; position: relative; z-index: 2;
+  /* 元素本身宽度 0：不占布局、不参与 scrollWidth 计算。
+     命中区靠 ::before 向两侧各扩 8px（鼠标移上去仍会变成双箭头）。 */
+  width: 0; flex: 0 0 0; align-self: stretch;
+  position: relative; z-index: 3;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M6 4 2 8l4 4M10 4l4 4-4 4' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M6 4 2 8l4 4M10 4l4 4-4 4' fill='none' stroke='%23334055' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 8 8, col-resize;
+}
+/* 命中区：0 宽元素本身接不到鼠标，靠这层向两侧各扩 8px */
+.mg-listhead .lh-grip::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -8px; right: -8px;
 }
 .mg-listhead .lh-grip::after {
-  content: ""; position: absolute; left: 50%; top: 6px; bottom: 6px;
+  content: ""; position: absolute; left: 50%; top: 3px; bottom: 3px;
   width: 1px; margin-left: -0.5px; border-radius: 1px;
-  background: var(--border-soft);
+  /* 用 border-hover 而不是 border-soft：两套主题下都要能一眼看见（Windows 的分隔线也是实打实的灰） */
+  background: var(--border-hover);
   transition: background 0.12s, width 0.12s, margin 0.12s;
 }
 .mg-listhead .lh-grip:hover::after,
@@ -2554,15 +2589,6 @@ body.is-onboarding .toast-wrap { filter: none; }
     scroll-behavior: auto !important;
   }
 }
-
-/* ============================================================ 浅色主题微调 */
-/* 深色下好看的文件图标色，直接搬到白底会发飘；浅色主题单独压深一档 */
-html[data-theme="light"] .fi-dir { --fc: #c07a12; }
-html[data-theme="light"] .fi-text { --fc: #5f7c9a; }
-html[data-theme="light"] .fi-default { --fc: #64748b; }
-html[data-theme="light"] .fi-app { --fc: #64748b; }
-html[data-theme="light"] .fi-ebook { --fc: #9a6f34; }
-html[data-theme="light"] .fi-archive { --fc: #b3801f; }
 
 /* ============================================================ 仓库大模块 */
 /* 仓库信息 / 本地目录 / 文件链接合成一块；左侧竖条用平台主题色，

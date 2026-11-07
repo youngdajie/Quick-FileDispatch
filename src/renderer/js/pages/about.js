@@ -409,7 +409,7 @@ async function checkUpdateFlow() {
       '当前 ' + r.current + ' → 最新 ' + r.latest + JL +
         '点「立即更新」后会下载安装包并自动静默安装，程序会自己退出再起来' + JL +
         '（想留个底就先把手头的活干完 —— 安装期间程序会用不了）' + JL + JL +
-        '各版本的更新说明见 CNB 发布页：' + JL + (r.releaseUrl || ''),
+        '各版本的更新说明见 CNB 发布页',
       '立即更新'
     );
     if (!yes) {

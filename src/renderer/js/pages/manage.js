@@ -1256,33 +1256,69 @@ function applyColWidths(cols) {
 /**
  * 列宽拖拽（像 Windows 资源管理器那样拖列边界）。
  *
- * 只把两个固定列（大小 / 修改时间）的右边界做成把手；名称列是 flex:1，
- * 会自己吸收剩余空间 —— 所以拖这两个边界时名称跟着反向变，三种宽度都能调。
+ * 命中判定按**坐标**算，不依赖 pointerdown 落在把手元素上：
+ * 之前只判断 e.target.closest('.lh-grip')，而「大小」那个把手骑在按钮右边缘，
+ * 用户实际点在按钮的 padding 里 → 抓不到；「修改时间」那边刚好能点到 →
+ * 表现成「大小拖不动、时间能拖」。现在只要离把手中心 8px 内就算抓住。
+ *
+ * 只把两个固定列（大小 / 修改时间）的右边界做成把手；名称列 flex:1
+ * 自动吸收剩余 —— 拖这两个边界时名称跟着反向变，三种宽度都能调。
  * 松手才写配置：拖动过程每帧写盘既慢又没必要。
  */
 function bindColResize() {
   const head = $('#mgListHead');
   if (!head) return;
+  const HIT = 8;
+  let suppressClick = false;
+
+  // 拖完松手会跟一个 click；不拦住的话表头会当成「点列头排序」
+  head.addEventListener(
+    'click',
+    (ev) => {
+      if (!suppressClick) return;
+      suppressClick = false;
+      ev.stopPropagation();
+      ev.preventDefault();
+    },
+    true
+  );
+
   head.addEventListener('pointerdown', (e) => {
-    const grip = e.target.closest('.lh-grip');
+    if (e.button !== 0) return;
+    const grips = Array.from(head.querySelectorAll('.lh-grip')).filter((g) => g.offsetParent !== null);
+    let grip = null;
+    for (const g of grips) {
+      const r = g.getBoundingClientRect();
+      if (Math.abs(e.clientX - (r.left + r.width / 2)) <= HIT) {
+        grip = g;
+        break;
+      }
+    }
     if (!grip || !grip.dataset.col) return;
+
     e.preventDefault();
     const col = grip.dataset.col;
+    // 「名称」右侧那根把手调的还是大小列，只是方向反过来：
+    // 向右拖 = 名称变宽 = 大小列变窄
+    const rev = grip.dataset.rev === '1';
     const lim = COL_LIMITS[col] || [56, 240];
     const main = document.querySelector('.mg-main');
     if (!main) return;
     const cur = parseFloat(getComputedStyle(main).getPropertyValue('--col-' + col)) || lim[0];
     const startX = e.clientX;
     const startW = cur;
+    let moved = false;
     grip.classList.add('dragging');
     try {
       grip.setPointerCapture(e.pointerId);
     } catch (err) {
-      /* 拿不到指针捕获也能靠 move 事件拖，只是移出把手后会断 */
+      /* 拿不到指针捕获也能靠 move 事件拖 */
     }
 
     const move = (ev) => {
-      const w = Math.max(lim[0], Math.min(lim[1], startW + (ev.clientX - startX)));
+      const dx = ev.clientX - startX;
+      if (Math.abs(dx) > 2) moved = true;
+      const w = Math.max(lim[0], Math.min(lim[1], startW + (rev ? -dx : dx)));
       main.style.setProperty('--col-' + col, Math.round(w) + 'px');
     };
     const up = () => {
@@ -1290,6 +1326,12 @@ function bindColResize() {
       grip.removeEventListener('pointermove', move);
       grip.removeEventListener('pointerup', up);
       grip.removeEventListener('pointercancel', up);
+      if (!moved) return; // 只点了一下没拖，不写配置
+      // 下一帧自动复位：万一没有 click 跟上来，也不会把后面的排序点吞掉
+      suppressClick = true;
+      setTimeout(() => {
+        suppressClick = false;
+      }, 0);
       const final = Math.round(
         parseFloat(getComputedStyle(main).getPropertyValue('--col-' + col)) || startW
       );
