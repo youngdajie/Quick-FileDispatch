@@ -1890,8 +1890,31 @@ html[data-theme="light"] .dropzone {
   transition: color 0.14s;
 }
 .mg-listhead .lh-name { flex: 1; min-width: 0; justify-content: flex-start; padding-right: 10px; }
-.mg-listhead .lh-size { width: var(--col-size); flex: 0 0 auto; justify-content: flex-end; padding-right: 10px; }
-.mg-listhead .lh-time { width: var(--col-time); flex: 0 0 auto; justify-content: flex-end; padding-right: 10px; }
+.mg-listhead .lh-size { width: var(--col-size); flex: 0 0 auto; justify-content: flex-end; padding-right: 4px; }
+.mg-listhead .lh-time { width: var(--col-time); flex: 0 0 auto; justify-content: flex-end; padding-right: 4px; }
+
+/*
+ * 列宽拖拽把手：骑在列边界上的一条细线，不占布局宽度（9px 宽 + 负外边距）。
+ * 拖「大小」的右边界改大小列，拖「修改时间」的右边界改时间列；
+ * 名称列是 flex:1，会自己吸收剩余空间 —— 所以三种宽度其实都能调。
+ */
+.mg-listhead .lh-grip {
+  width: 9px; flex: 0 0 auto; align-self: stretch;
+  margin: 0 -4px 0 -5px;
+  cursor: col-resize; position: relative; z-index: 2;
+}
+.mg-listhead .lh-grip::after {
+  content: ""; position: absolute; left: 50%; top: 6px; bottom: 6px;
+  width: 1px; margin-left: -0.5px; border-radius: 1px;
+  background: var(--border-soft);
+  transition: background 0.12s, width 0.12s, margin 0.12s;
+}
+.mg-listhead .lh-grip:hover::after,
+.mg-listhead .lh-grip.dragging::after {
+  width: 2px; margin-left: -1px; background: var(--accent);
+}
+/* 没有修改时间列时，那个把手也别留着占位 */
+.mg-listhead.no-time .lh-grip[data-col="time"] { display: none; }
 .mg-listhead .lh-sort:hover { color: var(--text); }
 .mg-listhead .lh-sort.active { color: var(--accent-hi); font-weight: 600; }
 .mg-listhead .lh-sort.active[data-dir="asc"]::after { content: "↑"; font-size: 10px; }
@@ -1927,8 +1950,11 @@ html[data-theme="light"] .dropzone {
   margin: 0 9px 0 0;
 }
 .list-view .tile-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; }
+/* 列表里的图标跟缩略图几乎同大（28 vs 30）。
+   以前是 18px —— 实心图标还没换的时候就觉得「没长开」，
+   和旁边的图片缩略图摆在一起明显小一号，杰哥点名的就是这个。 */
 .list-view .tile-thumb .fi,
-.list-view .thumb-fallback .fi { width: 18px; height: 18px; max-width: 18px; max-height: 18px; }
+.list-view .thumb-fallback .fi { width: 28px; height: 28px; max-width: 28px; max-height: 28px; }
 .list-view .tile-name { flex: 1; min-width: 0; padding: 0 10px 0 0; font-size: 12.5px; }
 .list-view .tile-size {
   display: block; width: var(--col-size); flex: 0 0 auto;
@@ -3150,9 +3176,6 @@ html[data-theme="light"] .mini-up-wrap { background: rgba(20, 32, 48, 0.42); }
 .mini-ask-title { font-size: 13px; font-weight: 600; color: var(--text); }
 .mini-ask-sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 .mini-ask-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.mini-custom .field { margin-top: 10px; margin-bottom: 0; }
-.mini-custom select { width: 100%; }
-.mini-custom input[type="number"] { width: 100%; }
 
 .mini-list {
   margin-top: 12px; max-height: 300px; overflow-y: auto;

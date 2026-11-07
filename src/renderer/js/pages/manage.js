@@ -1237,6 +1237,73 @@ function syncListHead() {
   });
 }
 
+/* ---------------------------------------------------------------- 列宽拖拽 */
+
+/* 列宽范围：太窄看不清，太宽会把名称列挤没 */
+const COL_LIMITS = { size: [56, 180], time: [80, 240] };
+
+/** 把配置里记的列宽应用到 .mg-main（--col-* 变量的作用域就在它上面） */
+function applyColWidths(cols) {
+  const main = document.querySelector('.mg-main');
+  if (!main) return;
+  const c = cols || {};
+  ['size', 'time'].forEach((k) => {
+    const v = Number(c[k]);
+    if (isFinite(v) && v > 0) main.style.setProperty('--col-' + k, Math.round(v) + 'px');
+  });
+}
+
+/**
+ * 列宽拖拽（像 Windows 资源管理器那样拖列边界）。
+ *
+ * 只把两个固定列（大小 / 修改时间）的右边界做成把手；名称列是 flex:1，
+ * 会自己吸收剩余空间 —— 所以拖这两个边界时名称跟着反向变，三种宽度都能调。
+ * 松手才写配置：拖动过程每帧写盘既慢又没必要。
+ */
+function bindColResize() {
+  const head = $('#mgListHead');
+  if (!head) return;
+  head.addEventListener('pointerdown', (e) => {
+    const grip = e.target.closest('.lh-grip');
+    if (!grip || !grip.dataset.col) return;
+    e.preventDefault();
+    const col = grip.dataset.col;
+    const lim = COL_LIMITS[col] || [56, 240];
+    const main = document.querySelector('.mg-main');
+    if (!main) return;
+    const cur = parseFloat(getComputedStyle(main).getPropertyValue('--col-' + col)) || lim[0];
+    const startX = e.clientX;
+    const startW = cur;
+    grip.classList.add('dragging');
+    try {
+      grip.setPointerCapture(e.pointerId);
+    } catch (err) {
+      /* 拿不到指针捕获也能靠 move 事件拖，只是移出把手后会断 */
+    }
+
+    const move = (ev) => {
+      const w = Math.max(lim[0], Math.min(lim[1], startW + (ev.clientX - startX)));
+      main.style.setProperty('--col-' + col, Math.round(w) + 'px');
+    };
+    const up = () => {
+      grip.classList.remove('dragging');
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+      const final = Math.round(
+        parseFloat(getComputedStyle(main).getPropertyValue('--col-' + col)) || startW
+      );
+      const ui = (state.cfg && state.cfg.ui) || {};
+      const cols = Object.assign({}, ui.manageCols || {});
+      cols[col] = final;
+      state.patch({ ui: { manageCols: cols } }).catch(() => {});
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
+  });
+}
+
 function showSkeleton() {
   const grid = $('#mgGrid');
   const empty = $('#mgEmpty');
@@ -1898,6 +1965,8 @@ function bind() {
 
   $('#btnMgGrid').onclick = () => setViewMode('grid', true);
   $('#btnMgList').onclick = () => setViewMode('list', true);
+  // 列宽拖拽（表头那条细线）
+  bindColResize();
   // 用上次记下的视图模式 —— 别再每次重启都退回网格。
   // paint=false：这时列表还没 load，重绘只会闪一下空状态
   setViewMode(savedViewMode(), false, false);
@@ -2085,6 +2154,8 @@ export default {
     $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
     $('#btnMgGrid').classList.add('active');
     bind();
+    // 恢复上次调好的列宽（没有就用 CSS 里的默认值）
+    applyColWidths((state.cfg && state.cfg.ui && state.cfg.ui.manageCols) || null);
   },
 
   onEnter() {
@@ -2095,6 +2166,8 @@ export default {
 
   onConfigChanged() {
     $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
+    // 配置里的列宽可能被导入 / 另一处改动覆盖，跟着重新应用
+    applyColWidths((state.cfg && state.cfg.ui && state.cfg.ui.manageCols) || null);
 
     // 切换归档配置会同时换掉远端仓库和本地目录，管理页里缓存的列表已经失效，
     // 必须回到根目录重载。用「仓库身份串」比对，避免只改链接规则也触发重载。

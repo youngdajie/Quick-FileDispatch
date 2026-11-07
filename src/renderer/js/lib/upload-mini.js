@@ -29,7 +29,7 @@
  * 连 localStorage 的键都是同一个，在哪边勾的另一个入口都认。
  */
 
-import { $, err, ok, warn, escapeHtml, friendlyError, previewImage, paintRange } from './dom.js';
+import { $, err, ok, warn, escapeHtml, friendlyError, previewImage } from './dom.js';
 import state from './state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from './compress.js';
 import { canCompare, openCompare } from './compare.js';
@@ -293,28 +293,6 @@ function reuseOptions() {
   };
 }
 
-/** 自定义表单的初值（一次性，不写回配置） */
-function defaultCustom() {
-  const cmp = (state.cfg || {}).compress || {};
-  return { quality: Number(cmp.quality) || 80, format: cmp.format || 'auto' };
-}
-
-function readCustomOptions() {
-  const q = Number($('#mcQ', wrap).value) || 80;
-  const fmt = $('#mcFmt', wrap).value || 'auto';
-  const mw = Number($('#mcW', wrap).value) || 0;
-  const mh = Number($('#mcH', wrap).value) || 0;
-  return {
-    quality: q,
-    maxWidth: mw,
-    maxHeight: mh,
-    format: fmt,
-    targetSizeKB: 0,
-    skipIfSmaller: true,
-    watermark: { enabled: false }
-  };
-}
-
 /* ---------------------------------------------------------------- 决策面板 */
 
 function enqueueImages(images) {
@@ -350,42 +328,9 @@ function renderDecision() {
       '<div class="mini-ask-btns">' +
       '<button type="button" class="btn btn-primary btn-sm" data-act="use-reuse">沿用上传页参数（q' +
       escapeHtml(String(op.quality)) + ' · ' + escapeHtml(formatLabel(op.format)) + '）</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-act="use-custom">自定义参数…</button>' +
       '<button type="button" class="btn btn-ghost btn-sm" data-act="back-ask">返回</button>' +
       '</div>' +
       '</div>';
-  } else if (decisionStep === 'custom') {
-    const d = defaultCustom();
-    box.innerHTML =
-      '<div class="mini-ask">' +
-      '<div class="mini-ask-title">自定义压缩参数（只对当前这批生效，不改配置）</div>' +
-      '<div class="mini-custom">' +
-      '<label class="field"><span class="field-label">质量 <b id="mcQVal">' + d.quality + '</b></span>' +
-      '<input type="range" id="mcQ" min="10" max="100" value="' + d.quality + '" /></label>' +
-      '<label class="field"><span class="field-label">输出格式</span>' +
-      '<select id="mcFmt">' +
-      FORMATS.map((f) => '<option value="' + f[0] + '"' + (f[0] === d.format ? ' selected' : '') + '>' + escapeHtml(f[1]) + '</option>').join('') +
-      '</select></label>' +
-      '<div class="grid-2">' +
-      '<label class="field"><span class="field-label">最大宽度 <span class="hint">px · 0 = 不限</span></span>' +
-      '<input type="number" id="mcW" min="0" step="100" value="0" /></label>' +
-      '<label class="field"><span class="field-label">最大高度 <span class="hint">px · 0 = 不限</span></span>' +
-      '<input type="number" id="mcH" min="0" step="100" value="0" /></label>' +
-      '</div>' +
-      '</div>' +
-      '<div class="mini-ask-btns">' +
-      '<button type="button" class="btn btn-primary btn-sm" data-act="apply-custom">开始压缩</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-act="back-params">返回</button>' +
-      '</div>' +
-      '</div>';
-    const q = $('#mcQ', box);
-    if (q) {
-      paintRange(q);
-      q.oninput = () => {
-        const v = $('#mcQVal', box);
-        if (v) v.textContent = q.value;
-      };
-    }
   }
 }
 
@@ -691,16 +636,6 @@ function wire(target) {
       renderDecision();
     } else if (act === 'use-reuse') {
       const op = reuseOptions();
-      finishDecision();
-      runCompress(batch, op);
-    } else if (act === 'use-custom') {
-      decisionStep = 'custom';
-      renderDecision();
-    } else if (act === 'back-params') {
-      decisionStep = 'params';
-      renderDecision();
-    } else if (act === 'apply-custom') {
-      const op = readCustomOptions(); // 必须在清空 DOM 之前读
       finishDecision();
       runCompress(batch, op);
     }
