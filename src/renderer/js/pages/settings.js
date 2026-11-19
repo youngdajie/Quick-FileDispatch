@@ -395,13 +395,20 @@ const saveBlur = debounce(() => {
 }, 260);
 
 function currentTheme() {
-  return (state.cfg && state.cfg.ui && state.cfg.ui.theme) || 'dark';
+  const ui = (state.cfg && state.cfg.ui) || {};
+  return ui.theme === 'dark' || ui.theme === 'system' ? ui.theme : 'light';
 }
 
+/**
+ * 主题卡片的选中态。
+ *
+ * 类名统一用 .on（CSS 里写的就是 .theme-card.on）；这里以前写成 .active，
+ * 结果选中态一直是隐形的 —— 用户只能靠页面颜色猜自己选的哪一项。
+ */
 function fillThemeCards() {
   const cur = currentTheme();
   document.querySelectorAll('.theme-card').forEach((c) => {
-    c.classList.toggle('active', c.dataset.theme === cur);
+    c.classList.toggle('on', c.dataset.theme === cur);
   });
 }
 
@@ -458,7 +465,9 @@ function globalAutoSave() {
   const proxy = $('#cfgProxy');
   if (proxy) {
     const v = proxy.value.trim();
-    if (v !== (state.cfg.proxyUrl || '')) patch.proxyUrl = v;
+    // 只落「能解析成地址」的值：填到一半的 socks5://、127.0.0.1 写进去就是一个
+    // 连不上的代理，用户下次打开还会以为是程序把值改坏了
+    if (v !== (state.cfg.proxyUrl || '') && normalizeProxy(v) !== null) patch.proxyUrl = v;
   }
   if (Object.keys(patch).length) {
     state.patch(patch).catch((e) => err(e.message || String(e)));
@@ -476,6 +485,7 @@ function fillGlobal() {
   // 代理：正在输入时别回写，否则光标会跳到末尾
   const proxy = $('#cfgProxy');
   if (proxy && document.activeElement !== proxy) proxy.value = c.proxyUrl || '';
+  syncProxyAction();
   // 0-100 的「面板不透明度」（老配置的 0-24 强度值由 store 那边迁移过）
   const blur = ui.bgBlur == null ? 50 : Number(ui.bgBlur);
   const slider = $('#cfgBgBlur');
@@ -483,6 +493,85 @@ function fillGlobal() {
   const blurVal = $('#cfgBgBlurVal');
   if (blurVal) blurVal.textContent = fmtBlur(blur);
   fillBgPreview();
+}
+
+/* ---------------- 网络代理 ----------------
+   两个按钮合一：输入框空着就「扫描」，填了东西就「保存」。
+   扫描走主进程（internal/netproxy.Detect）：先看一眼 Windows 系统代理，
+   没开再去常见端口上问一句「你是 HTTP 还是 SOCKS5 代理」——
+   用户不用自己去翻 Clash 面板抄端口。 */
+
+const PROXY_SCHEMES = ['http', 'https', 'socks5', 'socks5h'];
+
+/** 往输入框里填的规范值：带协议、只留 host:port。填错了返回 null */
+function normalizeProxy(raw) {
+  let v = String(raw || '').trim();
+  if (!v) return '';
+  if (v.indexOf('://') < 0) v = 'http://' + v; // Clash 面板上显示的就是 127.0.0.1:7890
+  try {
+    const u = new URL(v);
+    const scheme = u.protocol.replace(':', '').toLowerCase();
+    if (PROXY_SCHEMES.indexOf(scheme) < 0) return null;
+    if (!u.hostname || !u.port) return null; // 没端口基本都是填错了
+    return scheme + '://' + u.host;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** 按钮文字跟着输入框走：空 = 扫描，有值 = 保存 */
+function syncProxyAction() {
+  const input = $('#cfgProxy');
+  const btn = $('#btnProxyAct');
+  if (!input || !btn) return;
+  const filled = !!input.value.trim();
+  btn.textContent = filled ? '保存' : '扫描';
+  btn.title = filled ? '保存代理地址' : '扫描本机正在运行的代理';
+}
+
+async function saveProxy(raw, quiet) {
+  const v = normalizeProxy(raw);
+  if (v === null) {
+    warn('代理地址要带端口，如 127.0.0.1:7890 或 socks5://127.0.0.1:7891');
+    return false;
+  }
+  const input = $('#cfgProxy');
+  if (v === (state.cfg.proxyUrl || '')) {
+    if (input) input.value = v;
+    if (!quiet) ok('代理地址没有变化');
+    return true;
+  }
+  await state.patch({ proxyUrl: v });
+  // 写回规范值：不然防抖自动保存还拿着原始字符串，下一次比对又写一遍
+  if (input) input.value = v;
+  syncProxyAction();
+  if (!quiet) ok('代理已保存，立即生效');
+  return true;
+}
+
+async function detectProxy() {
+  const input = $('#cfgProxy');
+  const btn = $('#btnProxyAct');
+  if (!input || !btn) return;
+  btn.disabled = true;
+  btn.classList.add('is-busy');
+  btn.textContent = '扫描中';
+  try {
+    const r = await window.cloudpic.app.detectProxy();
+    if (!r || !r.found || !r.url) {
+      warn('没扫到本机代理，请手动填写地址');
+      return;
+    }
+    input.value = r.url;
+    await saveProxy(r.url, true);
+    ok('已找到本机代理并保存：' + r.url);
+  } catch (e) {
+    err(e.message || String(e));
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('is-busy');
+    syncProxyAction();
+  }
 }
 
 /* ---------------- 智能调整（adaptive glass） ----------------
@@ -500,7 +589,7 @@ async function runAdaptive() {
 
   const img = (state.cfg && state.cfg.ui && state.cfg.ui.bgImage) || '';
   if (!img) {
-    hint.textContent = '还没选背景图，先「选择图片…」';
+    hint.textContent = '还没选背景图，先「选择图片」';
     return;
   }
   // 用主进程代理 URL 加载（私有目录 /__local 才能读）
@@ -617,13 +706,15 @@ async function installLfs() {
 export default {
   init() {
     // 平台标识只展示可连接的平台；实际选择仍在新建向导第一步完成。
+    // 图标尺寸照「全部配置」卡片里那枚走（15px 放在 29px 的色块里）——
+    // 之前用 20px 顶在 22px 的块里，四边只剩 1px，看着就是撑满了
     const brand = $('#platBrand');
     if (brand) {
       brand.innerHTML = ['github', 'cnb']
         .map(
           (id) =>
             '<span class="plat-brand-item">' +
-            '<span class="plat-brand-ico" style="background:' + BRAND_TILE[id] + '">' + brandIcon(id, 20) + '</span>' +
+            '<span class="plat-brand-ico" style="background:' + BRAND_TILE[id] + '">' + brandIcon(id, 14) + '</span>' +
             escapeHtml(PLATFORM_NAME[id]) +
             '</span>'
         )
@@ -655,7 +746,25 @@ export default {
     // 提交信息（全局项，改动即存）
     autoSave = debounce(globalAutoSave, 500);
     $('#cfgCommitMessage').addEventListener('input', autoSave);
-    $('#cfgProxy').addEventListener('input', autoSave);
+
+    // 代理：输入即存（防抖留一层兜底），右边那个按钮空着时扫描、有值时立即保存
+    const proxyInput = $('#cfgProxy');
+    proxyInput.addEventListener('input', () => {
+      syncProxyAction();
+      autoSave();
+    });
+    proxyInput.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' || !proxyInput.value.trim()) return;
+      ev.preventDefault();
+      saveProxy(proxyInput.value).catch((e) => err(e.message || String(e)));
+    });
+    $('#btnProxyAct').onclick = () => {
+      if (!proxyInput.value.trim()) {
+        detectProxy();
+        return;
+      }
+      saveProxy(proxyInput.value).catch((e) => err(e.message || String(e)));
+    };
 
     // 外观：主题卡片
     $('#themeCards').addEventListener('click', (e) => {

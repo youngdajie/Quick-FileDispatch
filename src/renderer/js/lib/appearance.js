@@ -8,9 +8,25 @@
  */
 
 export const THEMES = ['dark', 'light'];
+/** 可选的三种模式：'system' 不落成具体某一侧，运行时按系统设置解析 */
+export const THEME_MODES = ['dark', 'light', 'system'];
 
 /** 无边框窗口的底色，和 CSS 里的 --bg 保持一致 */
 const THEME_BG = { dark: '#070b12', light: '#eef1f6' };
+
+/**
+ * 把配置里的模式解析成真正要用的主题。
+ *
+ * 'system' 走 Chromium 的 prefers-color-scheme —— WebView2 里它跟着
+ * Windows 的「应用模式」走，和系统设置面板是同一项。
+ */
+export function resolveTheme(mode) {
+  if (mode === 'system') {
+    const dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    return dark ? 'dark' : 'light';
+  }
+  return THEMES.indexOf(mode) >= 0 ? mode : 'dark';
+}
 
 /**
  * 系统兜底字栈：没选自定义字体时从平台系统字体开始。
@@ -40,7 +56,7 @@ export function stackFor(font) {
 }
 
 export function applyTheme(theme) {
-  const t = THEMES.indexOf(theme) >= 0 ? theme : 'dark';
+  const t = resolveTheme(theme);
   const root = document.documentElement;
   root.dataset.theme = t;
   // 让原生控件（下拉、滚动条、range）也跟着换，不然浅色主题里会冒出黑条
@@ -61,24 +77,58 @@ export function applyTheme(theme) {
  *   - 没设置 / 文件被删了就安静退回默认浅色底，不报错。
  * 状态变更全走 applyAppearance（每次 state 变更都会路过这里），不用单独订阅。
  */
+/**
+ * 浅色模式的自定义背景图（ui.bgImage，主进程存的是配置目录里的副本路径）。
+ *
+ * 规则是杰哥定的，一条都不能让步：
+ *   - 只在浅色模式渲染 —— 深色永远星野，这个字段看都不看；
+ *   - 没设置 / 文件被删了就安静退回默认浅色底，不报错。
+ * 状态变更全走 applyAppearance（每次 state 变更都会路过这里），不用单独订阅。
+ *
+ * ⚠️ 深色时**不要清空 backgroundImage、也不要 display:none**：
+ * 那会让浏览器把这张图从渲染树里摘掉，切回浅色要重新解码；而揭幕的新快照
+ * 是在换色那一帧拍的，拍到的是空底，等动画放完图才铺满整屏 —— 整个界面闪一下。
+ * 现在图常驻（CSS 用 opacity 显隐），并且每次路过都顺手预热一次。
+ */
+let bgWarm = null;
+
+/** 把背景图提前解码到内存里；同一张图只做一次 */
+function warmBg(url) {
+  if (bgWarm && bgWarm.dataset.url === url) return;
+  const img = new Image();
+  img.dataset.url = url;
+  img.decoding = 'async';
+  img.src = url;
+  if (img.decode) img.decode().catch(() => {});
+  bgWarm = img;
+}
+
 export function applyBackgroundImage(cfg) {
   const el = document.getElementById('customBg');
   if (!el) return;
   const ui = (cfg && cfg.ui) || {};
-  const theme = (cfg && cfg.ui && cfg.ui.theme) || 'dark';
+  // 配置里可能是 'system'，判断「现在是不是浅色」要走解析后的值
+  const light = resolveTheme(ui.theme) === 'light';
   const path = String(ui.bgImage || '').trim();
-  if (theme !== 'light' || !path) {
+  if (!path) {
     el.classList.remove('on');
     el.style.backgroundImage = '';
     return;
   }
+  let url = '';
   try {
     // localUrl → /__local?p=...：白名单里只有配置目录的 bg/，别的路径一律 403
-    el.style.backgroundImage = 'url("' + window.cloudpic.localUrl(path) + '")';
-    el.classList.add('on');
+    url = window.cloudpic.localUrl(path);
   } catch (e) {
     el.classList.remove('on');
+    el.style.backgroundImage = '';
+    return;
   }
+  warmBg(url);
+  if (el.style.backgroundImage.indexOf(url) < 0) {
+    el.style.backgroundImage = 'url("' + url + '")';
+  }
+  el.classList.toggle('on', light);
 }
 
 /**
@@ -250,15 +300,16 @@ function installGlassHooks() {
 export function applyGlass(cfg) {
   const root = document.documentElement;
   const ui = (cfg && cfg.ui) || {};
-  const theme = ui.theme || 'dark';
+  // 同样要解析 'system'：跟着系统走的时候，浅色下也得有玻璃层
+  const light = resolveTheme(ui.theme) === 'light';
   const img = String(ui.bgImage || '').trim();
   let op = Number(ui.bgBlur);
   if (!isFinite(op) || op < 0) op = 0;
   if (op > 100) op = 100;
   const alpha = Math.max(0, Math.min(1, op / 100));
   root.style.setProperty('--glass-alpha', alpha.toFixed(3));
-  const on = theme === 'light' && !!img && alpha > 0;
-  const ready = theme === 'light' && !!img; // 层常驻，浓度交给 --glass-alpha
+  const on = light && !!img && alpha > 0;
+  const ready = light && !!img; // 层常驻，浓度交给 --glass-alpha
   let imgUrl = '';
   if (ready) {
     try {

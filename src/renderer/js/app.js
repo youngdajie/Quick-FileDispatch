@@ -7,7 +7,7 @@ import { installTooltips } from './lib/tooltip.js';
 import * as fileIcons from './lib/fileicons.js';
 import state from './lib/state.js';
 import * as appearance from './lib/appearance.js';
-import { initUniverse, universeState } from './lib/universe.js';
+import { initUniverse, universeState, paintNow, suspendUniverse, resumeUniverse } from './lib/universe.js';
 import onboard from './lib/onboard.js';
 import uploadPage from './pages/upload.js';
 import managePage from './pages/manage.js';
@@ -17,11 +17,10 @@ import aboutPage from './pages/about.js';
 /**
  * 顶栏那个昼夜按钮的图标：露出来的永远是「点了会变成什么」。
  * 深色主题下显示太阳（点击转亮），浅色主题下显示月亮（点击转暗）。
+ *
+ * 只换图标，不做旋转 —— 那圈 590ms 的转圈纯属自娱自乐：揭幕本身已经把
+ * 主题切换讲清楚了，再转一个图标只是让人多等半秒。
  */
-let themeIconMotionId = 0;
-let themeIconTimer = 0;
-let themeIconSwitchTimer = 0;
-
 function setThemeButtonIcon(light) {
   const button = $('#btnTheme');
   if (!button) return;
@@ -32,48 +31,90 @@ function setThemeButtonIcon(light) {
   button.setAttribute('aria-label', label);
 }
 
-function syncThemeButtonIcon(light) {
-  const button = $('#btnTheme');
-  if (!button) return;
-  if (button.classList.contains('theme-spinning')) {
-    button.dataset.themeTarget = light ? 'light' : 'dark';
+/*
+ * 揭幕的时长与缓动写在 CSS 里（html.vt-expand / html.vt-shrink 那两条），
+ * JS 只负责把圆心和最远半径写进 --vt-x / --vt-y / --vt-r。
+ *
+ * 为什么不在 JS 里 animate：见 app.css 同一段的注释 —— ready 之后挂动画
+ * 会漏掉开头一帧「无裁剪」，看上去就是瞬间全屏。
+ */
+
+/**
+ * 等到「下一帧画完」（两次 rAF）。
+ *
+ * 只在降级路径用：瞬时切色时，样式改完要等浏览器真的画过一帧，
+ * 才好把 transition 放回去 —— 放开早了，颜色会从旧值慢慢爬过去。
+ *
+ * ⚠️ 千万别在 startViewTransition 的 update 回调里 await 它：过渡期间
+ * rAF 是停的，await 下去新快照永远拍不出来，过渡会在 4 秒后以
+ * 「DOM update timed out」整段作废（实测踩过，动画会直接消失）。
+ */
+function nextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
+/**
+ * 圆心取点击位置：白转黑从这一点铺开，黑转白从四周收回这一点。
+ * 键盘触发（clientX/Y 都是 0）退到按钮中心，再退到视口中心 ——
+ * 圆心落在左上角是这套动效最难看的一种失败态，三级兜底不能省。
+ */
+function revealOrigin(ev) {
+  if (ev && (ev.clientX || ev.clientY)) return { x: ev.clientX, y: ev.clientY };
+  const el = (ev && (ev.currentTarget || ev.target)) || document.getElementById('btnTheme');
+  const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+  if (r && r.width) return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+}
+
+/**
+ * 页面上当前显示的是哪一侧。
+ *
+ * 不能直接读 state.cfg.ui.theme：那个值可能是 'system'，而且要等 state 更新才变；
+ * 揭幕期间连点、系统主题变化都要立刻读到新值，所以单独记一份。
+ * 配置里存的「模式」和这里记的「显示值」是两件事 —— 混在一起的结果就是
+ * 跟随系统时被 commitTheme 悄悄改写成 'dark'，之后再也不会跟着系统变。
+ */
+let shownTheme = 'dark';
+
+function themeIsLight() {
+  return shownTheme === 'light';
+}
+
+/* ---------------------------------------------------------------- 启动画面 */
+
+/** 最短停留：再好看也不该让人干等，1 秒内必须让开 */
+const BOOT_MIN_MS = 820;
+const bootStartedAt = performance.now();
+let bootDismissed = false;
+
+/**
+ * 收起启动画面。
+ *
+ * 界面（尤其是首屏的缩略图和字体）往往已经渲染好了，但 splash 上那几段
+ * 动画才播到一半 —— 等到最短停留时间再淡出，节奏才是稳的，不会「闪一下」。
+ * force 用于启动失败：那时要立刻让开，把错误露出来。
+ */
+function dismissBootSplash(force) {
+  if (bootDismissed) return;
+  bootDismissed = true;
+  const el = document.getElementById('bootSplash');
+  if (!el) return;
+  if (force) {
+    el.remove();
     return;
   }
-  setThemeButtonIcon(light);
-}
-
-function spinThemeButtonIcon(light) {
-  const button = $('#btnTheme');
-  if (!button) return;
-  const motionId = ++themeIconMotionId;
-  button.dataset.themeTarget = light ? 'light' : 'dark';
-  button.classList.remove('theme-spinning');
-  void button.offsetWidth;
-  button.classList.add('theme-spinning');
-  if (themeIconSwitchTimer) clearTimeout(themeIconSwitchTimer);
-  if (themeIconTimer) clearTimeout(themeIconTimer);
-
-  const switchIcon = () => {
-    if (motionId !== themeIconMotionId) return;
-    setThemeButtonIcon(button.dataset.themeTarget === 'light');
-    themeIconSwitchTimer = 0;
+  const run = () => {
+    el.classList.add('is-out');
+    const app = document.getElementById('appRoot');
+    if (app) app.classList.add('app-enter');
+    setTimeout(() => {
+      if (el.parentNode) el.remove();
+    }, 640);
   };
-  const finish = () => {
-    if (motionId !== themeIconMotionId) return;
-    if (themeIconTimer) clearTimeout(themeIconTimer);
-    if (themeIconSwitchTimer) clearTimeout(themeIconSwitchTimer);
-    switchIcon();
-    button.classList.remove('theme-spinning');
-    themeIconTimer = 0;
-  };
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  themeIconSwitchTimer = setTimeout(switchIcon, reducedMotion ? 1 : 245);
-  themeIconTimer = setTimeout(finish, reducedMotion ? 150 : 590);
-}
-
-/** 当前是不是浅色主题（配置为准，不是看 DOM） */
-function themeIsLight() {
-  return !!(state.cfg && state.cfg.ui && state.cfg.ui.theme === 'light');
+  const wait = Math.max(0, BOOT_MIN_MS - (performance.now() - bootStartedAt));
+  setTimeout(run, wait);
 }
 
 const PAGES = {
@@ -85,6 +126,10 @@ const PAGES = {
 
 let current = 'upload';
 let updateActionRunning = false;
+/** 揭幕进行中：挡住连点（同一页只能有一个 view transition） */
+let revealing = false;
+/** 揭幕期间落回来的配置变更：记一笔，等动画结束再统一应用 */
+let deferredAppearance = false;
 
 /**
  * 内容区的滚动分流：短页面铺满、不滚；真长起来的内容照常滚。
@@ -184,7 +229,7 @@ function updateChrome() {
   // 所以在设置页里点主题卡片，顶栏图标也会跟着换，不会两边对不上。
   const btnTheme = $('#btnTheme');
   if (btnTheme) {
-    syncThemeButtonIcon(themeIsLight());
+    setThemeButtonIcon(themeIsLight());
   }
 }
 
@@ -283,6 +328,29 @@ async function checkForUpdates() {
   }
 }
 
+/**
+ * 一份配置落到界面上的全部动作。
+ *
+ * 单独抽出来是因为它有第二个调用点：揭幕动画期间落回来的 emit 要先押后
+ * （动画窗口里跑这套重活就是掉帧），等动画结束再补一次。
+ */
+function applyConfigEverywhere(cfg) {
+  // 配置落回来了：显示值以它为准（'system' 在这里解析成具体哪一侧）
+  shownTheme = appearance.resolveTheme(((cfg && cfg.ui) || {}).theme);
+  appearance.applyAppearance(cfg);
+  updateChrome();
+  Object.keys(PAGES).forEach((k) => {
+    if (PAGES[k].onConfigChanged) {
+      try {
+        PAGES[k].onConfigChanged();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  });
+  paintRanges();
+}
+
 function bindChrome() {
   document.querySelectorAll('.nav-item').forEach((b) => {
     b.onclick = () => {
@@ -297,35 +365,52 @@ function bindChrome() {
   $('#verBadge').onclick = checkForUpdates;
 
   /*
-   * 昼夜切换：**即时响应优先**。
+   * 昼夜切换：圆形揭幕（View Transition API，同 BewlyCat 的 toggleDark）。
    *
-   * 旧做法是「点一下 → 等 config.set 这个 IPC 回来 → emit → applyAppearance」，
-   * 全程异步；而 themeIsLight() 又读异步才更新的 cfg，连点几下读到的全是同一个
-   * 旧值，于是「点了没反应、过一会儿连着跳」，还每次都把 applyGlass、各页
-   * onConfigChanged、paintRanges 整套重活跑一遍 —— 那就是卡顿的来源。
+   * 旧做法是「点一下 → 给 <html> 挂 .theme-instant 掐掉全站 transition →
+   * 颜色啪地切过去」，颜色确实是瞬间换的，但那一瞬间没有任何过渡，
+   * 观感就是硬切一下；再叠上换主题顺带触发的毛玻璃重算、各页 onConfigChanged，
+   * 正好撞在同一个时间点上，看着就是卡。
    *
-   * 现在分两层：
-   *   - 界面层：点击当场把 theme 乐观写进 state.cfg 并同步换色；换色那一下给
-   *     <html> 挂 .theme-instant 掐掉全站 transition，颜色「啪」地切过去，
-   *     不是几十处 background/color 一起慢慢爬（那种渐变正是塑料感）。
-   *   - 配置层：合并连点，只把最终主题写一次盘；写完 emit 一次，顺带让设置页
-   *     的主题卡片、毛玻璃层这些重活对齐。
+   * 现在分三层：
+   *   1) 视觉：新主题从一个圆里扩散出来盖掉旧主题。两帧快照由浏览器合成，
+   *      clip-path 动画走 WAAPI，不触发页面逐元素重算 —— 这才是「丝滑」的来源。
+   *   2) 快照：update 回调里同步换色（带 .theme-instant 掐过渡，否则新快照会
+   *      拍到过渡起点的旧颜色），毛玻璃一起算完，星野也当场补画一帧。
+   *   3) 落盘：动画结束后才写配置 —— 写盘回来的 emit 会再跑一遍全站外观和
+   *      各页回调，那批活放在动画窗口里就是掉帧，放动画之后没人看得见。
    */
   const btnTheme = $('#btnTheme');
   let themeQueued = null; // 待落盘的主题
   let themeWriting = false;
   let themeSaved = themeIsLight() ? 'light' : 'dark';
-  let instantTimer = 0;
 
-  function paintThemeNow(t) {
-    const light = t === 'light';
-    syncThemeButtonIcon(light);
-    const root = document.documentElement;
-    root.classList.add('theme-instant');
-    // 只换变量和窗口底色，不跑毛玻璃那套遍历 DOM 的重活（留给 emit 那一次）
-    appearance.applyTheme(t);
-    clearTimeout(instantTimer);
-    instantTimer = setTimeout(() => root.classList.remove('theme-instant'), 90);
+  function freezeTransitions(on) {
+    document.documentElement.classList.toggle('theme-instant', !!on);
+  }
+
+  /**
+   * 当场换色：只改显示值与 DOM，不碰配置。
+   *
+   * 配置里那句 ui.theme 有可能是 'system'，改它等于把「跟随系统」降级成
+   * 一次性钦定 —— 系统再变就没人听了。
+   */
+  function commitTheme(t) {
+    shownTheme = t;
+    const cfg = state.cfg || {};
+    const preview = Object.assign({}, cfg, {
+      ui: Object.assign({}, cfg.ui || {}, { theme: t })
+    });
+    freezeTransitions(true);
+    // 整套外观一起算：漏掉毛玻璃的话，浅色 + 背景图的用户会在揭幕结束的
+    // 那一刻看到面板突然糊上一层白纱（快照里没有，动画完才补上）
+    appearance.applyAppearance(preview);
+    // 星野平时等 rAF 才画第一帧，这里同步补上，否则深色快照是一块空底
+    paintNow();
+    // 补完这一帧就把星野停住：动画期间它每帧都在画几百个粒子，
+    // 和快照重绘抢同一个线程，掉帧就掉在揭幕上
+    suspendUniverse();
+    setThemeButtonIcon(t === 'light');
   }
 
   async function flushTheme() {
@@ -344,18 +429,158 @@ function bindChrome() {
     }
   }
 
-  btnTheme.onclick = () => {
-    const next = themeIsLight() ? 'dark' : 'light';
-    const cfg = state.cfg || {};
-    // 乐观更新：让 themeIsLight() 当场反映新值，连点才会一下一变
-    state.cfg = Object.assign({}, cfg, {
-      ui: Object.assign({}, cfg.ui || {}, { theme: next })
-    });
-    spinThemeButtonIcon(next === 'light');
-    paintThemeNow(next);
-    themeQueued = next;
+  function saveTheme(t) {
+    themeQueued = t;
     flushTheme();
+  }
+
+  /** 降级路径（没有 View Transition / 关了动效）：瞬时切色，两帧后放开过渡与星野 */
+  function releaseInstantSoon() {
+    nextPaint().then(() => {
+      freezeTransitions(false);
+      resumeUniverse();
+    });
+  }
+
+  /**
+   * 切到某个主题（'dark' | 'light'）。
+   *
+   * persist 为真才写配置：用户点顶栏按钮时写；跟随系统时系统改了主题，
+   * 配置里仍然是 'system'，不能把它改写成具体某一侧。
+   *
+   * 方向与作用于哪一层：
+   *   白 → 黑：动 new 层，clip 从 0 到 R（新主题从圆心铺开）
+   *   黑 → 白：动 old 层，clip 从 R 到 0（旧主题收回圆心，露出下面的新主题）
+   * 后者不能动 new —— 那会变成「白圆缩小、四周还是黑」，与直觉相反。
+   */
+  function paintThemeSwitch(next, ev, persist) {
+    if (revealing) return; // 连点：等这一圈走完再说，别互相打断
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (typeof document.startViewTransition !== 'function' || reduced) {
+      commitTheme(next);
+      releaseInstantSoon();
+      if (persist) saveTheme(next);
+      return;
+    }
+
+    const o = revealOrigin(ev);
+    // 半径要盖到最远那个角，写死 innerWidth 在对角方向会露边
+    const radius = Math.hypot(
+      Math.max(o.x, window.innerWidth - o.x),
+      Math.max(o.y, window.innerHeight - o.y)
+    );
+
+    const expanding = next === 'dark';
+    const root = document.documentElement;
+    // 圆心、半径、方向都必须在 startViewTransition **之前**写好：
+    // 伪元素一创建就按这些值起手，晚一步又是漏帧
+    root.style.setProperty('--vt-x', o.x + 'px');
+    root.style.setProperty('--vt-y', o.y + 'px');
+    root.style.setProperty('--vt-r', Math.round(radius) + 'px');
+    root.classList.toggle('vt-expand', expanding);
+    root.classList.toggle('vt-shrink', !expanding);
+
+    revealing = true;
+    const seq = ++vtSeq;
+    let vt;
+    try {
+      // 回调必须同步改完并返回：过渡期间 rAF 是停的，这里一旦 await，
+      // 新快照永远拍不出来，过渡会在 4 秒后以「DOM update timed out」整段作废
+      vt = document.startViewTransition(() => {
+        commitTheme(next);
+      });
+    } catch (e) {
+      revealing = false;
+      root.classList.remove('vt-expand', 'vt-shrink');
+      freezeTransitions(false);
+      resumeUniverse();
+      if (persist) saveTheme(next);
+      return;
+    }
+
+    vt.ready
+      .then(() => {
+        // 快照已经拍完，可以把过渡放开了；揭幕是 CSS 动画，不受它影响
+        freezeTransitions(false);
+      })
+      .catch(() => {
+        // 过渡被跳过 / 打断：快照已经是新主题，放开过渡就行
+        freezeTransitions(false);
+      });
+
+    vt.finished
+      .catch(() => {})
+      .finally(() => {
+        revealing = false;
+        resumeUniverse();
+        freezeTransitions(false);
+        // 让快照先销毁，下一拍再摘掉方向类，免得和销毁撞在同一帧。
+        // 带 seq 判断：连点时下一轮已经开始，不能把它的层序一起摘了
+        setTimeout(() => {
+          if (seq === vtSeq) root.classList.remove('vt-expand', 'vt-shrink');
+        }, 0);
+        if (persist) saveTheme(next);
+        if (deferredAppearance) {
+          deferredAppearance = false;
+          applyConfigEverywhere(state.cfg);
+        }
+        // 连点攒下来的目标：这一圈走完了再补一次；已经到位就不用再动
+        const queued = pendingTheme;
+        pendingTheme = null;
+        if (queued && queued !== shownTheme) {
+          paintThemeSwitch(queued, null, true);
+        }
+      });
+  }
+
+  /** 揭幕进行中又点了按钮：不打断这一圈，只记下最终该去哪 */
+  let pendingTheme = null;
+  /** 揭幕的「第几轮」：上一轮延迟摘 vt-shrink 的回调不能把下一轮的层序也摘了 */
+  let vtSeq = 0;
+
+  btnTheme.onclick = (ev) => {
+    // 跟随系统时点一下 = 离开自动、钦定为当前的反色。
+    // 基数取「正在路上」的目标而不是屏幕上的主题：连点三下就等于翻三次，
+    // 结果停在深色，而不是三次都算出「浅色」把自己绕回去。
+    const base = pendingTheme || shownTheme;
+    const next = base === 'light' ? 'dark' : 'light';
+    if (revealing) {
+      // 手速再快也不打断正在播的那一圈：界面按自己的节奏走完，
+      // 点击也不丢 —— 记到最后一次的目标，这一圈结束后接着往那儿走
+      pendingTheme = next;
+      return;
+    }
+    pendingTheme = null;
+    paintThemeSwitch(next, ev, true);
   };
+
+  /*
+   * 跟随系统：配置里是 'system' 时，系统换主题就跟着换。
+   * 没有点击位置，圆心用 revealOrigin 的兜底（按钮中心）—— 和点按钮的效果一致。
+   * 这里不写配置：用户选的是「跟随」，不是选边。
+   */
+  const sysTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  const onSystemTheme = () => {
+    const mode = (state.cfg && state.cfg.ui && state.cfg.ui.theme) || 'light';
+    if (mode !== 'system') return;
+    const want = appearance.resolveTheme('system');
+    // 比的是「页面上现在显示的是哪一侧」，不是 themeIsLight()：
+    // change 事件到达时 matchMedia 已经是新值了，拿它去解析配置只会和 want 相等，
+    // 于是每次都判定「已经切过了」直接返回 —— 这就是跟随系统一直不生效的原因
+    const shown = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    if (want === shown) return;
+    // 正播着揭幕就先不动：这时硬改主题会让快照和实时页面错位
+    if (revealing) return;
+    // 系统那边换了模式就直接换，不做揭幕：用户并没有在这里点任何东西，
+    // 突然放一圈动画只会让人以为程序在自己乱动
+    commitTheme(want);
+    releaseInstantSoon();
+  };
+  if (sysTheme) {
+    if (sysTheme.addEventListener) sysTheme.addEventListener('change', onSystemTheme);
+    else if (sysTheme.addListener) sysTheme.addListener(onSystemTheme); // 老内核
+  }
 
   const rerun = $('#btnRerunGuide');
   if (rerun) rerun.onclick = () => onboard.open();
@@ -422,6 +647,7 @@ async function boot() {
    */
   await appearance.loadInstalledFonts();
   // 主题和字体必须在其它页面 init 之前落下去，否则会先按默认深色画一帧再跳色
+  shownTheme = appearance.resolveTheme(((state.cfg && state.cfg.ui) || {}).theme);
   appearance.applyAppearance(state.cfg);
   updateChrome();
 
@@ -444,18 +670,11 @@ async function boot() {
   });
 
   state.on((cfg) => {
-    appearance.applyAppearance(cfg);
-    updateChrome();
-    Object.keys(PAGES).forEach((k) => {
-      if (PAGES[k].onConfigChanged) {
-        try {
-          PAGES[k].onConfigChanged();
-        } catch (e) {
-          /* ignore */
-        }
-      }
-    });
-    paintRanges();
+    if (revealing) {
+      deferredAppearance = true;
+      return;
+    }
+    applyConfigEverywhere(cfg);
   });
 
   // 滑块拖动时实时更新已填充进度
@@ -488,6 +707,9 @@ async function boot() {
   if (!state.cfg.onboarded || !state.configured) {
     onboard.open();
   }
+
+  // 界面到这就算落位了（引导浮层也挂好了），让启动画面开始退场
+  dismissBootSplash();
 }
 
 /**
@@ -499,6 +721,7 @@ async function boot() {
  */
 boot().catch((e) => {
   console.error(e);
+  dismissBootSplash(true); // 启动失败：先让开，别把错误挡在启动画面后面
   document.body.innerHTML =
     '<div style="padding:40px;color:#ff8f97;font-family:monospace">启动失败：' + (e && e.message) + '</div>';
 });

@@ -588,13 +588,13 @@ async function syncLocalNotice() {
   }
 }
 
-async function prepareLocal() {
+async function prepareLocal(opts) {
   const cfg = state.cfg || {};
   const sync = cfg.sync || {};
   // 没绑目录、或用户自己关了自动拉取 → 什么都不做，照常读列表
   if (!cfg.localDir || sync.autoPull === false) {
     clearLocalNotice();
-    await load();
+    await load(opts);
     return;
   }
 
@@ -604,7 +604,7 @@ async function prepareLocal() {
   } catch (e) {
     // 探测不了就照旧，也别把上一次的报错一直挂着（确认不了的错误不该报错）
     clearLocalNotice();
-    await load();
+    await load(opts);
     return;
   }
 
@@ -642,12 +642,20 @@ async function prepareLocal() {
       clearLocalNotice();
       break;
   }
-  await load();
+  await load(opts);
 }
 
 /* ---------------------------------------------------------------- 数据加载 */
 
-async function load() {
+/**
+ * 读当前目录。
+ *
+ * opts.silent：静默刷新 —— 不铺骨架屏、不清选择，数据回来只补差异。
+ *   「每次进文件管理都闪一下骨架」就是它治的：页面上本来就有上一次的内容，
+ *   把它清掉再画一遍纯属自找闪烁。
+ */
+async function load(opts) {
+  const silent = !!(opts && opts.silent);
   if (view.loading) return;
   // 换了目录就把上一批缩略图 blob 回收掉；同目录刷新（提交后重载）保留缓存，
   // 不然每次刷新都要把一屏图重新解码一遍
@@ -657,9 +665,11 @@ async function load() {
     load.__lastDir = dirKey;
   }
   view.loading = true;
-  view.selected.clear();
-  updateSelectionBar();
-  showSkeleton();
+  if (!silent) {
+    view.selected.clear();
+    updateSelectionBar();
+    showSkeleton();
+  }
   // 容量条和列表数据没关系，先挂上去：列表就算读失败（比如这台机器没配 Token），
   // 它也该照常显示，不该跟着一起消失
   refreshCloudQuota();
@@ -683,8 +693,14 @@ async function load() {
     view.localReady = !!res.localReady;
     view.shown = PAGE;
   } catch (e) {
-    view.items = [];
     err(e.message || String(e));
+    // 静默刷新失败：手上还有上一批内容就别推翻它 —— 一次网络抖动不该把
+    // 用户眼前的列表清成错误页，提示一句就够
+    if (silent && view.items.length) {
+      view.loading = false;
+      return;
+    }
+    view.items = [];
     renderGrid(
       '<div class="big">读不到内容</div>' +
         escapeHtml(friendlyError(e.message)) +
@@ -1245,6 +1261,7 @@ function showSkeleton() {
   empty.hidden = true;
   grid.innerHTML = sklTiles(12);
   grid.classList.remove('list-view');
+  gridSig = '';
 }
 
 /** 上次用的视图模式（记在配置的 ui.manageView 里）；没有就网格 */
@@ -1271,11 +1288,29 @@ function setViewMode(mode, persist, paint) {
   if (paint !== false) renderGrid();
 }
 
+/**
+ * 上一次真正画进 DOM 的那批内容（模式 + 目录 + 每一项的路径/大小/时间）。
+ *
+ * 静默刷新时数据往往一模一样，这时候再 innerHTML 一遍 = 所有缩略图重新解码、
+ * 入场动画重播 —— 用户看到的就是「刷新了一下」。签名没变就直接跳过。
+ */
+let gridSig = '';
+
+function gridSignature(mode, slice) {
+  let s = mode + '|' + view.dir + '|' + slice.length;
+  for (let i = 0; i < slice.length; i++) {
+    const it = slice[i];
+    s += '|' + it.path + ':' + it.size + ':' + it.mtime + ':' + (it.type || '');
+  }
+  return s;
+}
+
 function renderGrid(placeholder) {
   const grid = $('#mgGrid');
   const empty = $('#mgEmpty');
   const head = $('#mgListHead');
   if (placeholder) {
+    gridSig = '';
     grid.innerHTML = '';
     if (head) head.hidden = true;
     empty.hidden = false;
@@ -1285,6 +1320,7 @@ function renderGrid(placeholder) {
   const list = filtered();
   view.hasTime = list.some((i) => !!i.mtime);
   if (!list.length) {
+    gridSig = '';
     grid.innerHTML = '';
     if (head) head.hidden = true;
     empty.hidden = false;
@@ -1295,6 +1331,16 @@ function renderGrid(placeholder) {
   }
   empty.hidden = true;
   const slice = list.slice(0, view.shown);
+  const sig = gridSignature(view.mode, slice);
+  // 内容没变：保住现有 DOM（缩略图、选中态、滚动位置都在里面）
+  if (sig === gridSig && grid.querySelector('.tile')) {
+    grid.classList.toggle('list-view', view.mode === 'list');
+    if (head) head.hidden = false;
+    syncListHead();
+    syncHeadCheck();
+    return;
+  }
+  gridSig = sig;
   grid.innerHTML = slice.map((it, idx) => tileHtml(it, idx)).join('');
   grid.classList.toggle('list-view', view.mode === 'list');
   syncListHead();
@@ -2119,6 +2165,33 @@ function bind() {
   });
 }
 
+/* ---------------------------------------------------------------- 侧栏收起 */
+
+/**
+ * 侧栏收起 / 展开。
+ *
+ * 真正动的只有 <div class="mg-body"> 上那一个类，宽度、淡出、把手的位移
+ * 全在 CSS 里过渡 —— 这里一帧都不碰样式，收起时才不会一顿一顿的。
+ *
+ * save 为真才落盘（ui.mgSideCollapsed）：页面初始化、切配置这些「跟着配置走」
+ * 的时机只回填状态，不能再写回去，否则一次启动会白写两遍配置。
+ */
+function applySideCollapsed(on, save) {
+  const body = $('#mgBody');
+  const btn = $('#btnMgSideToggle');
+  if (!body || !btn) return;
+  body.classList.toggle('side-collapsed', !!on);
+  btn.setAttribute('aria-expanded', on ? 'false' : 'true');
+  btn.title = on ? '展开侧栏' : '收起侧栏';
+  if (!save) return;
+  state.patch({ ui: { mgSideCollapsed: !!on } }).catch((e) => err(e.message || String(e)));
+}
+
+function savedSideCollapsed() {
+  const ui = (state.cfg && state.cfg.ui) || {};
+  return !!ui.mgSideCollapsed;
+}
+
 /* ---------------------------------------------------------------- 对外 */
 
 export default {
@@ -2126,17 +2199,30 @@ export default {
     $('#mgFormat').innerHTML = CPLinks.LINK_FORMATS.map((f) => '<option value="' + f.id + '">' + f.name + '</option>').join('');
     $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
     $('#btnMgGrid').classList.add('active');
+    applySideCollapsed(savedSideCollapsed(), false);
+    const sideBtn = $('#btnMgSideToggle');
+    if (sideBtn) {
+      sideBtn.onclick = () => {
+        const box = $('#mgBody');
+        if (!box) return;
+        applySideCollapsed(!box.classList.contains('side-collapsed'), true);
+      };
+    }
     bind();
   },
 
   onEnter() {
     // 先让本地目录就绪（空目录会自动克隆），再读列表 ——
-    // 反过来会先渲染一屏「空」，等克隆完再跳一下
-    prepareLocal();
+    // 反过来会先渲染一屏「空」，等克隆完再跳一下。
+    // 页面上已经有上一次的内容时走静默刷新：不铺骨架、不清选择，
+    // 数据没变连 DOM 都不重建（见 renderGrid 的签名比对）。
+    prepareLocal({ silent: view.items.length > 0 });
   },
 
   onConfigChanged() {
     $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
+    // 收起状态是配置的一部分：还原默认设置之后要跟着回去
+    applySideCollapsed(savedSideCollapsed(), false);
     // 切换归档配置会同时换掉远端仓库和本地目录，管理页里缓存的列表已经失效，
     // 必须回到根目录重载。用「仓库身份串」比对，避免只改链接规则也触发重载。
     const key = identityKey();
@@ -2149,6 +2235,6 @@ export default {
   },
 
   refresh() {
-    load();
+    load({ silent: view.items.length > 0 });
   }
 };

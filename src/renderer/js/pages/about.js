@@ -1,6 +1,6 @@
 /** 关于页：作者、技术栈、免费额度边界、致敬 PicX */
 
-import { $, escapeHtml } from '../lib/dom.js';
+import { $, err, escapeHtml } from '../lib/dom.js';
 import state from '../lib/state.js';
 
 const APP = '快捷文件分发服务@JIE';
@@ -164,6 +164,13 @@ function tech(info) {
   return shellTech(info).concat(CORE_TECH, tailTech(info));
 }
 
+/** 系统名：runtime.GOOS 给的是小写代号，直接摆出来像没写完 */
+function osLabel(info) {
+  const p = String((info && info.platform) || '');
+  if (!p) return '-';
+  return p.toLowerCase() === 'windows' ? 'Windows' : p;
+}
+
 /** 运行环境：同样是「跟着运行时走」的几张表，别把 Electron 那一行留给 Go 版 */
 function envRows(info) {
   const ua = navigator.userAgent || '';
@@ -230,8 +237,6 @@ function toggleTech(idx) {
 function render() {
   techOpen = -1;
   const info = state.info || {};
-  const used = info.cpuCount || navigator.hardwareConcurrency || '-';
-  const threads = Math.max(1, Math.min(16, navigator.hardwareConcurrency || 4));
   const TECH = tech(info);
 
   $('#aboutWrap').innerHTML =
@@ -298,8 +303,8 @@ function render() {
     'PicX（<a href="#" data-ext="https://github.com/XPoet/picx">GitHub</a>，作者 XPoet）' +
     '最早把「用 GitHub 仓库当图床」这件事做得足够简单、足够完整，' +
     '它对配置项的拆解、对链接规则的整理、对多级目录和批量操作的设计，都是这个项目直接借鉴的对象<br>' +
-    APP + ' 只是换了个思路——把同一件事放到本地，用原生性能重做一遍，并且顺手把「不只是图片」这件事补上' +
-    'PicX 的 AGPL-3.0 授权与它的作者，都值得被明确地写在这里' +
+    APP + ' 只是换了个思路，把同一件事放到本地，用原生性能重做一遍，' +
+    '并且顺手把「不只是图片」这件事补上，PicX 的 AGPL-3.0 授权与它的作者，都值得被明确地写在这里' +
     '</div>' +
     '</div>' +
     '</section>' +
@@ -309,15 +314,14 @@ function render() {
     '<div class="card-head"><h2>运行环境</h2></div>' +
     '<div class="card-body">' +
     '<dl class="kv">' +
-    '<dt>软件版本</dt><dd>' + escapeHtml(APP + ' ' + (info.version || '-')) + '</dd>' +
-    '<dt>作者</dt><dd>' + escapeHtml(AUTHOR) + '（' + escapeHtml(SITE) + '）</dd>' +
     envRows(info)
       .map((r) => '<dt>' + escapeHtml(r[0]) + '</dt><dd>' + escapeHtml(String(r[1])) + '</dd>')
       .join('') +
-    '<dt>操作系统</dt><dd>' + escapeHtml(info.platform || '-') + '</dd>' +
-    '<dt>CPU 逻辑核心</dt><dd>' + escapeHtml(String(used)) + ' 核（默认启用 ' + threads + ' 个压缩线程）</dd>' +
-    '<dt>配置文件</dt><dd>' + escapeHtml(info.configFile || '-') + '</dd>' +
-    '<dt>数据目录</dt><dd>' + escapeHtml(info.userData || '-') + '</dd>' +
+    '<dt>操作系统</dt><dd>' + escapeHtml(osLabel(info)) + '</dd>' +
+    '<dt>数据目录</dt><dd class="kv-row">' +
+    '<span>' + escapeHtml(info.userData || '-') + '</span>' +
+    '<button type="button" class="btn btn-ghost btn-sm kv-open" id="btnOpenDataDir" title="在资源管理器里打开数据目录">打开</button>' +
+    '</dd>' +
     '</dl>' +
     '</div>' +
     '</section>' +
@@ -343,7 +347,7 @@ function render() {
     '<p>用之前请过一眼，这几条是使用边界</p></div>' +
     '<div class="card-body about-disclaimer-copy">' +
     '本程序只读写你自己配置的仓库，不做任何数据上传或统计；' +
-    '删除与替换操作会真实提交到你的仓库，请谨慎操作——Git 保留完整历史记录，误删可以找回；' +
+    '删除与替换操作会真实提交到你的仓库，请谨慎操作；Git 保留完整历史记录，误删可以找回；' +
     '使用第三方免费服务时请遵守对应平台的服务条款，不要存放违规内容；' +
     '因上传违规内容被平台处置，或因此触犯相关法律法规的，均与本程序无关，责任由使用者自行承担' +
     '</div>' +
@@ -369,6 +373,11 @@ export default {
         foldBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
         const txt = foldBtn.querySelector('.aft-text');
         if (txt) txt.textContent = open ? (foldBtn.dataset.textClose || '收起') : (foldBtn.dataset.textOpen || '展开');
+        return;
+      }
+      // 「运行环境 → 数据目录」右边那个按钮：路径由后端自己取，这里只负责点
+      if (e.target.closest('#btnOpenDataDir')) {
+        window.cloudpic.shell.openDataDir().catch((e2) => err(e2.message || String(e2)));
         return;
       }
       const logo = e.target.closest('.about-logo');

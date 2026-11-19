@@ -114,7 +114,9 @@
       /** git-lfs 是否可用（只查本地，不触发下载） */
       lfsStatus: call('app:lfsStatus'),
       /** 下载安装 git-lfs（幂等；进度走 /ipc/events 的 SSE 流） */
-      lfsInstall: call('app:lfsInstall')
+      lfsInstall: call('app:lfsInstall'),
+      /** 扫本机有没有在跑的代理（系统代理 + 常见端口），设置页的「扫描」用它 */
+      detectProxy: call('app:detectProxy')
     },
     config: {
       get: call('config:get'),
@@ -166,7 +168,9 @@
     shell: {
       openExternal: call('shell:openExternal'),
       showItem: call('shell:showItem'),
-      openLocalDir: call('shell:openLocalDir')
+      openLocalDir: call('shell:openLocalDir'),
+      /** 打开程序的配置 / 数据目录（关于页「运行环境」那个按钮） */
+      openDataDir: call('shell:openDataDir')
     },
     /** 自动更新：查最新版 → 下载安装包 → 静默装上 */
     update: {

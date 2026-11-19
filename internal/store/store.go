@@ -102,19 +102,23 @@ func Defaults() map[string]any {
 			"manageView": "grid",
 			// 上传页「图片设置」折叠区是否展开。默认收起 —— 压缩/水印是低频设置
 			"imgSetOpen": false,
+			// 管理页左侧「云端 · 本地」那一栏是否收起。收起后宽度全给文件区
+			"mgSideCollapsed": false,
 		},
 	}
 }
 
-// defaultTheme 出厂默认主题：跟 Windows 的应用模式走（3.0.0 起的新功能）。
+// defaultTheme 出厂默认主题：白天。
+//
 // 只在两种时刻生效：配置文件不存在（第一次启动）、设置页点「恢复默认」。
 // 已有配置的用户永远不受影响 —— read() 的深度合并只补缺失字段，
-// ui.theme 在就原样保留；用户在设置里选过的主题不会被启动探测覆盖。
+// ui.theme 在就原样保留。
+//
+// 曾经跟 Windows 的「应用模式」走（3.0.0~3.6.0），现在固定白天：
+// 程序自己有一套星野/白天的视觉，默认落在哪一边该由程序说了算，
+// 跟着系统走的结果是同一台机器上两个人看到的首屏不一样。
 func defaultTheme() string {
-	if appsUseLightTheme() {
-		return "light"
-	}
-	return "dark"
+	return "light"
 }
 
 // Store 是配置文件的读写句柄。并发访问由 mu 保护：渲染层可能同时打多个接口。

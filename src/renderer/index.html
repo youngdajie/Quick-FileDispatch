@@ -10,6 +10,53 @@
 </head>
 <body>
 
+<!-- 启动画面：全屏、纯品牌色，不跟主题走。
+     为什么不跟主题：这会儿配置还没读出来，跟着猜反而会先闪一下另一种底色；
+     固定一套深色底 + 蓝色光晕，淡出时界面自己浮现，观感是连贯的。
+     层级压在窗口控制按钮（10001）之下 —— 启动时也能直接关窗口。 -->
+<div id="bootSplash" aria-hidden="true">
+  <div class="bs-inner">
+    <div class="bs-mark">
+      <!-- 就是程序自己的图标：蓝色渐变圆角方块 + 白色罗盘，只让罗盘图形归位 -->
+      <svg class="bs-logo" viewBox="0 0 1024 1024" aria-hidden="true">
+        <defs>
+          <linearGradient id="bsLogoG" x1="0" y1="0" x2="0.55" y2="1">
+            <stop offset="0%" stop-color="#4E9BEA"/>
+            <stop offset="100%" stop-color="#0B4A9C"/>
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="1024" height="1024" rx="256" fill="url(#bsLogoG)"/>
+        <g class="bs-rotor">
+          <circle cx="512" cy="512" r="235.71" fill="#FFFFFF" opacity="0.55"/>
+          <line x1="647.59" y1="512" x2="935.44" y2="512" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>
+          <line x1="607.87" y1="607.87" x2="811.42" y2="811.42" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>
+          <line x1="512" y1="647.59" x2="512" y2="935.44" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>
+          <line x1="416.13" y1="607.87" x2="212.58" y2="811.42" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>
+          <line x1="376.41" y1="512" x2="88.56" y2="512" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>
+          <line x1="416.13" y1="416.13" x2="212.58" y2="212.58" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>
+          <line x1="512" y1="376.41" x2="512" y2="88.56" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>
+          <line x1="607.87" y1="416.13" x2="811.42" y2="212.58" stroke="#FFFFFF" stroke-width="54.23" stroke-linecap="round"/>
+          <circle cx="512" cy="512" r="319.15" fill="none" stroke="#FFFFFF" stroke-width="54.23"/>
+          <circle cx="512" cy="512" r="258.65" fill="none" stroke="#FFFFFF" stroke-width="54.23"/>
+          <line x1="512" y1="512" x2="745.62" y2="512" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>
+          <line x1="512" y1="512" x2="677.2" y2="677.2" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>
+          <line x1="512" y1="512" x2="512" y2="745.62" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>
+          <line x1="512" y1="512" x2="346.8" y2="677.2" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>
+          <line x1="512" y1="512" x2="278.38" y2="512" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>
+          <line x1="512" y1="512" x2="346.8" y2="346.8" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>
+          <line x1="512" y1="512" x2="512" y2="278.38" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>
+          <line x1="512" y1="512" x2="677.2" y2="346.8" stroke="#FFFFFF" stroke-width="47.98" stroke-linecap="round"/>
+          <circle cx="512" cy="512" r="100.12" fill="#FFFFFF"/>
+          <circle cx="512" cy="512" r="35.46" fill="#12508F"/>
+        </g>
+      </svg>
+    </div>
+    <div class="bs-name">快捷文件分发服务<span class="bs-at">@JIE</span></div>
+    <div class="bs-sub">FILE DELIVERY SERVICE</div>
+    <div class="bs-line"></div>
+  </div>
+</div>
+
 <canvas id="universe" aria-hidden="true"></canvas>
 <!-- 浅色模式的自定义背景图（仅浅色生效；深色永远星野） -->
 <div id="customBg" aria-hidden="true"></div>
@@ -422,7 +469,7 @@
         </div>
         <input type="file" id="mgReplaceInput" hidden />
 
-        <div class="mg-body">
+        <div class="mg-body" id="mgBody">
           <aside class="mg-side" id="mgSide">
             <!-- 「状态」和「云端检测器」合并成一块：两者本来就在说同一件事
                  （本地与云端对得上吗），分成两栏只是多了个标题和一条分隔线。
@@ -441,6 +488,10 @@
             <!-- 存储用量（只有 CNB 有）。数据不全时整块藏起来，不留空壳 -->
             <div class="side-quota" id="mgQuota" hidden></div>
           </aside>
+          <!-- 收起侧栏：骑在左右两栏的分界线上，收起后贴到左边缘当把手 -->
+          <button type="button" class="mg-side-toggle" id="btnMgSideToggle" aria-controls="mgSide" aria-expanded="true" title="收起侧栏">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 6.5 8.5 12 14 17.5"/></svg>
+          </button>
           <div class="mg-main">
             <div class="mg-listhead" id="mgListHead" hidden>
               <span class="lh-check">
@@ -541,22 +592,16 @@
           <section class="card settings-half">
             <div class="card-head">
               <h2>网络代理</h2>
-              <p>访问 GitHub 慢或连不上时填；CNB 是国内平台，会自动直连</p>
+              <p>如果网络问题，请填写代理地址，支持http://和socks5://</p>
             </div>
             <div class="card-body">
-              <label class="field">
+              <div class="field">
                 <span class="field-label">代理地址</span>
-                <input type="text" id="cfgProxy" spellcheck="false" placeholder="127.0.0.1:7890" />
-              </label>
-              <p class="hint">
-                常见填法：<b>127.0.0.1:7890</b>（Clash 默认的 HTTP 端口）、
-                <b>socks5://127.0.0.1:7891</b>（Clash 默认的 SOCKS 端口）<br />
-                填了之后，上传、推送、以及下载 git-lfs 都会走它，<b>改完立即生效、不用重启</b><br />
-                <b>CNB 不受影响</b>：它是国内平台，流量一律直连 —— 走代理只会更慢
-                代理只作用于 GitHub 这类境外地址<br />
-                还有一点：<b>只开代理软件里的「系统代理」开关是不够的</b> —— 那项改的是
-                Windows 自己的设置（存在注册表里），本程序不读它在这里填上地址才算数
-              </p>
+                <div class="input-row">
+                  <input type="text" id="cfgProxy" spellcheck="false" placeholder="127.0.0.1:7890" aria-label="代理地址" />
+                  <button type="button" class="btn btn-ghost btn-sm proxy-act" id="btnProxyAct" title="扫描本机代理">扫描</button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -570,6 +615,13 @@
               <div class="field">
                 <span class="field-label">主题</span>
                 <div class="theme-cards" id="themeCards">
+                  <button type="button" class="theme-card tc-light" data-theme="light">
+                    <span class="tc-top">
+                      <span class="tc-name">浅色</span>
+                      <span class="tc-tick"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+                    </span>
+                    <span class="tc-preview"><i></i><i></i></span>
+                  </button>
                   <button type="button" class="theme-card tc-dark" data-theme="dark">
                     <span class="tc-top">
                       <span class="tc-name">深色</span>
@@ -577,9 +629,9 @@
                     </span>
                     <span class="tc-preview"><i></i><i></i></span>
                   </button>
-                  <button type="button" class="theme-card tc-light" data-theme="light">
+                  <button type="button" class="theme-card tc-system" data-theme="system">
                     <span class="tc-top">
-                      <span class="tc-name">浅色</span>
+                      <span class="tc-name">跟随系统</span>
                       <span class="tc-tick"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
                     </span>
                     <span class="tc-preview"><i></i><i></i></span>
@@ -601,7 +653,7 @@
                 <div class="bg-row">
                   <div class="bg-preview" id="bgPreview" title="当前背景图预览"></div>
                   <div class="bg-ops">
-                    <button type="button" class="btn btn-ghost btn-sm" id="btnBgPick">选择图片…</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnBgPick">选择图片</button>
                     <button type="button" class="btn btn-ghost btn-sm" id="btnBgClear">清除</button>
                   </div>
                 </div>

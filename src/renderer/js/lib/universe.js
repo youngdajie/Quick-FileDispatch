@@ -320,9 +320,39 @@ export function initUniverse() {
   sync();
 }
 
+/**
+ * 立刻把当前主题该有的样子画出来（同步，不等 rAF）。
+ *
+ * 只有一个调用点：昼夜切换的揭幕。view transition 的「新快照」是在 update
+ * 回调返回后**立刻**拍的，而星野平时要等下一帧才画第一颗星 —— 不在这里补一帧，
+ * 深色快照就是一块空底，动画放完星星才「啪」地冒出来。
+ *
+ * 注意别在 update 回调里 await rAF 再调别的：过渡期间 rAF 是停的，
+ * 等下去只会把过渡等超时（实测 4 秒后报 DOM update timed out，动画整段消失）。
+ */
+export function paintNow() {
+  sync();
+  if (mode === 'dark' && w > 0 && h > 0) drawDark();
+}
+
+/**
+ * 揭幕期间把星野停住（画面定格，不清屏）。
+ *
+ * 一次主题切换的主线程预算很紧：要拍两张全页快照、要重算全站颜色，
+ * 而星野每帧都在画几百个粒子 —— 两边抢同一个线程，掉的帧就出在动画上。
+ * 定格 540ms 看不出来（星星本来也动得慢），换动画的稳定。
+ * 不动画结束时由 resumeUniverse() 接着跑。
+ */
+export function suspendUniverse() {
+  pause();
+}
+
+export function resumeUniverse() {
+  if (mode === 'dark' && w > 0 && h > 0) play();
+}
+
 /** 自检用：看一眼当前跑没跑、是哪种形态、有多少粒子 */
-export function universeState() {
-  let giants = 0;
+export function universeState() {  let giants = 0;
   let comets = 0;
   for (let i = 0; i < field.length; i++) {
     if (field[i].giant) giants++;

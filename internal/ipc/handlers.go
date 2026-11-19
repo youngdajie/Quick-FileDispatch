@@ -199,10 +199,17 @@ func Register(r *Registry, env *Env) {
 			// 下面三个是 Go 版的运行信息。About 页的「技术栈」那一段是写死在
 			// 渲染层里的文字（还写着 Electron / Node.js），等 Go 版定型了要一起改。
 			"go":       runtime.Version(),
-			"shell":    "WebView2（internal/wvhost，纯 syscall 零依赖）",
+			"shell":    "WebView2",
 			"electron": "", // 明确留空：Go 版没有 Electron
 			"isDev":    false,
 		}, nil
+	})
+
+	// 扫一眼本机有没有在跑的代理（Windows 系统代理 → 常见端口的握手探测）。
+	// 设置页那个「扫描」按钮用它；找不到就返回 found:false，不报错 ——
+	// 「这台机器没开代理」是正常结果，不是异常。
+	r.Handle("app:detectProxy", func(json.RawMessage) (any, error) {
+		return netproxy.Detect(), nil
 	})
 
 	// 本机字体家族名。GDI 一次枚举搞定（见 internal/winfont），不再绕 PowerShell ——
@@ -311,6 +318,19 @@ func Register(r *Registry, env *Env) {
 			target = filepath.Dir(target)
 		}
 		return true, openExternal(target)
+	})
+
+	// 打开数据目录：关于页「运行环境 → 数据目录」右边那个按钮。
+	// 参数由后端自己取（渲染层只管点），少一条「前端递路径进来」的攻击面。
+	r.Handle("shell:openDataDir", func(json.RawMessage) (any, error) {
+		dir := env.ConfigDir
+		if dir == "" {
+			return false, errors.New("数据目录还没就绪")
+		}
+		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+			return false, fmt.Errorf("数据目录不存在：%s", dir)
+		}
+		return true, openExternal(dir)
 	})
 
 	// 在资源管理器里定位某个文件：用 /select, 让它在所在目录里被选中
