@@ -1,6 +1,6 @@
 /** 关于页：作者、技术栈、免费额度边界、致敬 PicX */
 
-import { $, escapeHtml, err, confirmDialog } from '../lib/dom.js';
+import { $, escapeHtml } from '../lib/dom.js';
 import state from '../lib/state.js';
 
 const APP = '快捷文件分发服务@JIE';
@@ -235,13 +235,19 @@ function render() {
   const TECH = tech(info);
 
   $('#aboutWrap').innerHTML =
-    /* hero：居中大图标 + 主色渐变底，参考「关于手机」的排法；
-       作者一行、两个链接另起一行 */
-    '<div class="about-hero">' +
-    '<div class="about-logo" title="点一下试试">' + LOGO_SVG + '</div>' +
+    '<section class="about-hero">' +
+    '<div class="about-identity">' +
+    '<div class="about-logo" title="快捷文件分发服务图标">' + LOGO_SVG + '</div>' +
+    '<div class="about-identity-copy">' +
+    '<div class="about-overline">FILE DELIVERY · WINDOWS</div>' +
     '<h2>' + escapeHtml(APP) + '</h2>' +
-    '<div class="ver">版本 ' + escapeHtml(info.version || '-') + ' · Windows 桌面版</div>' +
-    '<div class="author">作者：<b>' + escapeHtml(AUTHOR) + '</b></div>' +
+    '<div class="about-meta"><span class="about-version">v' + escapeHtml(info.version || '-') + '</span><span>Windows 桌面应用</span></div>' +
+    '</div></div>' +
+    '<div class="about-product-copy">' +
+    '<p class="about-lead">把 GitHub / CNB 仓库变成你的文件云</p>' +
+    '<p class="about-sublead">本机处理、直接同步，图片与普通文件都能轻松分发。</p>' +
+    '<div class="about-highlights"><span>图片本机压缩</span><span>GitHub + CNB</span><span>支持任意文件</span></div>' +
+    '<div class="author">由 <b>' + escapeHtml(AUTHOR) + '</b> 独立制作</div>' +
     '<div class="author-links">' +
     '<a href="#" data-ext="' + SITE + '" class="author-link" title="' + escapeHtml(SITE) + '">' + ICON_GLOBE +
     escapeHtml(SITE.replace('https://', '')) + '</a>' + SEP +
@@ -255,33 +261,10 @@ function render() {
     '电子邮件</a>' +
     '</div>' +
     '</div>' +
-
-    /* 这个程序在做什么 */
-    '<section class="card">' +
-    '<div class="card-head"><h2>这个程序在做什么</h2></div>' +
-    '<div class="card-body" style="font-size:13px;color:var(--text-dim);line-height:2">' +
-    '把免费的代码托管仓库当成文件仓库来用：图片在本机用多核 CPU 压缩好再推上去，其他文件原样上传，' +
-    '仓库装得下的东西这里都能分发' +
-    '<p style="margin:11px 0 2px;color:var(--text-dim)">这程序主要是自用，也会给我妹用——细节上多磨一磨，用起来就事半功倍</p>' +
-    '<button type="button" class="about-fold-toggle" id="aboutFoldToggle" data-fold="aboutFold"' +
-    ' data-text-open="展开看看都支持什么" data-text-close="收起" aria-expanded="false">' +
-    '<span class="aft-text">展开看看都支持什么</span>' + ICON_CHEVRON +
-    '</button>' +
-    '<div class="about-fold" id="aboutFold"><div class="about-fold-clip">' +
-    '<ul class="about-list">' +
-    '<li><b>不预设仓库和分支</b>——仓库名、分支自己填，分支默认 <span class="mono">main</span>，现在新建的仓库本来也就是它</li>' +
-    '<li><b>压缩用你的 CPU</b>——Worker 池 + OffscreenCanvas，多核并行，几十张图基本是点一下就完事，不再是 Web 版那种一张一张排队等</li>' +
-    '<li><b>不止是图片</b>——仓库能装什么，它就能管什么 只要不越过 CNB / GitHub 的配额，就不额外设限</li>' +
-    '<li><b>云端和本地是同一份东西</b>——仓库会拉到本地，管理界面直接读本地磁盘，所以翻起来是瞬时的；' +
-    '两边都能改名、移动、替换内容，本地改完点一下「提交并推送」就能推回云端</li>' +
-    '<li><b>第一次打开有引导</b>——选平台、填仓库与令牌（现场验证）、映射本地目录，一步步带过；不想走就按右上角 ❌ 退出，之后在「设置」页能重看</li>' +
-    '</ul>' +
-    '</div></div>' +
     '</div>' +
-    '</section>' +
 
     /* 技术栈：标签是按钮，说明默认折叠，点哪个看哪个 */
-    '<section class="card">' +
+    '<section class="card about-card about-tech">' +
     '<div class="card-head"><h2>用到了哪些技术</h2><p>点一下标签，在下面看它是干什么的</p></div>' +
     '<div class="card-body">' +
     '<div class="tech-tags">' +
@@ -292,7 +275,7 @@ function render() {
     '</section>' +
 
     /* 配额 */
-    '<section class="card">' +
+    '<section class="card about-card about-quota">' +
     '<div class="card-head"><h2>免费额度边界</h2>' +
     '<p>程序本身不设限，但仓库是别人的服务，这几条是官方红线，越过去会推不上去</p></div>' +
     '<div class="card-body">' +
@@ -307,7 +290,7 @@ function render() {
     '</section>' +
 
     /* 致敬 */
-    '<section class="card">' +
+    '<section class="card about-card about-tribute">' +
     '<div class="card-head"><h2>致敬</h2></div>' +
     '<div class="card-body">' +
     '<div class="tribute">' +
@@ -322,7 +305,7 @@ function render() {
     '</section>' +
 
     /* 环境 */
-    '<section class="card">' +
+    '<section class="card about-card about-environment">' +
     '<div class="card-head"><h2>运行环境</h2></div>' +
     '<div class="card-body">' +
     '<dl class="kv">' +
@@ -340,117 +323,31 @@ function render() {
     '</section>' +
 
     /* 快捷键 */
-    '<section class="card">' +
+    '<section class="card about-card about-shortcuts">' +
     '<div class="card-head"><h2>快捷键与小技巧</h2></div>' +
-    '<div class="card-body" style="font-size:13px;color:var(--text-dim);line-height:2.2">' +
-    '<div><kbd>Ctrl</kbd> + <kbd>V</kbd>　把剪贴板里的截图直接塞进上传队列</div>' +
-    '<div><kbd>Ctrl</kbd> + <kbd>N</kbd>　在文件管理页的当前目录下新建文件夹</div>' +
-    '<div>拖拽　从资源管理器拖一堆文件到窗口任意位置即可</div>' +
-    '<div>双击　在文件管理里进入文件夹，或放大看图片</div>' +
-    '<div>单击　选中文件（可多选），然后在顶部批量复制链接 / 导出 / 改名 / 删除</div>' +
-    '<div>文件右下角按钮　单文件的复制链接、预览、重命名 / 移动、替换内容、删除</div>' +
-    '<div>左侧状态区　本地改过文件后会亮出「提交并推送」，点一下同步到云端</div>' +
-    '<div><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd>　打开开发者工具，排查问题用</div>' +
-    '</div>' +
-    '</section>' +
-
-    /* 版本更新 */
-    '<section class="card">' +
-    '<div class="card-head"><h2>版本更新</h2>' +
-    '<p>从 CNB 的 Release 取最新版（国内直连）；有新版会提示，确认后自动下载并静默安装</p></div>' +
-    '<div class="card-body">' +
-    '<div class="upd-row">' +
-    '<button type="button" class="btn btn-ghost" id="btnCheckUpdate">检查更新</button>' +
-    '<span class="upd-status" id="updStatus">当前 ' + escapeHtml(info.version || '-') + '</span>' +
-    '<a class="upd-link" href="#" data-ext="https://cnb.cool/youngdajie/Quick-FileDispatch/-/releases">各版本发布页</a>' +
-    '</div>' +
+    '<div class="card-body about-shortcut-list">' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key"><kbd>Ctrl</kbd> + <kbd>V</kbd></span><span>把剪贴板里的截图直接塞进上传队列</span></div>' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key"><kbd>Ctrl</kbd> + <kbd>N</kbd></span><span>在文件管理页的当前目录下新建文件夹</span></div>' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key">拖拽</span><span>从资源管理器拖文件到窗口即可上传</span></div>' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key">双击</span><span>进入文件夹，或放大查看图片</span></div>' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key">单击文件</span><span>选中后可批量复制链接、导出、改名或删除</span></div>' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key">文件操作</span><span>复制链接、预览、重命名、移动、替换或删除</span></div>' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key">本地状态</span><span>有本地改动时点「提交并推送」同步到云端</span></div>' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd></span><span>打开开发者工具</span></div>' +
     '</div>' +
     '</section>' +
 
     /* 免责声明 */
-    '<section class="card">' +
+    '<section class="card about-card about-disclaimer">' +
     '<div class="card-head"><h2>免责声明</h2>' +
     '<p>用之前请过一眼，这几条是使用边界</p></div>' +
-    '<div class="card-body" style="font-size:12.5px;color:var(--muted);line-height:2">' +
+    '<div class="card-body about-disclaimer-copy">' +
     '本程序只读写你自己配置的仓库，不做任何数据上传或统计；' +
     '删除与替换操作会真实提交到你的仓库，请谨慎操作——Git 保留完整历史记录，误删可以找回；' +
     '使用第三方免费服务时请遵守对应平台的服务条款，不要存放违规内容；' +
     '因上传违规内容被平台处置，或因此触犯相关法律法规的，均与本程序无关，责任由使用者自行承担' +
     '</div>' +
     '</section>';
-}
-
-const fmtMB = (n) => (n > 0 ? (n / 1048576).toFixed(1) + ' MB' : '—');
-
-// 换行：写成转义序列而不是真的按回车 —— 这段字符串在外面还套着几层引号
-const JL = '\n';
-
-/**
- * 检查更新 → 提示 → 下载 → 静默安装。
- * 下载是后台的（后端异步跑），这里轮询 update:progress 显示进度 ——
- * 安装包 7 MB 上下，国内没代理时可能要等一会儿，不给进度的话像卡死了。
- */
-async function checkUpdateFlow() {
-  const btn = $('#btnCheckUpdate');
-  const st = $('#updStatus');
-  if (!btn || !st) return;
-  btn.disabled = true;
-  st.textContent = '正在检查…';
-  try {
-    const r = await window.cloudpic.update.check();
-    if (!r.hasUpdate) {
-      st.textContent = '已经是最新版（' + escapeHtml(r.current || '-') + '）';
-      btn.disabled = false;
-      return;
-    }
-    st.textContent = '发现新版本 ' + escapeHtml(r.latest);
-    const yes = await confirmDialog(
-      '发现新版本 ' + r.latest,
-      '当前 ' + r.current + ' → 最新 ' + r.latest + JL +
-        '点「立即更新」后会下载安装包并自动静默安装，程序会自己退出再起来' + JL +
-        '（想留个底就先把手头的活干完 —— 安装期间程序会用不了）' + JL + JL +
-        '各版本的更新说明见 CNB 发布页',
-      '立即更新'
-    );
-    if (!yes) {
-      st.textContent = '当前 ' + escapeHtml(r.current || '-');
-      btn.disabled = false;
-      return;
-    }
-    await runDownload(r);
-  } catch (e) {
-    st.textContent = '检查失败';
-    err(e.message || String(e));
-    btn.disabled = false;
-  }
-}
-
-async function runDownload(info) {
-  const btn = $('#btnCheckUpdate');
-  const st = $('#updStatus');
-  st.textContent = '正在下载 ' + escapeHtml(info.latest) + '…';
-  await window.cloudpic.update.download({ url: info.url, name: info.assetName, ver: info.latest });
-  const timer = setInterval(async () => {
-    try {
-      const p = await window.cloudpic.update.progress();
-      if (p.status === 'downloading') {
-        const pct = p.total > 0 ? Math.round((p.got / p.total) * 100) + '%' : '';
-        st.textContent = '正在下载… ' + pct + '（' + fmtMB(p.got) + ' / ' + fmtMB(p.total) + '）';
-      } else if (p.status === 'ready') {
-        clearInterval(timer);
-        st.textContent = '下载完成，正在安装…';
-        await window.cloudpic.update.install();
-        // 安装脚本会等两秒再跑，主程序这会儿马上退出
-      } else if (p.status === 'error') {
-        clearInterval(timer);
-        st.textContent = '下载失败';
-        err(p.error || '下载失败');
-        if (btn) btn.disabled = false;
-      }
-    } catch (e) {
-      /* 轮询失败就等下一轮 */
-    }
-  }, 400);
 }
 
 export default {
@@ -463,11 +360,6 @@ export default {
         return;
       }
       // 折叠：按 data-fold 找目标块，所以一个页面可以有好几个（额度边界也用它）
-      const updBtn = e.target.closest('#btnCheckUpdate');
-      if (updBtn) {
-        checkUpdateFlow();
-        return;
-      }
       const foldBtn = e.target.closest('.about-fold-toggle');
       if (foldBtn) {
         const target = document.getElementById(foldBtn.dataset.fold);

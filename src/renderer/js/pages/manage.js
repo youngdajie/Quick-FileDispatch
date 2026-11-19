@@ -1237,115 +1237,6 @@ function syncListHead() {
   });
 }
 
-/* ---------------------------------------------------------------- 列宽拖拽 */
-
-/* 列宽范围：太窄看不清，太宽会把名称列挤没 */
-const COL_LIMITS = { size: [56, 180], time: [80, 240] };
-
-/** 把配置里记的列宽应用到 .mg-main（--col-* 变量的作用域就在它上面） */
-function applyColWidths(cols) {
-  const main = document.querySelector('.mg-main');
-  if (!main) return;
-  const c = cols || {};
-  ['size', 'time'].forEach((k) => {
-    const v = Number(c[k]);
-    if (isFinite(v) && v > 0) main.style.setProperty('--col-' + k, Math.round(v) + 'px');
-  });
-}
-
-/**
- * 列宽拖拽（像 Windows 资源管理器那样拖列边界）。
- *
- * 命中判定按**坐标**算，不依赖 pointerdown 落在把手元素上：
- * 之前只判断 e.target.closest('.lh-grip')，而「大小」那个把手骑在按钮右边缘，
- * 用户实际点在按钮的 padding 里 → 抓不到；「修改时间」那边刚好能点到 →
- * 表现成「大小拖不动、时间能拖」。现在只要离把手中心 8px 内就算抓住。
- *
- * 只把两个固定列（大小 / 修改时间）的右边界做成把手；名称列 flex:1
- * 自动吸收剩余 —— 拖这两个边界时名称跟着反向变，三种宽度都能调。
- * 松手才写配置：拖动过程每帧写盘既慢又没必要。
- */
-function bindColResize() {
-  const head = $('#mgListHead');
-  if (!head) return;
-  const HIT = 8;
-  let suppressClick = false;
-
-  // 拖完松手会跟一个 click；不拦住的话表头会当成「点列头排序」
-  head.addEventListener(
-    'click',
-    (ev) => {
-      if (!suppressClick) return;
-      suppressClick = false;
-      ev.stopPropagation();
-      ev.preventDefault();
-    },
-    true
-  );
-
-  head.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    const grips = Array.from(head.querySelectorAll('.lh-grip')).filter((g) => g.offsetParent !== null);
-    let grip = null;
-    for (const g of grips) {
-      const r = g.getBoundingClientRect();
-      if (Math.abs(e.clientX - (r.left + r.width / 2)) <= HIT) {
-        grip = g;
-        break;
-      }
-    }
-    if (!grip || !grip.dataset.col) return;
-
-    e.preventDefault();
-    const col = grip.dataset.col;
-    // 「名称」右侧那根把手调的还是大小列，只是方向反过来：
-    // 向右拖 = 名称变宽 = 大小列变窄
-    const rev = grip.dataset.rev === '1';
-    const lim = COL_LIMITS[col] || [56, 240];
-    const main = document.querySelector('.mg-main');
-    if (!main) return;
-    const cur = parseFloat(getComputedStyle(main).getPropertyValue('--col-' + col)) || lim[0];
-    const startX = e.clientX;
-    const startW = cur;
-    let moved = false;
-    grip.classList.add('dragging');
-    try {
-      grip.setPointerCapture(e.pointerId);
-    } catch (err) {
-      /* 拿不到指针捕获也能靠 move 事件拖 */
-    }
-
-    const move = (ev) => {
-      const dx = ev.clientX - startX;
-      if (Math.abs(dx) > 2) moved = true;
-      const w = Math.max(lim[0], Math.min(lim[1], startW + (rev ? -dx : dx)));
-      main.style.setProperty('--col-' + col, Math.round(w) + 'px');
-    };
-    const up = () => {
-      grip.classList.remove('dragging');
-      grip.removeEventListener('pointermove', move);
-      grip.removeEventListener('pointerup', up);
-      grip.removeEventListener('pointercancel', up);
-      if (!moved) return; // 只点了一下没拖，不写配置
-      // 下一帧自动复位：万一没有 click 跟上来，也不会把后面的排序点吞掉
-      suppressClick = true;
-      setTimeout(() => {
-        suppressClick = false;
-      }, 0);
-      const final = Math.round(
-        parseFloat(getComputedStyle(main).getPropertyValue('--col-' + col)) || startW
-      );
-      const ui = (state.cfg && state.cfg.ui) || {};
-      const cols = Object.assign({}, ui.manageCols || {});
-      cols[col] = final;
-      state.patch({ ui: { manageCols: cols } }).catch(() => {});
-    };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up);
-    grip.addEventListener('pointercancel', up);
-  });
-}
-
 function showSkeleton() {
   const grid = $('#mgGrid');
   const empty = $('#mgEmpty');
@@ -2007,8 +1898,6 @@ function bind() {
 
   $('#btnMgGrid').onclick = () => setViewMode('grid', true);
   $('#btnMgList').onclick = () => setViewMode('list', true);
-  // 列宽拖拽（表头那条细线）
-  bindColResize();
   // 用上次记下的视图模式 —— 别再每次重启都退回网格。
   // paint=false：这时列表还没 load，重绘只会闪一下空状态
   setViewMode(savedViewMode(), false, false);
@@ -2063,6 +1952,48 @@ function bind() {
 
   const grid = $('#mgGrid');
   const main = $('.mg-main');
+
+  // 从资源管理器把文件拖进当前云端目录：先开小上传弹窗并预装文件，
+  // 不走上传首页的全局拖放队列，否则目标目录会被悄悄丢掉。
+  const hasFilePayload = (e) => {
+    const dt = e.dataTransfer;
+    if (!dt) return false;
+    if (dt.files && dt.files.length) return true;
+    if (Array.from(dt.types || []).includes('Files')) return true;
+    return Array.from(dt.items || []).some((item) => item.kind === 'file');
+  };
+  let fileDragDepth = 0;
+  main.addEventListener('dragenter', (e) => {
+    if (!hasFilePayload(e) || document.body.classList.contains('is-onboarding')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    fileDragDepth += 1;
+    main.classList.add('is-file-drop-active');
+  });
+  main.addEventListener('dragover', (e) => {
+    if (!hasFilePayload(e) || document.body.classList.contains('is-onboarding')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    main.classList.add('is-file-drop-active');
+  });
+  main.addEventListener('dragleave', (e) => {
+    if (!hasFilePayload(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    fileDragDepth = Math.max(0, fileDragDepth - 1);
+    if (!fileDragDepth) main.classList.remove('is-file-drop-active');
+  });
+  main.addEventListener('drop', (e) => {
+    if (!hasFilePayload(e) || document.body.classList.contains('is-onboarding')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    fileDragDepth = 0;
+    main.classList.remove('is-file-drop-active');
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) openMiniUpload(view.dir, () => load(), files);
+    else warn('没有读取到文件，请再拖放一次');
+  });
 
   // 单击：只有点在复选框上才算「选中」，点条目本身不再改变选中状态
   grid.addEventListener('click', (e) => {
@@ -2196,8 +2127,6 @@ export default {
     $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
     $('#btnMgGrid').classList.add('active');
     bind();
-    // 恢复上次调好的列宽（没有就用 CSS 里的默认值）
-    applyColWidths((state.cfg && state.cfg.ui && state.cfg.ui.manageCols) || null);
   },
 
   onEnter() {
@@ -2208,9 +2137,6 @@ export default {
 
   onConfigChanged() {
     $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
-    // 配置里的列宽可能被导入 / 另一处改动覆盖，跟着重新应用
-    applyColWidths((state.cfg && state.cfg.ui && state.cfg.ui.manageCols) || null);
-
     // 切换归档配置会同时换掉远端仓库和本地目录，管理页里缓存的列表已经失效，
     // 必须回到根目录重载。用「仓库身份串」比对，避免只改链接规则也触发重载。
     const key = identityKey();

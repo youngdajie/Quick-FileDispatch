@@ -695,8 +695,9 @@ function close() {
  * 打开 mini 上传弹窗。
  * @param {string} dir 目标目录（仓库内相对路径，根目录为空串）
  * @param {Function} [onDone] 有文件成功上传时、弹窗关闭后调用（用来刷新文件管理页）
+ * @param {FileList|File[]} [initialFiles] 打开后立即加入待上传列表，不会自动开始上传
  */
-export function openMiniUpload(dir, onDone) {
+export function openMiniUpload(dir, onDone, initialFiles) {
   const old = document.getElementById('miniUpWrap');
   if (old && old.parentNode) old.parentNode.removeChild(old);
 
@@ -715,5 +716,6 @@ export function openMiniUpload(dir, onDone) {
   document.body.appendChild(wrap);
   wire(target);
   updateSummary();
+  if (initialFiles && initialFiles.length) addFiles(initialFiles);
   return { close };
 }

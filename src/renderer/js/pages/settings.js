@@ -37,6 +37,10 @@ const PLATFORM_NAME = { github: 'GitHub', cnb: 'CNB' };
 const platOf = (v) => (v === 'cnb' ? 'cnb' : 'github');
 const activeProfileId = () => (state.cfg && state.cfg.activeProfileId) || '';
 
+// Profile rows contain their own entrance animation. Keep the rendered list
+// stable for theme and active-profile changes so that animation does not replay.
+let renderedProfileSignature = null;
+
 const profileLabel = (p) =>
   p.name || [p.owner, p.repo].filter(Boolean).join('/') || '未命名配置';
 
@@ -59,21 +63,17 @@ const CD_ICON = {
   monitor:
     '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M9 20h6"/></svg>',
   swap:
-    '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v15"/><path d="M5 7l3-3 3 3"/><path d="M16 20V5"/><path d="M13 17l3 3 3-3"/></svg>'
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14"/><path d="m15.5 5 3 3-3 3"/><path d="M19 16H5"/><path d="m8.5 13-3 3 3 3"/></svg>',
+  edit:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>',
+  rename:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M4 17h16M4 12h6"/><path d="m16 5 4 4-4 4"/></svg>',
+  del:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"/></svg>'
 };
 
 function profileRow(p) {
   const plat = PLATFORM_NAME[platOf(p.platform)] || 'GitHub';
-  const bits = [];
-  if (p.verified) {
-    bits.push('<span class="pf-badge ok">已归档</span>');
-    if (p.repoInfo && p.repoInfo.private) bits.push('<span class="pf-badge">私有</span>');
-    if (p.verifiedAt) bits.push('<span class="pf-sub">' + fmtDate(p.verifiedAt) + ' 验证</span>');
-  } else {
-    bits.push('<span class="pf-badge warn">待验证</span>');
-  }
-  if (!p.hasToken) bits.push('<span class="pf-badge danger">无 Token</span>');
-
   const ruleId = p.linkRule || 'auto';
   const rule = CPLinks.LINK_RULES.find((r) => r.id === ruleId);
   const ruleText =
@@ -85,37 +85,43 @@ function profileRow(p) {
   const localVal = p.localDir || '';
   const cloudTitle = cloudVal || '未填写仓库';
   const localTitle = localVal || '未绑定本地目录';
+  const detailTitle = [
+    p.verified ? '已归档' : '待验证',
+    p.repoInfo && p.repoInfo.private ? '私有仓库' : '',
+    p.hasToken ? 'Token 已配置' : '缺少 Token',
+    p.verifiedAt ? fmtDate(p.verifiedAt) + ' 验证' : '',
+    ruleText
+  ].filter(Boolean).join(' · ');
+  const status = !p.hasToken
+    ? { cls: 'danger', text: '缺少 Token' }
+    : p.verified
+      ? { cls: 'ok', text: '已验证' }
+      : { cls: 'warn', text: '待验证' };
 
-  /* 正方形卡片：①左上角「当前」角标（选中时）②平台 ③「云端 ↕ 本地」小图
-     ④别名 ⑤状态徽章行 ⑥链接规则 ⑦操作按钮沉底
-     角标单独拎到 .pf-row 的直接子级：它要绝对定位贴左上角，
-     留在 .pf-top 里就得跟着那行的居中和间距走 */
+  /* 密集配置条：名称和平台优先，仓库 / 目录路径及次要状态通过 title 按需查看。 */
   return (
     '<div class="pf-row' + (p.isActive ? ' active' : '') + '" data-id="' + escapeHtml(p.id) + '">' +
-    (p.isActive ? '<span class="pf-cur">当前</span>' : '') +
+    '<span class="pf-brand" style="--pf-brand-color:' + BRAND_TILE[platOf(p.platform)] + '" aria-hidden="true">' + brandIcon(platOf(p.platform), 15) + '</span>' +
     '<div class="pf-top">' +
+    '<span class="pf-alias" title="' + escapeHtml(profileLabel(p)) + '">' + escapeHtml(profileLabel(p)) + '</span>' +
+    '<span class="pf-state ' + status.cls + '" title="' + escapeHtml(detailTitle) + '"><i aria-hidden="true"></i>' + status.text + '</span>' +
     '<span class="pf-platform pf-' + escapeHtml(p.platform || 'github') + '">' + plat + '</span>' +
     '</div>' +
     '<div class="pf-cd">' +
-    '<div class="pf-cd-row' + (cloudVal ? '' : ' bad') + '">' +
+    '<div class="pf-cd-row' + (cloudVal ? '' : ' bad') + '" title="' + escapeHtml(cloudTitle) + '">' +
     '<span class="pf-cd-ico cloud">' + CD_ICON.cloud + '</span>' +
-    '<span class="pf-cd-label" title="' + escapeHtml(cloudTitle) + '">云端</span>' +
+    '<span class="pf-cd-label">云端</span>' +
     '</div>' +
     '<div class="pf-cd-link">' + CD_ICON.swap + '</div>' +
-    '<div class="pf-cd-row' + (localVal ? '' : ' bad') + '">' +
+    '<div class="pf-cd-row' + (localVal ? '' : ' bad') + '" title="' + escapeHtml(localTitle) + '">' +
     '<span class="pf-cd-ico local">' + CD_ICON.monitor + '</span>' +
-    '<span class="pf-cd-label" title="' + escapeHtml(localTitle) + '">本地</span>' +
+    '<span class="pf-cd-label">本地</span>' +
     '</div>' +
-    '</div>' +
-    (p.name ? '<div class="pf-alias">' + escapeHtml(p.name) + '</div>' : '') +
-    '<div class="pf-meta">' +
-    '<div class="pf-badges">' + bits.join('') + '</div>' +
-    '<span class="pf-rule">' + escapeHtml(ruleText) + '</span>' +
     '</div>' +
     '<div class="pf-ops">' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-act="edit" title="打开向导修改这份配置">修改</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-act="rename" title="重命名这份配置">改名</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-act="del" title="删除这份配置">删除</button>' +
+    '<button type="button" class="pf-op" data-act="edit" aria-label="修改配置" title="修改配置">' + CD_ICON.edit + '</button>' +
+    '<button type="button" class="pf-op" data-act="rename" aria-label="重命名配置" title="重命名配置">' + CD_ICON.rename + '</button>' +
+    '<button type="button" class="pf-op danger" data-act="del" aria-label="删除配置" title="删除配置">' + CD_ICON.del + '</button>' +
     '</div>' +
     '</div>'
   );
@@ -126,13 +132,42 @@ function sortProfiles(a, b) {
   return (b.verifiedAt || b.createdAt || 0) - (a.verifiedAt || a.createdAt || 0);
 }
 
+function profileSignature(list) {
+  return JSON.stringify(list.map((p) => [
+    p.id,
+    p.platform,
+    p.owner,
+    p.repo,
+    p.localDir,
+    p.name,
+    p.verified,
+    p.repoInfo && p.repoInfo.private,
+    p.verifiedAt,
+    p.hasToken,
+    p.linkRule
+  ]));
+}
+
+function syncActiveProfileRows(box) {
+  const activeId = activeProfileId();
+  box.querySelectorAll('.pf-row').forEach((row) => {
+    const active = row.dataset.id === activeId;
+    row.classList.toggle('active', active);
+  });
+}
+
 function renderProfiles() {
   const list = state.archivedProfiles.slice().sort(sortProfiles);
   const box = $('#profileList');
   const empty = $('#profileEmpty');
   const count = $('#profCount');
   if (!box) return;
-  box.innerHTML = list.map(profileRow).join('');
+  const signature = profileSignature(list);
+  if (signature !== renderedProfileSignature) {
+    box.innerHTML = list.map(profileRow).join('');
+    renderedProfileSignature = signature;
+  }
+  syncActiveProfileRows(box);
   empty.hidden = list.length > 0;
   box.hidden = list.length === 0;
 
@@ -581,8 +616,7 @@ async function installLfs() {
 
 export default {
   init() {
-    // 平台展示：官方 SVG + 各自品牌色。这两个平台是「程序支持什么」，
-    // 不是一个开关 —— 选哪个平台是新建向导第一步的事
+    // 平台标识只展示可连接的平台；实际选择仍在新建向导第一步完成。
     const brand = $('#platBrand');
     if (brand) {
       brand.innerHTML = ['github', 'cnb']
@@ -593,7 +627,7 @@ export default {
             escapeHtml(PLATFORM_NAME[id]) +
             '</span>'
         )
-        .join('<span class="plat-brand-x">×</span>');
+        .join('');
     }
 
     $('#btnProfNew').onclick = () => {

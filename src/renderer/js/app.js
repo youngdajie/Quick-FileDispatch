@@ -1,6 +1,6 @@
 /** 应用入口：路由 + 顶栏状态 + 首次启动引导 */
 
-import { $, err, toast, paintRanges, paintRange } from './lib/dom.js';
+import { $, err, toast, modal, paintRanges, paintRange } from './lib/dom.js';
 import { enhanceAll } from './lib/cselect.js';
 import { enhanceNumbers } from './lib/numfield.js';
 import { installTooltips } from './lib/tooltip.js';
@@ -18,13 +18,58 @@ import aboutPage from './pages/about.js';
  * 顶栏那个昼夜按钮的图标：露出来的永远是「点了会变成什么」。
  * 深色主题下显示太阳（点击转亮），浅色主题下显示月亮（点击转暗）。
  */
-const ICON_SUN =
-  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
-  '<circle cx="12" cy="12" r="4"/>' +
-  '<path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>';
-const ICON_MOON =
-  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
-  '<path d="M20.6 14.7A8.6 8.6 0 0 1 9.3 3.4a8.6 8.6 0 1 0 11.3 11.3z"/></svg>';
+let themeIconMotionId = 0;
+let themeIconTimer = 0;
+let themeIconSwitchTimer = 0;
+
+function setThemeButtonIcon(light) {
+  const button = $('#btnTheme');
+  if (!button) return;
+  button.querySelector('.theme-icon-sun')?.classList.toggle('is-current', !light);
+  button.querySelector('.theme-icon-moon')?.classList.toggle('is-current', light);
+  const label = light ? '切换到深色模式' : '切换到浅色模式';
+  button.title = label;
+  button.setAttribute('aria-label', label);
+}
+
+function syncThemeButtonIcon(light) {
+  const button = $('#btnTheme');
+  if (!button) return;
+  if (button.classList.contains('theme-spinning')) {
+    button.dataset.themeTarget = light ? 'light' : 'dark';
+    return;
+  }
+  setThemeButtonIcon(light);
+}
+
+function spinThemeButtonIcon(light) {
+  const button = $('#btnTheme');
+  if (!button) return;
+  const motionId = ++themeIconMotionId;
+  button.dataset.themeTarget = light ? 'light' : 'dark';
+  button.classList.remove('theme-spinning');
+  void button.offsetWidth;
+  button.classList.add('theme-spinning');
+  if (themeIconSwitchTimer) clearTimeout(themeIconSwitchTimer);
+  if (themeIconTimer) clearTimeout(themeIconTimer);
+
+  const switchIcon = () => {
+    if (motionId !== themeIconMotionId) return;
+    setThemeButtonIcon(button.dataset.themeTarget === 'light');
+    themeIconSwitchTimer = 0;
+  };
+  const finish = () => {
+    if (motionId !== themeIconMotionId) return;
+    if (themeIconTimer) clearTimeout(themeIconTimer);
+    if (themeIconSwitchTimer) clearTimeout(themeIconSwitchTimer);
+    switchIcon();
+    button.classList.remove('theme-spinning');
+    themeIconTimer = 0;
+  };
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  themeIconSwitchTimer = setTimeout(switchIcon, reducedMotion ? 1 : 245);
+  themeIconTimer = setTimeout(finish, reducedMotion ? 150 : 590);
+}
 
 /** 当前是不是浅色主题（配置为准，不是看 DOM） */
 function themeIsLight() {
@@ -39,6 +84,7 @@ const PAGES = {
 };
 
 let current = 'upload';
+let updateActionRunning = false;
 
 /**
  * 内容区的滚动分流：短页面铺满、不滚；真长起来的内容照常滚。
@@ -132,15 +178,108 @@ function updateChrome() {
   const info = state.info || {};
   $('#cpuBadge').textContent = (info.cpuCount || navigator.hardwareConcurrency || '-') + ' 核';
   $('#cpuBadge').title = '压缩线程池按 CPU 核心数并行';
-  $('#verBadge').textContent = 'v' + (info.version || '1.2');
+  if (!updateActionRunning) $('#verBadgeText').textContent = 'v' + (info.version || '1.2');
 
   // 顶栏的昼夜按钮跟着配置走。state 每次变更都会回到这儿，
   // 所以在设置页里点主题卡片，顶栏图标也会跟着换，不会两边对不上。
   const btnTheme = $('#btnTheme');
   if (btnTheme) {
-    const light = themeIsLight();
-    btnTheme.innerHTML = light ? ICON_MOON : ICON_SUN;
-    btnTheme.title = light ? '切换到深色模式' : '切换到浅色模式';
+    syncThemeButtonIcon(themeIsLight());
+  }
+}
+
+const formatUpdateSize = (bytes) => (bytes > 0 ? (bytes / 1048576).toFixed(1) + ' MB' : '—');
+const RELEASES_URL = 'https://cnb.cool/youngdajie/Quick-FileDispatch/-/releases';
+
+function confirmUpdate(result) {
+  return new Promise((resolve) => {
+    let decided = false;
+    const finish = (yes) => {
+      if (decided) return;
+      decided = true;
+      resolve(yes);
+    };
+    modal({
+      title: '发现新版本 ' + result.latest,
+      text: '当前 ' + result.current + ' → 最新 ' + result.latest + '\n' +
+        '确认后会下载安装包并自动安装，程序会退出再重新启动。\n\n' +
+        '安装期间程序暂时无法使用。',
+      actions: [{
+        label: '版本说明',
+        title: '打开 CNB 版本发布页',
+        onClick: () => window.cloudpic.shell.openExternal(RELEASES_URL)
+      }],
+      buttons: [
+        { label: '稍后', onClick: () => finish(false) },
+        { label: '下载并重启', primary: true, onClick: () => finish(true) }
+      ],
+      onClose: () => finish(false)
+    });
+  });
+}
+
+async function waitForUpdateDownload() {
+  const label = $('#verBadgeText');
+  await new Promise((resolve, reject) => {
+    let polling = false;
+    const timer = setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const progress = await window.cloudpic.update.progress();
+        if (progress.status === 'downloading') {
+          const pct = progress.total > 0 ? Math.round((progress.got / progress.total) * 100) + '%' : '';
+          label.textContent = '下载 ' + pct;
+          $('#verBadge').title = '正在下载：' + formatUpdateSize(progress.got) + ' / ' + formatUpdateSize(progress.total);
+        } else if (progress.status === 'ready') {
+          clearInterval(timer);
+          label.textContent = '安装中…';
+          $('#verBadge').title = '下载完成，正在安装更新';
+          await window.cloudpic.update.install();
+          resolve();
+        } else if (progress.status === 'error') {
+          clearInterval(timer);
+          reject(new Error(progress.error || '下载失败'));
+        }
+      } catch (error) {
+        clearInterval(timer);
+        reject(error);
+      } finally {
+        polling = false;
+      }
+    }, 400);
+  });
+}
+
+async function checkForUpdates() {
+  const badge = $('#verBadge');
+  const label = $('#verBadgeText');
+  if (!badge || updateActionRunning) return;
+  updateActionRunning = true;
+  badge.disabled = true;
+  badge.classList.add('is-busy');
+  badge.title = '正在检查更新';
+  label.textContent = '检查中…';
+  try {
+    const result = await window.cloudpic.update.check();
+    if (!result.hasUpdate) {
+      toast('当前已是最新版（v' + (result.current || (state.info && state.info.version) || '-') + '）', 'ok');
+      return;
+    }
+    const confirmed = await confirmUpdate(result);
+    if (!confirmed) return;
+    badge.title = '正在下载更新';
+    label.textContent = '下载中…';
+    await window.cloudpic.update.download({ url: result.url, name: result.assetName, ver: result.latest });
+    await waitForUpdateDownload();
+  } catch (error) {
+    err(error.message || String(error));
+  } finally {
+    updateActionRunning = false;
+    badge.disabled = false;
+    badge.classList.remove('is-busy');
+    label.textContent = 'v' + ((state.info && state.info.version) || '1.2');
+    badge.title = '检查软件更新';
   }
 }
 
@@ -154,6 +293,8 @@ function bindChrome() {
       go(b.dataset.page);
     };
   });
+
+  $('#verBadge').onclick = checkForUpdates;
 
   /*
    * 昼夜切换：**即时响应优先**。
@@ -178,8 +319,7 @@ function bindChrome() {
 
   function paintThemeNow(t) {
     const light = t === 'light';
-    btnTheme.innerHTML = light ? ICON_MOON : ICON_SUN;
-    btnTheme.title = light ? '切换到深色模式' : '切换到浅色模式';
+    syncThemeButtonIcon(light);
     const root = document.documentElement;
     root.classList.add('theme-instant');
     // 只换变量和窗口底色，不跑毛玻璃那套遍历 DOM 的重活（留给 emit 那一次）
@@ -211,21 +351,10 @@ function bindChrome() {
     state.cfg = Object.assign({}, cfg, {
       ui: Object.assign({}, cfg.ui || {}, { theme: next })
     });
+    spinThemeButtonIcon(next === 'light');
     paintThemeNow(next);
-    // 一个干脆的短反馈；没有涟漪、没有光晕
-    btnTheme.classList.remove('tick');
-    void btnTheme.offsetWidth;
-    btnTheme.classList.add('tick');
     themeQueued = next;
     flushTheme();
-  };
-
-  $('#btnRefreshAll').onclick = async () => {
-    await state.refresh();
-    // 本地改动可能来自外部编辑器，刷新时顺手重算 Git 状态
-    if (PAGES[current].refresh) PAGES[current].refresh();
-    else if (PAGES[current].onEnter) PAGES[current].onEnter();
-    toast('已刷新', 'ok', 1400);
   };
 
   const rerun = $('#btnRerunGuide');
@@ -353,8 +482,7 @@ async function boot() {
 
   go('upload');
 
-  // 侧栏闲置自动收起（20 秒），鼠标碰到左边那条提示线再弹回来
-  initSidebarAutoHide();
+  // 导航侧栏常驻；桌面工作区不因空闲状态改变布局。
 
   // 没走完引导就不让用：配置齐全只是「能连上」，走完引导才算「会用了」
   if (!state.cfg.onboarded || !state.configured) {
@@ -369,37 +497,6 @@ async function boot() {
  * 用 transform 而不是改宽度/display，是因为它不参与布局，右边的 .content
  * 不会跟着跳。
  */
-function initSidebarAutoHide() {
-  const bar = document.getElementById('sidebar');
-  const dock = document.getElementById('sideDock');
-  if (!bar || !dock) return;
-  // 20 秒没碰就自动收起 —— 10 秒太急，看一眼文件回来侧栏就没了
-  const IDLE_MS = 20000;
-  let timer = null;
-
-  const schedule = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => document.body.classList.add('side-hidden'), IDLE_MS);
-  };
-  const expand = () => {
-    document.body.classList.remove('side-hidden');
-    schedule();
-  };
-
-  // 鼠标在侧栏里就一直展开着（暂停倒计时），移开之后才开始算 20 秒
-  bar.addEventListener('mouseenter', () => clearTimeout(timer));
-  bar.addEventListener('mouseleave', schedule);
-  // 碰那条提示线 → 弹出来
-  dock.addEventListener('mouseenter', expand);
-  dock.addEventListener('click', expand);
-  // Tab 键把焦点送进侧栏时也要展开，否则焦点跑进了一个看不见的东西里
-  bar.addEventListener('focusin', expand);
-  // 页面切换（点是导航）时重新计时，别让用户刚点完就被收走
-  bar.addEventListener('click', schedule);
-
-  schedule();
-}
-
 boot().catch((e) => {
   console.error(e);
   document.body.innerHTML =

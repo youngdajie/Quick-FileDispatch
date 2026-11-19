@@ -1060,11 +1060,24 @@ function bindDrop() {
   });
 }
 
+function bindUploadOptions() {
+  const toggle = $('#upOptionsToggle');
+  const body = $('#upOptionsBody');
+  if (!toggle || !body) return;
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    body.hidden = !open;
+    $('#page-upload').classList.toggle('options-open', open);
+  });
+}
+
 /* ---------------------------------------------------------------- 导出 */
 
 export default {
   init() {
     bindDrop();
+    bindUploadOptions();
     fillOptions();
     bindResultActions();
 

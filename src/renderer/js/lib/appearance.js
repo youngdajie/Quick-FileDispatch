@@ -13,28 +13,15 @@ export const THEMES = ['dark', 'light'];
 const THEME_BG = { dark: '#070b12', light: '#eef1f6' };
 
 /**
- * 系统兜底字栈：没选自定义字体时用这套。
- *
- * 霞鹜文楷（LXGW WenKai）排在最前 —— 它就是本程序的界面主字体。
- * 装了就整个界面用它（中文比雅黑耐看，正文尤其明显），没装就往后落到
- * 微软雅黑 UI / Segoe UI，和以前一模一样，不会因为少了它变难看。
- *
- * 中英文两个家族名都写上：字体文件里中英文名是两条记录，
- * 而 CSS 匹配哪条得看系统语言，两条都排上才稳。
+ * 系统兜底字栈：没选自定义字体时从平台系统字体开始。
+ * system-ui 在 Windows 上解析为系统界面字体，中文字形再由本地中文字体接续。
  */
-const PRIMARY_FAMILIES = ['"霞鹜文楷 屏幕阅读版"', '"LXGW WenKai Screen"'];
+const PRIMARY_FAMILIES = ['system-ui', '-apple-system', '"Segoe UI"', '"Microsoft YaHei UI"', '"PingFang SC"'];
 
-/** 程序主字体的名字（界面文案里用；字体没装时字栈会自己往后落） */
-export const PRIMARY_FONT_NAME = '霞鹜文楷';
+/** 设置页默认选中的平台字体；用户可继续选择本机安装的其它字体。 */
+export const PRIMARY_FONT_NAME = 'Segoe UI';
 
-const BASE_FAMILIES = PRIMARY_FAMILIES.concat([
-  '"Microsoft YaHei UI"',
-  '"PingFang SC"',
-  '"Segoe UI"',
-  'system-ui',
-  '-apple-system',
-  'sans-serif'
-]);
+const BASE_FAMILIES = PRIMARY_FAMILIES.concat(['sans-serif']);
 const DEFAULT_STACK = BASE_FAMILIES.join(', ');
 
 /** 把「所选字体 + 系统兜底」拼成 font-family，并去掉重复项（选的就是默认字体时不出现两遍） */
