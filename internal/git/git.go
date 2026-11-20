@@ -2,7 +2,7 @@
 //
 // 为什么是「调 git.exe」而不是用 Go 的 git 库：这个程序的同步逻辑
 // （clone / commit / push / 凭据、以及 CNB 那套固定用户名 cnb 的地址拼法）
-// Electron 版已经在 src/main/git.js 里调通了，行为一模一样最省心 ——
+// Electron 版已经在 src/main/git.js 里调通了，行为一模一样最省心，
 // 用户机器上本来就有 git，换个库反而要担心 LF/CRLF、credential helper 这些差异。
 //
 // 通道名 / 返回字段严格对齐 src/main/git.js 与 main.js 里的 ipcMain.handle，
@@ -29,7 +29,7 @@ import (
 // PATH。程序自动装的 git-lfs 放在配置目录里（不动系统、不要管理员权限），
 // 所以每次起 git 子进程都得把这个目录塞进 PATH。
 //
-// 只影响**子进程**的环境，不改用户的系统 PATH —— 这是刻意的：
+// 只影响**子进程**的环境，不改用户的系统 PATH，这是刻意的：
 // 改注册表级别的 PATH 是侵入性的，而且某些情况下要提权。
 var extraPath string
 
@@ -51,7 +51,7 @@ func gitEnv() []string {
 		"LANG=en_US.UTF-8",
 	)
 	// 用户在设置里填了代理就带上。
-	// git 自己不读 Windows「设置 → 代理」那套（它在注册表里），只认环境变量 ——
+	// git 自己不读 Windows「设置 → 代理」那套（它在注册表里），只认环境变量，
 	// 而这里是 os.Environ() 全量继承再追加，塞进去就能生效（见 internal/netproxy）。
 	env = append(env, netproxy.Env()...)
 	return env
@@ -68,7 +68,7 @@ func prependPath(env []string, dir string) []string {
 	sep := string(os.PathListSeparator)
 	for i, kv := range env {
 		if len(kv) >= len(key) && strings.EqualFold(kv[:len(key)], key) {
-			// 用 kv[:len(key)] 而不是 key —— 保留系统原来的写法（Path= / PATH=）
+			// 用 kv[:len(key)] 而不是 key，保留系统原来的写法（Path= / PATH=）
 			env[i] = kv[:len(key)] + dir + sep + kv[len(key):]
 			return env
 		}
@@ -89,7 +89,7 @@ type result struct {
 
 // Run 执行一条 git 命令，把结果收敛成人话。
 //
-// 它是 run() 的导出形式，给 internal/lfs 这类兄弟包用 ——
+// 它是 run() 的导出形式，给 internal/lfs 这类兄弟包用，
 // 那些包要调 git 但又不想各自复制一套「找 git、设环境、藏窗口」的逻辑。
 func Run(ctx context.Context, dir string, timeout time.Duration, args ...string) OpResult {
 	r := run(ctx, args, dir, timeout)
@@ -108,7 +108,7 @@ func SetConfig(ctx context.Context, dir, key, value string) {
 
 // HideWindow 是 hideWindow 的导出形式，给兄弟包（internal/lfs）复用。
 //
-// 不直接把 hideWindow 改名导出，是为了不动这里已有的十来个调用点 ——
+// 不直接把 hideWindow 改名导出，是为了不动这里已有的十来个调用点，
 // 那属于「为了整洁去改一堆没坏的东西」，风险不值。
 func HideWindow(cmd *exec.Cmd) { hideWindow(cmd) }
 
@@ -146,7 +146,7 @@ var versionRe = regexp.MustCompile(`(\d+\.\d+\.\d+)`)
 
 // Version 返回形如 "2.47.0" 的版本号；没装 git 返回空串。
 //
-// 结果在一个进程里只探一次 —— git 版本不会中途变，而 git:version 是被
+// 结果在一个进程里只探一次，git 版本不会中途变，而 git:version 是被
 // 引导流程和设置页反复问的通道。
 func Version(ctx context.Context) string {
 	versionOnce.Do(func() {
@@ -196,7 +196,7 @@ func Status(ctx context.Context, dir string) map[string]any {
 	return map[string]any{"dirty": changes > 0, "changes": changes}
 }
 
-// RepoSummary 是分支 / HEAD / 远端地址。远端地址里的凭据要去掉再给界面 ——
+// RepoSummary 是分支 / HEAD / 远端地址。远端地址里的凭据要去掉再给界面，
 // Token 就拼在 URL 里，直接显示出去等于在界面上明文露一次。
 func RepoSummary(ctx context.Context, dir string) map[string]any {
 	if !IsRepo(ctx, dir) {

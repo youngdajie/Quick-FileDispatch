@@ -18,7 +18,7 @@ import aboutPage from './pages/about.js';
  * 顶栏那个昼夜按钮的图标：露出来的永远是「点了会变成什么」。
  * 深色主题下显示太阳（点击转亮），浅色主题下显示月亮（点击转暗）。
  *
- * 只换图标，不做旋转 —— 那圈 590ms 的转圈纯属自娱自乐：揭幕本身已经把
+ * 只换图标，不做旋转，那圈 590ms 的转圈纯属自娱自乐：揭幕本身已经把
  * 主题切换讲清楚了，再转一个图标只是让人多等半秒。
  */
 function setThemeButtonIcon(light) {
@@ -35,7 +35,7 @@ function setThemeButtonIcon(light) {
  * 揭幕的时长与缓动写在 CSS 里（html.vt-expand / html.vt-shrink 那两条），
  * JS 只负责把圆心和最远半径写进 --vt-x / --vt-y / --vt-r。
  *
- * 为什么不在 JS 里 animate：见 app.css 同一段的注释 —— ready 之后挂动画
+ * 为什么不在 JS 里 animate：见 app.css 同一段的注释，ready 之后挂动画
  * 会漏掉开头一帧「无裁剪」，看上去就是瞬间全屏。
  */
 
@@ -43,7 +43,7 @@ function setThemeButtonIcon(light) {
  * 等到「下一帧画完」（两次 rAF）。
  *
  * 只在降级路径用：瞬时切色时，样式改完要等浏览器真的画过一帧，
- * 才好把 transition 放回去 —— 放开早了，颜色会从旧值慢慢爬过去。
+ * 才好把 transition 放回去，放开早了，颜色会从旧值慢慢爬过去。
  *
  * ⚠️ 千万别在 startViewTransition 的 update 回调里 await 它：过渡期间
  * rAF 是停的，await 下去新快照永远拍不出来，过渡会在 4 秒后以
@@ -57,7 +57,7 @@ function nextPaint() {
 
 /**
  * 圆心取点击位置：白转黑从这一点铺开，黑转白从四周收回这一点。
- * 键盘触发（clientX/Y 都是 0）退到按钮中心，再退到视口中心 ——
+ * 键盘触发（clientX/Y 都是 0）退到按钮中心，再退到视口中心，
  * 圆心落在左上角是这套动效最难看的一种失败态，三级兜底不能省。
  */
 function revealOrigin(ev) {
@@ -73,13 +73,13 @@ function revealOrigin(ev) {
  *
  * 不能直接读 state.cfg.ui.theme：那个值可能是 'system'，而且要等 state 更新才变；
  * 揭幕期间连点、系统主题变化都要立刻读到新值，所以单独记一份。
- * 配置里存的「模式」和这里记的「显示值」是两件事 —— 混在一起的结果就是
+ * 配置里存的「模式」和这里记的「显示值」是两件事，混在一起的结果就是
  * 跟随系统时被 commitTheme 悄悄改写成 'dark'，之后再也不会跟着系统变。
  */
 let shownTheme = 'dark';
 
 /**
- * 配置里现在记着的是哪一侧（可能是 'system'）—— 顶栏按钮据此判断「还要不要写盘」。
+ * 配置里现在记着的是哪一侧（可能是 'system'），顶栏按钮据此判断「还要不要写盘」。
  *
  * 放模块级是因为它有两个写入方：揭幕落盘成功之后写，以及任何一次配置回灌
  * （applyConfigEverywhere，比如在设置页选主题）。只让揭幕那条路写，会和配置
@@ -102,7 +102,7 @@ let bootDismissed = false;
  * 收起启动画面。
  *
  * 界面（尤其是首屏的缩略图和字体）往往已经渲染好了，但 splash 上那几段
- * 动画才播到一半 —— 等到最短停留时间再淡出，节奏才是稳的，不会「闪一下」。
+ * 动画才播到一半，等到最短停留时间再淡出，节奏才是稳的，不会「闪一下」。
  * force 用于启动失败：那时要立刻让开，把错误露出来。
  */
 function dismissBootSplash(force) {
@@ -143,11 +143,11 @@ let deferredAppearance = false;
 /**
  * 内容区的滚动分流：短页面铺满、不滚；真长起来的内容照常滚。
  *
- * 为什么不靠纯 CSS：短页面在内容区底下总会多算 5px 上下的 scrollHeight ——
+ * 为什么不靠纯 CSS：短页面在内容区底下总会多算 5px 上下的 scrollHeight，
  * 遍历内容区所有后代都没元素越界（offenders 为空），说明那几像素不属于任何元素，
  * 是滚动容器自己的计算。min-height / height / flex / grid / overflow / 负 margin /
  * 收 padding 全试过，按不住。所以按「溢出量」分流：十几像素以内的一律当
- * 「本该铺满」，把滚动关掉 —— 就多那几像素，裁掉也看不见。
+ * 「本该铺满」，把滚动关掉，就多那几像素，裁掉也看不见。
  *
  * ⚠️ 内容**变化时也要重算**：上传页的「图片设置」是可以展开的，展开后页面长高，
  * 这里要跟着把滚动放开，否则鼠标滚不动、设置项够不着（就是漏了这一点出的问题）。
@@ -155,7 +155,7 @@ let deferredAppearance = false;
 /**
  * 量一次并决定要不要滚。
  *
- * ⚠️ 只在**值真的变化**时才写 style —— 这是必须的：
+ * ⚠️ 只在**值真的变化**时才写 style，这是必须的：
  * 写 overflowY 会让滚动条出现/消失，进而改变 clientHeight，
  * 而 ResizeObserver 正盯着这块；每次无条件改写就形成
  * 「改 → 触发 RO → 再改」的自激循环，浏览器直接报
@@ -171,7 +171,7 @@ function applyFit() {
    * 展开时 pages/upload.js 会在 .upload-options-shell 后面插一块滚动占位
    * （.up-scroll-pad），就是为了让 scrollHeight 够把 shell 顶到内容区顶部。
    * 但占位高度 = clientHeight - shellHeight - 40，窗口矮、shell 又高的时候
-   * 它会被压到 0，这时 slack 可能落进下面那 20px 的「短页面」判据里 ——
+   * 它会被压到 0，这时 slack 可能落进下面那 20px 的「短页面」判据里，
    * 一旦判成 hidden，收起前内容区就彻底滚不动，scrollTo 变成空操作
    * （QA 实测：空队列时 scrollTop 恒为 0）。所以展开期间直接放行。
    *
@@ -191,7 +191,7 @@ function applyFit() {
 }
 
 /**
- * 量一次不够 —— 切页后布局往往还在动（字体、缩略图、折叠动画 0.34s），
+ * 量一次不够，切页后布局往往还在动（字体、缩略图、折叠动画 0.34s），
  * 当下量到的还没到最终高度。所以要等一下按「稳定后」的高度再量一次，
  * 否则会出现「明明该滚却滚不动」或者相反的情况。
  */
@@ -223,7 +223,7 @@ function go(name) {
   document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.page === name));
   document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
   $('#content').scrollTop = 0;
-  // 短页面在内容区底下总会多算 5px 上下的 scrollHeight —— 遍历内容区里所有后代，
+  // 短页面在内容区底下总会多算 5px 上下的 scrollHeight，遍历内容区里所有后代，
   // 没有任何元素越界（offenders 为空），说明这几像素不属于任何元素，是滚动容器
   // 自己的计算。CSS 那边试过 min-height / height / flex / grid / overflow /
   // 负 margin / 收 padding，全都按不住它。
@@ -271,9 +271,8 @@ function confirmUpdate(result) {
     };
     modal({
       title: '发现新版本 ' + result.latest,
-      text: '当前 ' + result.current + ' → 最新 ' + result.latest + '\n' +
-        '确认后会下载安装包并自动安装，程序会退出再重新启动。\n\n' +
-        '安装期间程序暂时无法使用。',
+      text: '最新版本 v' + result.latest + '，点击确认自动升级并重启\n\n' +
+        '当前版本 v' + result.current + '；安装期间程序暂时无法使用。',
       actions: [{
         label: '版本说明',
         title: '打开 CNB 版本发布页',
@@ -363,7 +362,7 @@ function applyConfigEverywhere(cfg) {
   // 配置落回来了：显示值以它为准（'system' 在这里解析成具体哪一侧）
   shownTheme = appearance.resolveTheme(((cfg && cfg.ui) || {}).theme);
   // 「已落盘的主题」也跟着配置走。不跟的话，在设置页改主题（走的是同一份配置）
-  // 之后顶栏按钮会拿着旧的已落盘值做判重，点一下只换皮不写盘 —— 配置记的还是
+  // 之后顶栏按钮会拿着旧的已落盘值做判重，点一下只换皮不写盘，配置记的还是
   // 设置页选的那一侧，看着像「点了没用」。
   savedCfgTheme = ((cfg && cfg.ui) || {}).theme || savedCfgTheme;
   appearance.applyAppearance(cfg);
@@ -399,10 +398,10 @@ function bindChrome() {
    *
    * 现在分三层：
    *   1) 视觉：新主题从一个圆里扩散出来盖掉旧主题。两帧快照由浏览器合成，
-   *      clip-path 动画走 WAAPI，不触发页面逐元素重算 —— 这才是「丝滑」的来源。
+   *      clip-path 动画走 WAAPI，不触发页面逐元素重算，这才是「丝滑」的来源。
    *   2) 快照：update 回调里同步换色（带 .theme-instant 掐过渡，否则新快照会
    *      拍到过渡起点的旧颜色），星野也当场补画一帧。
-   *   3) 落盘：动画结束后才写配置 —— 写盘回来的 emit 会再跑一遍全站外观和
+   *   3) 落盘：动画结束后才写配置，写盘回来的 emit 会再跑一遍全站外观和
    *      各页回调，那批活放在动画窗口里就是掉帧，放动画之后没人看得见。
    */
   const btnTheme = $('#btnTheme');
@@ -419,7 +418,7 @@ function bindChrome() {
    * 当场换色：只改显示值与 DOM，不碰配置。
    *
    * 配置里那句 ui.theme 有可能是 'system'，改它等于把「跟随系统」降级成
-   * 一次性钦定 —— 系统再变就没人听了。
+   * 一次性钦定，系统再变就没人听了。
    */
   function commitTheme(t) {
     shownTheme = t;
@@ -479,7 +478,7 @@ function bindChrome() {
    * 方向与作用于哪一层：
    *   白 → 黑：动 new 层，clip 从 0 到 R（新主题从圆心铺开）
    *   黑 → 白：动 old 层，clip 从 R 到 0（旧主题收回圆心，露出下面的新主题）
-   * 后者不能动 new —— 那会变成「白圆缩小、四周还是黑」，与直觉相反。
+   * 后者不能动 new，那会变成「白圆缩小、四周还是黑」，与直觉相反。
    */
   function paintThemeSwitch(next, ev, persist) {
     if (revealing) return; // 连点：等这一圈走完再说，别互相打断
@@ -573,7 +572,7 @@ function bindChrome() {
    *
    * 为什么不能用 pendingTheme / shownTheme 当基数：
    * 第一轮的 commitTheme() 是在 ViewTransition 的 update 回调里跑的，同一 tick
-   * 内连点时 shownTheme 还停在旧值上 —— 第 2、3 次点击于是都把目标又算回原方向，
+   * 内连点时 shownTheme 还停在旧值上，第 2、3 次点击于是都把目标又算回原方向，
    * 三连点最后反而停在原主题（QA 实测：同 tick 三连点停浅色，还白跑了两圈过渡）。
    * 单独记一份「期望终点」，连点才真的等于翻三次。
    * 每一轮落定后清成 null（见 vt.finished / releaseInstantSoon），
@@ -592,7 +591,7 @@ function bindChrome() {
     targetTheme = next;
     if (revealing) {
       // 手速再快也不打断正在播的那一圈：界面按自己的节奏走完，
-      // 点击也不丢 —— 记到最后一次的目标，这一圈结束后接着往那儿走
+      // 点击也不丢，记到最后一次的目标，这一圈结束后接着往那儿走
       pendingTheme = next;
       return;
     }
@@ -602,7 +601,7 @@ function bindChrome() {
 
   /*
    * 跟随系统：配置里是 'system' 时，系统换主题就跟着换。
-   * 没有点击位置，圆心用 revealOrigin 的兜底（按钮中心）—— 和点按钮的效果一致。
+   * 没有点击位置，圆心用 revealOrigin 的兜底（按钮中心），和点按钮的效果一致。
    * 这里不写配置：用户选的是「跟随」，不是选边。
    */
   const sysTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -612,7 +611,7 @@ function bindChrome() {
     const want = appearance.resolveTheme('system');
     // 比的是「页面上现在显示的是哪一侧」，不是 themeIsLight()：
     // change 事件到达时 matchMedia 已经是新值了，拿它去解析配置只会和 want 相等，
-    // 于是每次都判定「已经切过了」直接返回 —— 这就是跟随系统一直不生效的原因
+    // 于是每次都判定「已经切过了」直接返回，这就是跟随系统一直不生效的原因
     const shown = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
     if (want === shown) return;
     // 正播着揭幕就先不动：这时硬改主题会让快照和实时页面错位
@@ -651,7 +650,7 @@ function bindWindowControls() {
  * 关掉浏览器的表单自动填充。
  *
  * 「桌面程序」里最露馅的一刻：点进一个之前填过的输入框，Edge 弹一个
- * 「已保存的内容」下拉，或者自动补一坨黄底蓝字 —— 一秒回到网页。
+ * 「已保存的内容」下拉，或者自动补一坨黄底蓝字，一秒回到网页。
  *
  * 两层都堵上：
  *   1. 给所有 input/textarea 打 autocomplete="off"（拦下拉保存框）
@@ -757,7 +756,7 @@ async function boot() {
 /**
  * 侧栏闲置自动收起。
  *
- * 收起状态挂在 body 的 .side-hidden 上，具体动作由 CSS 做（transform 平移出屏）——
+ * 收起状态挂在 body 的 .side-hidden 上，具体动作由 CSS 做（transform 平移出屏），
  * 用 transform 而不是改宽度/display，是因为它不参与布局，右边的 .content
  * 不会跟着跳。
  */

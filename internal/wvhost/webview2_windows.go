@@ -68,7 +68,7 @@ func writeAtomically(path string) error {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		// 目标已存在（上一次运行写的，或正被本进程加载着）——只要文件在就用它
+		// 目标已存在（上一次运行写的，或正被本进程加载着），只要文件在就用它
 		if _, statErr := os.Stat(path); statErr == nil {
 			return nil
 		}
@@ -99,7 +99,7 @@ var wv webview
 // keptHandlers 钉住交给 COM 的回调对象。
 //
 // createWebView 返回后这些局部变量就从 Go 侧「不可达」了，但 COM 还握着
-// 它们的裸指针随时要回调 —— GC 一收就是拿野虚表调函数，症状随机
+// 它们的裸指针随时要回调，GC 一收就是拿野虚表调函数，症状随机
 // （窗口闪没、崩溃、回调不触发）。COM 不参与 Go 的 GC，必须自己保活。
 var keptHandlers []*comHandler
 
@@ -132,7 +132,7 @@ func createWebView(userDataDir, url string, bg uint32) error {
 				return sOK
 			}
 			// 必须自己 AddRef 持有：回调一返回 WebView2 会释放它那侧的引用，
-			// 没人持有的话对象直接被析构——后续浏览器进程会跟着被优雅关闭，
+			// 没人持有的话对象直接被析构，后续浏览器进程会跟着被优雅关闭，
 			// 症状就是「浏览器子进程起来一秒内全体静默退出」。
 			comAddRef(env)
 			wv.env = env
@@ -155,7 +155,7 @@ func createWebView(userDataDir, url string, bg uint32) error {
 		0, // environmentOptions：nil 用默认；调试参数走环境变量 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 		envDone.self)
 	if hr != sOK {
-		return fmt.Errorf("创建 WebView2 环境失败（HRESULT 0x%X）——多半是没装 WebView2 运行时", hr)
+		return fmt.Errorf("创建 WebView2 环境失败（HRESULT 0x%X），多半是没装 WebView2 运行时", hr)
 	}
 	return nil
 }
@@ -185,7 +185,7 @@ func onControllerReady(ctrl unsafe.Pointer, url string, bg uint32) {
 	// 打开后渲染层现成的 -webkit-app-region: drag（Electron 的拖动机制，
 	// app.css 的 .topbar 上就写着）由 WebView2 原生接管：拖动、双击最大化
 	// 都走系统非客户区路径。不能靠 bridge.js 的 mousedown 垫片自己发
-	// WM_NCLBUTTONDOWN —— 按下时浏览器进程握着鼠标捕获，宿主的拖动循环
+	// WM_NCLBUTTONDOWN，按下时浏览器进程握着鼠标捕获，宿主的拖动循环
 	// 启动了也收不到移动，实测窗口纹丝不动（2026-09-23）。
 	if settings := vcallOut(wv.core, 3); settings != nil {
 		// ICoreWebView2Settings 基接口（不需要 QI），vtable 顺序对着 WebView2.h
@@ -205,7 +205,7 @@ func onControllerReady(ctrl unsafe.Pointer, url string, bg uint32) {
 
 		// [槽 14] put_AreDefaultContextMenusEnabled(false)：全局关掉浏览器默认
 		// 右键菜单。注意语义：只关浏览器自带的菜单，页面 DOM 的 contextmenu
-		// 事件仍照常触发 —— 文件管理页 manage.js 自己的右键菜单（contextmenu
+		// 事件仍照常触发，文件管理页 manage.js 自己的右键菜单（contextmenu
 		// 里 preventDefault + 自绘 .menu）继续工作，其它页面右键则无菜单。
 		vcall(settings, 14, 0)
 
@@ -237,14 +237,14 @@ func onControllerReady(ctrl unsafe.Pointer, url string, bg uint32) {
 func fitToBounds(ctrl unsafe.Pointer) {
 	r := clientRect(gHwnd.Load())
 	// put_Bounds(RECT) [槽 6]。x64 ABI：大于 8 字节的结构体按**引用**传
-	// （调用方复制一份、传指针）—— 不是 System V 那种「16 字节拆两个寄存器」，
+	// （调用方复制一份、传指针），不是 System V 那种「16 字节拆两个寄存器」，
 	// 想当然拆开传会直接访问违例。
 	vcall(ctrl, 6, uintptr(unsafe.Pointer(&r)))
 }
 
 // SetBackground 运行中改控制器底色（Controller2::put_DefaultBackgroundColor [槽 27]）。
 // 主题切换时由 ipc 的 OnBackground 钩子调过来：页面还没画出来的一瞬露的就是它。
-// 控制器还没就绪时静默忽略 —— 启动路径用的是 Options.Background。
+// 控制器还没就绪时静默忽略，启动路径用的是 Options.Background。
 func SetBackground(color uint32) {
 	if wv.ctrl != nil {
 		vcall(wv.ctrl, 27, uintptr(color))
@@ -255,7 +255,7 @@ func SetBackground(color uint32) {
 func closeWebView() {
 	if wv.ctrl != nil {
 		// ICoreWebView2Controller::Close [槽 24]
-		// （21 是 get_ParentWindow——照官方头文件数：IsVisible 3/4、Bounds 5/6、
+		// （21 是 get_ParentWindow，照官方头文件数：IsVisible 3/4、Bounds 5/6、
 		// ZoomFactor 7/8、ZoomFactorChanged 9/10、SetBoundsAndZoomFactor 11、
 		// MoveFocus 12、MoveFocusRequested 13/14、GotFocus 15/16、LostFocus 17/18、
 		// AcceleratorKeyPressed 19/20、ParentWindow 21/22、NotifyParent 23、Close 24、

@@ -17,7 +17,7 @@ const THEME_BG = { dark: '#070b12', light: '#eef1f6' };
 /**
  * 把配置里的模式解析成真正要用的主题。
  *
- * 'system' 走 Chromium 的 prefers-color-scheme —— WebView2 里它跟着
+ * 'system' 走 Chromium 的 prefers-color-scheme，WebView2 里它跟着
  * Windows 的「应用模式」走，和系统设置面板是同一项。
  */
 export function resolveTheme(mode) {
@@ -88,7 +88,7 @@ export function applyAppearance(cfg) {
 /**
  * 候选表：只用来**分组**（中文 / 西文 / 等宽），不再是「能列出什么」的白名单。
  *
- * 以前这里就是全部可选项，用户自己装的字体（霞鹜文楷、思源、鸿蒙…）永远不出现 ——
+ * 以前这里就是全部可选项，用户自己装的字体（霞鹜文楷、思源、鸿蒙…）永远不出现，
  * 因为程序从没问过系统装了啥。现在真正的清单由主进程扫字体目录给出
  * （见 main/fonts.js），这张表退化成「认识的字体归到哪一组」的标签，
  * 表外的字体统一落到最后一组「本机其他字体」，一款都不会漏。

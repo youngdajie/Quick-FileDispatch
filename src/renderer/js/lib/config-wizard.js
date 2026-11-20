@@ -72,7 +72,7 @@ export function openConfigWizard(opts) {
 
   /**
    * 换页：当前这一屏往左滑出去，下一屏从右边登场（回退时方向反过来）。
-   * 先等「滑出」跑完再重画 —— 直接重画的话两屏会叠在一起闪一下。
+   * 先等「滑出」跑完再重画，直接重画的话两屏会叠在一起闪一下。
    */
   async function goTo(next) {
     if (animating || next < 0 || next >= STEPS || next === step) return;
@@ -301,7 +301,7 @@ export function openConfigWizard(opts) {
       '<div class="wz-final">' +
       '<h3 class="wz-title">' + (result.ok ? '全部通过，已归档' : '还有没通过的') + '</h3>' +
       (result.ok
-        ? '<p class="wz-note">这份配置现在可以用了 —— 上传、管理页都会跟着它走</p>'
+        ? '<p class="wz-note">这份配置现在可以用了，上传和管理页都会跟着它走</p>'
         : '<p class="wz-note">配置已经存下来了（状态是「待验证」），把下面的问题修好再验证一次即可</p>') +
       '<div class="wz-checks">' +
       line('仓库信息', result.cloud) +
@@ -370,7 +370,7 @@ export function openConfigWizard(opts) {
 
     /**
      * 输入一变就重算「下一步」能不能点。
-     * 字段的读写交给 config-fields，但它不认识这个底部按钮 —— 那层判断得宿主来做，
+     * 字段的读写交给 config-fields，但它不认识这个底部按钮，那层判断得宿主来做，
      * 少了它就会出现「填了用户名，下一步还是灰的」。
      */
     function refreshFoot() {

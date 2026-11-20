@@ -2,7 +2,7 @@
  * 把文件内容交给主进程时用 base64，不要直接丢 Uint8Array。
  *
  * 坑在哪：这条 IPC 是 HTTP + JSON（Go 壳）。JSON.stringify(Uint8Array)
- * **不会**变成数组，而是变成 {"0":104,"1":105} 这种每字节一个键的对象 ——
+ * **不会**变成数组，而是变成 {"0":104,"1":105} 这种每字节一个键的对象，
  * 一个 50MB 的视频会展开成约 5000 万个数字键、近 400MB 的 JSON：
  * 主线程先卡死在字符串化上，后端再为 5000 万个键逐个 Atoi，内存直接见底。
  * 表现就是「上传失败」，而且文件大小一过几十 MB 必现。
@@ -10,7 +10,7 @@
  * 这是 Electron 时代留下的写法：ipcRenderer.invoke 走结构化克隆，TypedArray
  * 原样紧凑传输；换成 JSON-over-HTTP 之后类型就保不住了。
  * base64 只多 33% 体积，而且后端 internal/ipc/cloud.go 的 decodeBytes
- * 本来就认字符串分支（注释里写着「大文件走 base64」）—— 两边对上即可。
+ * 本来就认字符串分支（注释里写着「大文件走 base64」），两边对上即可。
  *
  * 用 FileReader 而不是 btoa(String.fromCharCode(...))：
  * 后者要把整个缓冲区拷成 JS 字符串再扫描，50MB 级别会明显卡住界面；

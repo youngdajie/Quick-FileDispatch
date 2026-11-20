@@ -13,11 +13,11 @@ import (
  * 本机代理探测：设置页「扫描」按钮背后那件事。
  *
  * 两步，谁先给出结果用谁：
- *   1. Windows 系统代理（注册表 HKCU\...\Internet Settings）—— 用户自己开的开关，
+ *   1. Windows 系统代理（注册表 HKCU\...\Internet Settings），用户自己开的开关，
  *      最可信。注意 ProxyEnable 关着时 ProxyServer 里还留着上次的地址，
  *      照着它去连是连到空气，所以必须连带看那个开关。
  *   2. 端口探测：在常见代理端口上握一次手，问清楚「你是 HTTP 还是 SOCKS5」。
- *      这一步是为了兜住「软件开着、但没开系统代理」的情况 —— 而本程序恰恰
+ *      这一步是为了兜住「软件开着、但没开系统代理」的情况，而本程序恰恰
  *      不读系统代理（见 netproxy 包注释），用户点了扫描就该有个能填的地址。
  *
  * 握手而不是只 dial：只判断端口通不通会把一堆本地服务误认成代理
@@ -118,7 +118,7 @@ func handshakes(p probe) bool {
 		if _, err := readFull(conn, buf); err != nil {
 			return false
 		}
-		// 服务器回 5,0（无需认证）或 5,2（要账号密码）都算 —— 是 SOCKS5 就行
+		// 服务器回 5,0（无需认证）或 5,2（要账号密码）都算，是 SOCKS5 就行
 		return buf[0] == 0x05
 	}
 
@@ -154,7 +154,7 @@ func readFull(conn net.Conn, buf []byte) (int, error) {
 //
 // Windows 里它可能是 "127.0.0.1:7890"，也可能是按协议分列的
 // "http=127.0.0.1:7890;https=127.0.0.1:7890;socks=127.0.0.1:7891"。
-// 分列时优先 https —— GitHub 全是 https，那一条才是真正会走的那条。
+// 分列时优先 https，GitHub 全是 https，那一条才是真正会走的那条。
 func normalizeProxy(raw string) string {
 	s := strings.TrimSpace(raw)
 	if s == "" {

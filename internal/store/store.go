@@ -8,7 +8,7 @@
 //   - 读取时不重建结构，而是在默认值上做深度合并；
 //   - 写回时同样只覆盖提交上来的那几个键，其余原样留着。
 //
-// 违反它会很难查 —— Electron 版里有上百处直接读 cfg.xxx，字段被悄悄抹掉
+// 违反它会很难查，Electron 版里有上百处直接读 cfg.xxx，字段被悄悄抹掉
 // 通常表现为「某个开关自己变回默认了」，跟存储层看起来毫无关系。
 //
 // 待办：Token 落盘加密。Electron 用 safeStorage（Windows 上是 DPAPI），
@@ -92,7 +92,7 @@ func Defaults() map[string]any {
 			// 管理页的视图模式：grid（网格）/ list（列表）。
 			// 记住上次选择，免得每次重启都退回网格
 			"manageView": "grid",
-			// 上传页「图片设置」折叠区是否展开。默认收起 —— 压缩/水印是低频设置
+			// 上传页「图片设置」折叠区是否展开。默认收起，压缩/水印是低频设置
 			"imgSetOpen": false,
 			// 管理页左侧「云端 · 本地」那一栏是否收起。收起后宽度全给文件区
 			"mgSideCollapsed": false,
@@ -103,7 +103,7 @@ func Defaults() map[string]any {
 // defaultTheme 出厂默认主题：白天。
 //
 // 只在两种时刻生效：配置文件不存在（第一次启动）、设置页点「恢复默认」。
-// 已有配置的用户永远不受影响 —— read() 的深度合并只补缺失字段，
+// 已有配置的用户永远不受影响，read() 的深度合并只补缺失字段，
 // ui.theme 在就原样保留。
 //
 // 曾经跟 Windows 的「应用模式」走（3.0.0~3.6.0），现在固定白天：
@@ -122,7 +122,7 @@ type Store struct {
 	// （自检里可以用临时配置跑，不惊动本机的加密材料）。
 	vault *dpapi.Vault
 	// onTokenFail 是「Token 解不开」时的回调，只用于打日志。
-	// 解不开不是错误 —— 换了用户 / 重装系统都会这样，
+	// 解不开不是错误，换了用户 / 重装系统都会这样，
 	// 界面该显示「没有 Token」，但排查时需要知道原因。
 	onTokenFail func(error)
 }
@@ -149,7 +149,7 @@ func (s *Store) SetTokenFailHook(fn func(error)) { s.onTokenFail = fn }
 func (s *Store) File() string { return s.file }
 
 // LocalDir 只读当前绑定的本地目录。
-// /__local 每张图都会问一次，不走 Get() 那套深拷贝 —— 那会把整份配置
+// /__local 每张图都会问一次，不走 Get() 那套深拷贝，那会把整份配置
 // （含所有 profile）复制一遍，放在图片请求的热路径上纯属浪费。
 func (s *Store) LocalDir() string {
 	s.mu.Lock()
@@ -159,10 +159,10 @@ func (s *Store) LocalDir() string {
 }
 
 // read 读文件并深度合并到默认值上。
-// 文件不存在 / 坏了都退回默认值 —— 但**不回写**，避免把坏文件直接覆盖掉，
+// 文件不存在 / 坏了都退回默认值，但**不回写**，避免把坏文件直接覆盖掉，
 // 用户还有机会手动救回来。
 //
-// 第二个返回值表示「这次有没有跑过迁移」。调用方据此把结果落盘一次 ——
+// 第二个返回值表示「这次有没有跑过迁移」。调用方据此把结果落盘一次，
 // 不落的话版本号永远停在磁盘上的老值，那批迁移**每次启动都会重跑一遍**。
 // 迁移虽然各条都尽量写成幂等，但把它们押在幂等上并不是个好主意
 // （实测踩过：bgBlur 那条换算两次就把 24 变成 0 又变回 100）。
@@ -180,11 +180,11 @@ func (s *Store) read() (map[string]any, bool) {
 	// 顺序很关键：**先迁移，再把默认值合上去**。
 	//
 	// 反过来的话（以前就是 `migrate(merge(Defaults(), parsed))`），迁移里那些
-	// 「这个键在不在」的判断会**永远为真** —— 默认值早把键补齐了，于是
+	// 「这个键在不在」的判断会**永远为真**，默认值早把键补齐了，于是
 	// 「给老配置补新字段、并按旧值折算」这类迁移会被整条静默跳过：
 	// 用户拿到的不是折算值，而是默认值。
 	// （2026-10-05 给水印加边距时踩到：v9 的老配置本该折算出 20/31，
-	//   实际一直是默认的 24/24 —— 迁移代码没错，是它根本没看见"这个键不存在"。）
+	//   实际一直是默认的 24/24，迁移代码没错，是它根本没看见"这个键不存在"。）
 	//
 	// 迁移本来就该针对**用户磁盘上实际存的那份**，而不是补全后的那份。
 	merged := merge(Defaults(), migrate(parsed))
@@ -245,7 +245,7 @@ func (s *Store) view() map[string]any {
 		id, _ := p["id"].(string)
 		cp["isActive"] = id != "" && id == activeID
 		cp["label"] = profileLabel(p)
-		// draft 是算出来的、不落盘 —— 渲染层只认这个字段决定要不要列出来
+		// draft 是算出来的、不落盘，渲染层只认这个字段决定要不要列出来
 		cp["draft"] = isDraft(p)
 		delete(cp, "_tokenEnc")
 		delete(cp, "_tokenPlain")
@@ -257,7 +257,7 @@ func (s *Store) view() map[string]any {
 
 // maskToken 脱敏：首尾各留 4 位，中间补星。
 //
-// 留首尾是有用的 —— 用户手里往往有好几个 Token，
+// 留首尾是有用的，用户手里往往有好几个 Token，
 // 全打星的话「现在用的是哪一个」根本看不出来。
 func maskToken(t string) string {
 	if t == "" {
@@ -285,7 +285,7 @@ func (s *Store) Patch(patch map[string]any) (map[string]any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Token 单独处理：留空 / 全是 * 都表示「不改」——
+	// Token 单独处理：留空 / 全是 * 都表示「不改」，
 	// 设置页那个输入框里填的是掩码，一保存如果当真值写进去，
 	// 用户的 Token 就变成了 ****
 	if tok, ok := patch["token"]; ok {
@@ -310,7 +310,7 @@ func (s *Store) Patch(patch map[string]any) (map[string]any, error) {
 // Reset 恢复默认设置并落盘（对应设置页的「恢复默认设置」）。
 //
 // 这是全程序唯一一个「一次调用就全毁」的操作：profiles、Token、链接规则
-// 一起没。真跑之前先把旧文件备份到 config.json.reset-bak.json ——
+// 一起没。真跑之前先把旧文件备份到 config.json.reset-bak.json，
 // 「恢复默认」防不住手滑，留一份后路防得住。
 func (s *Store) Reset() (map[string]any, error) {
 	s.mu.Lock()
@@ -326,7 +326,7 @@ func (s *Store) Reset() (map[string]any, error) {
 }
 
 // Raw 取配置的原始结构（含 Token 加密字段），只给主进程内部用。
-// 对外一律走 Get / view —— 那是剥掉 Token 的版本。
+// 对外一律走 Get / view，那是剥掉 Token 的版本。
 func (s *Store) Raw() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -337,7 +337,7 @@ func (s *Store) Raw() map[string]any {
 /* ------------------------------------------------------------ 小工具 */
 
 // merge 把 patch 深度合并进 base 并返回 base。
-// 只有「两边都是对象」时才递归，其余一律替换 —— 数组也替换，
+// 只有「两边都是对象」时才递归，其余一律替换，数组也替换，
 // 因为「往数组里合并」的语义没法定义（删一个元素和留一个元素分不清）。
 func merge(base, patch map[string]any) map[string]any {
 	for k, v := range patch {
@@ -375,7 +375,7 @@ func deepCopy(v any) any {
  *
  * 配置是从 JSON 解出来的，所有数字都是 float64、所有字段都可能不存在。
  * 这一组函数统一处理「取不到 / 类型不对 / 空值」三种情况，
- * 免得每个调用点都写一遍类型断言 —— 那正是「某个开关自己变回默认了」
+ * 免得每个调用点都写一遍类型断言，那正是「某个开关自己变回默认了」
  * 这类 bug 的温床（一处漏了零值判断，默认值就被静默写进去）。
  */
 
@@ -443,7 +443,7 @@ func profileLabel(p map[string]any) string {
 }
 
 // isDraft：还没填过仓库、也没验证过的空落点，不算一份「归档配置」。
-// 和 Electron 版一样是算出来的，不落盘 —— 存标记的话，导入 / 迁移 / 手改
+// 和 Electron 版一样是算出来的，不落盘，存标记的话，导入 / 迁移 / 手改
 // 都可能留下对不上的旧值。
 func isDraft(p map[string]any) bool {
 	verified, _ := p["verified"].(bool)

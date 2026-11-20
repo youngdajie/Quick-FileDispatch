@@ -6,7 +6,7 @@ package ipc
  * **首选 CNB 源**（2026-10-13 改）：国内直连，不用碰 GitHub。
  * CNB 的 Release 列表接口直接带 `is_latest` 标记，还给出附件的**公开下载地址**
  * （browser_download_url），下载那一步连令牌都不用。
- * 拿不到 CNB 令牌（或 CNB 那边暂时不通）时退回 GitHub —— 两个仓库的 Release
+ * 拿不到 CNB 令牌（或 CNB 那边暂时不通）时退回 GitHub，两个仓库的 Release
  * 内容是一样的（两边跑同一份构建脚本），互为备份。
  *
  * 下载走 netproxy.Transport()，用户在设置里配了代理就会生效。
@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	// 本程序的仓库（更新源）。跟用户自己配的仓库无关 —— 这儿查的是「程序有没有新版」
+	// 本程序的仓库（更新源）。跟用户自己配的仓库无关，这儿查的是「程序有没有新版」
 	updateRepoSlug = "youngdajie/Quick-FileDispatch"
 
 	updateCNBAPI   = "https://api.cnb.cool/" + updateRepoSlug + "/-/releases"
@@ -43,11 +43,11 @@ const (
 
 	/*
 	 * 仓库里 main.go 的**原始文件**地址（杰哥提醒的：版本号就在源码里写着）。
-	 * 这条是首选 —— 比解析 Release 页面稳得多：
+	 * 这条是首选，比解析 Release 页面稳得多：
 	 *   - 页面是渲染出来的，改版就会变；源码里的 `const version` 不会
 	 *   - 返回的是 text/plain 的真源码（实测 18 KB），不用去 HTML 里捞
 	 *   - 同样**不需要令牌**
-	 * 注意路径是 `/-/git/raw/<ref>/<path>` —— 少一个 `git` 就返回 SPA 的
+	 * 注意路径是 `/-/git/raw/<ref>/<path>`，少一个 `git` 就返回 SPA 的
 	 * HTML 壳子（200 但内容是网页），这是试了几种才试出来的。
 	 */
 	updateCNBRaw = "https://cnb.cool/" + updateRepoSlug + "/-/git/raw/go/main.go"
@@ -96,7 +96,7 @@ func checkCNBRaw(current string) (map[string]any, error) {
 }
 
 // pickGoVersion 从 Go 源码里抠 `const version = "X.Y.Z"`。
-// 逐行找标记再取引号里的内容 —— 老规矩，不用正则。
+// 逐行找标记再取引号里的内容，老规矩，不用正则。
 func pickGoVersion(src string) string {
 	const marker = "const version"
 	for _, ln := range strings.Split(src, "\n") {
@@ -132,7 +132,7 @@ func buildUpdateResult(latest, current, notes string) map[string]any {
 		"source":    "CNB",
 		"assetName": name,
 		"url":       "https://cnb.cool/" + updateRepoSlug + "/-/releases/download/v" + latest + "/" + name,
-		// 各版本的更新说明统一去 Release 页看 —— 弹窗里不铺开正文
+		// 各版本的更新说明统一去 Release 页看，弹窗里不铺开正文
 		"releaseUrl": updateCNBWeb,
 	}
 }
@@ -163,7 +163,7 @@ func fetchText(url, ua string, limit int64) (string, error) {
 /*
  * checkCNBPublic 是第二条路：读 Release 网页，从 HTML 里抠安装包文件名。
  *
- * 首选其实是上面的 checkCNBRaw（直接读源码）—— 这条留着兜底，
+ * 首选其实是上面的 checkCNBRaw（直接读源码），这条留着兜底，
  * 万一 go 分支改名 / main.go 挪位置，Release 页还在就能查。
  *
  * 为什么不用 CNB 的 API：它要认证（不带令牌直接 401），而网页是公开的。
@@ -246,7 +246,7 @@ func checkCNB(token, current string) (map[string]any, error) {
 		return nil, fmt.Errorf("CNB 返回 %d", resp.StatusCode)
 	}
 
-	// 这个接口返回的是**裸数组**，不是 {data:[...]} —— cnb CLI 打印的 data: 那层
+	// 这个接口返回的是**裸数组**，不是 {data:[...]}，cnb CLI 打印的 data: 那层
 	// 信封是它自己加的，照那个写会解析不出来
 	var list []struct {
 		TagName  string `json:"tag_name"`
@@ -426,7 +426,7 @@ func registerUpdate(r *Registry, env *Env) {
 			return nil, err
 		}
 		setUpdateState("installing", 0, 0, "", path, "")
-		// 给脚本一点时间起来，再退出自己 —— 不然安装包会撞上「文件正在使用」
+		// 给脚本一点时间起来，再退出自己，不然安装包会撞上「文件正在使用」
 		go func() {
 			time.Sleep(400 * time.Millisecond)
 			os.Exit(0)
@@ -438,21 +438,21 @@ func registerUpdate(r *Registry, env *Env) {
 // checkUpdate 问「最新版是多少」，跟当前版本比一比。
 // 先试 CNB（国内直连），不行再退 GitHub。
 func checkUpdate(env *Env, current string) (any, error) {
-	// ① 读仓库里 main.go 的源码 —— 版本号是写在里面的常量，最稳，也不用令牌
+	// ① 读仓库里 main.go 的源码，版本号是写在里面的常量，最稳，也不用令牌
 	if out, err := checkCNBRaw(current); err == nil {
 		return out, nil
 	} else if env.Verbose {
 		fmt.Fprintf(os.Stderr, "[update] 读 main.go 失败：%v", err)
 	}
 
-	// ② Release 网页 —— 也不用令牌，兜底
+	// ② Release 网页，也不用令牌，兜底
 	if out, err := checkCNBPublic(current); err == nil {
 		return out, nil
 	} else if env.Verbose {
 		fmt.Fprintf(os.Stderr, "[update] CNB 网页源不可用：%v", err)
 	}
 
-	// ③ 有令牌就走 API —— 能顺带拿到更新说明正文
+	// ③ 有令牌就走 API，能顺带拿到更新说明正文
 	if token := cnbToken(env.Store); token != "" {
 		if out, err := checkCNB(token, current); err == nil {
 			return out, nil
@@ -596,7 +596,7 @@ func downloadInstaller(url, name, ver string) {
  * launchSilentInstall 起一个中转脚本去跑安装包。
  *
  * 为什么不直接 exec 安装包：主程序这时候还活着，安装包要覆盖的正是它自己，
- * Windows 上「文件正在使用」会直接失败。所以走一个 .bat ——
+ * Windows 上「文件正在使用」会直接失败。所以走一个 .bat，
  * 它先等两秒（我们在这期间退出），再带 /S 静默跑安装包。
  *
  * /S 是 NSIS 的静默开关，安装器是 RequestExecutionLevel user（当前用户级），
@@ -604,15 +604,25 @@ func downloadInstaller(url, name, ver string) {
  */
 func launchSilentInstall(pkg string) error {
 	bat := filepath.Join(filepath.Dir(pkg), "apply-update.bat")
-	// 引号包住路径：临时目录可能带空格
+	// 从哪个 exe 起来的，装完就从哪儿再拉起来，路径带空格要引号包住
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("拿不到当前程序路径：%v", err)
+	}
+	// 路径经环境变量传给 bat，不拼进脚本文件，程序名是中文，bat 按 OEM
+	// 代码页读 UTF-8 的脚本会把中文路径读乱，start 就找不到文件了
 	script := "@echo off\r\n" +
 		"timeout /t 2 /nobreak >nul\r\n" +
-		"start \"\" \"" + pkg + "\" /S\r\n" +
+		// /wait 等安装真正结束；原来只 start 不 wait，程序退出后没东西把它拉回来
+		"start /wait \"\" \"%QFD_UPDATE_PKG%\" /S\r\n" +
+		"start \"\" \"%QFD_UPDATE_EXE%\"\r\n" +
 		"del \"%~f0\"\r\n"
 	if err := os.WriteFile(bat, []byte(script), 0o644); err != nil {
 		return fmt.Errorf("写更新脚本失败：%v", err)
 	}
 	cmd := exec.Command("cmd", "/c", bat)
+	// 环境变量是 Unicode 的，中文路径这样传最稳
+	cmd.Env = append(os.Environ(), "QFD_UPDATE_PKG="+pkg, "QFD_UPDATE_EXE="+exe)
 	git.HideWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动安装程序失败：%v", err)

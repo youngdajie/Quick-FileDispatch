@@ -43,10 +43,10 @@ import (
 
 // 版本号规则：3.0.0 起去掉 -go 后缀（2.8.1~2.9.0 的 -go 是
 // 与 Electron 时代 v* 标签区分发布线的过渡写法）。
-const version = "3.6.3"
+const version = "3.6.4"
 
 // appName 沿用 Electron 时代定下的 userData 目录名（appData + 应用名）：
-// 两边对不上就会各自读一份配置，看起来像「配置丢了」——老用户升级到 Go 版
+// 两边对不上就会各自读一份配置，看起来像「配置丢了」，老用户升级到 Go 版
 // 配置必须还能读到，所以这个名字不能改。
 const appName = "Quick-FileDispatch"
 
@@ -87,7 +87,7 @@ func run(headless, check, dev bool, port int, profile string, debugPort int) err
 	vault := dpapi.New(cfgDir)
 	st := store.New(filepath.Join(cfgDir, "config.json"), vault)
 	// 出站代理交给 netproxy，三条通道（REST API / git 子进程 / LFS 下载）共用这一份。
-	// 放在这里是为了**在任何网络请求之前**就绪 —— 启动时那次自动拉取也要用上它。
+	// 放在这里是为了**在任何网络请求之前**就绪，启动时那次自动拉取也要用上它。
 	// 空的 proxyUrl 表示不干预，仍按 Go 默认走（只认 HTTPS_PROXY 那类环境变量）。
 	if p, _ := st.Raw()["proxyUrl"].(string); p != "" {
 		netproxy.Set(p)
@@ -120,13 +120,13 @@ func run(headless, check, dev bool, port int, profile string, debugPort int) err
 	ipc.Register(reg, env)
 
 	// git-lfs 如果已经装过（上次用过 LFS 上传），启动时就把它挂进
-	// git 子进程的 PATH —— 这样用户不必先触发一次上传才能用。
+	// git 子进程的 PATH，这样用户不必先触发一次上传才能用。
 	// 没装的话这里什么都不做，等真正勾选 LFS 时再下载。
 	if binDir := lfs.InstalledBinDir(cfgDir); binDir != "" {
 		git.SetExtraPath(binDir)
 	}
 
-	// 两个闭包捕获的是 env 这个指针变量，调用时才取值 ——
+	// 两个闭包捕获的是 env 这个指针变量，调用时才取值，
 	// 所以哪怕这里 env 还没用完也不影响（切仓库后读到的也是最新配置）
 	handler := webui.New(reg, static, bridgeJS,
 		func(abs string) bool { return env.AllowsLocal(abs) },
@@ -193,7 +193,7 @@ func initialBackground(st *store.Store) uint32 {
 // configDir 决定配置放哪。
 //
 // 默认跟 Electron 版**同一个目录**（%APPDATA%\Quick-FileDispatch），于是这个 Go
-// demo 一启动就能读到真实配置 —— 迁移期这样最省事，也能顺手验证「两边读的是同一份」。
+// demo 一启动就能读到真实配置，迁移期这样最省事，也能顺手验证「两边读的是同一份」。
 // 给 --profile=<目录> 就换成那边，自检用临时目录，免得把你的真实配置写坏。
 func configDir(profile string) (string, error) {
 	dir := profile
@@ -482,7 +482,7 @@ func selfCheck(base string) error {
 			return out, nil
 		}},
 		{"/__local 只放行绑定目录", func() (string, error) {
-			// 这个服务监听在 127.0.0.1 上，本机任何程序都够得着 ——
+			// 这个服务监听在 127.0.0.1 上，本机任何程序都够得着，
 			// 不设边界就等于开了一个「读任意路径」的接口，所以要有一条断言盯着
 			root, err := os.Getwd()
 			if err != nil {

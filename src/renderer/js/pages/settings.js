@@ -262,7 +262,7 @@ function confirmExport(count, withToken) {
     wrap.innerHTML =
       '<p class="hint" style="margin:0 0 10px">导出的 JSON 会带上：各份配置的仓库信息、' +
       '<b class="accent">访问令牌（明文）</b>，以及<b>每份配置各自的链接规则、自定义域名和默认复制格式</b></p>' +
-      '<p class="hint" style="margin:0 0 10px"><b>本地目录不会写入</b> —— 换台电脑原路径多半不存在，' +
+      '<p class="hint" style="margin:0 0 10px"><b>本地目录不会写入</b>。换台电脑原路径多半不存在，' +
       '导入后程序会引导你为本机重新绑定目录</p>' +
       '<p class="rule-desc" style="margin:0">本次共 ' + count + ' 份配置，其中 ' + withToken + ' 份带令牌' +
       '这个文件等于一把钥匙，请只放在你自己的机器或加密盘里，别发到群聊和公开仓库</p>';
@@ -338,7 +338,7 @@ function currentTheme() {
  * 主题卡片的选中态。
  *
  * 类名统一用 .on（CSS 里写的就是 .theme-card.on）；这里以前写成 .active，
- * 结果选中态一直是隐形的 —— 用户只能靠页面颜色猜自己选的哪一项。
+ * 结果选中态一直是隐形的，用户只能靠页面颜色猜自己选的哪一项。
  */
 function fillThemeCards() {
   const cur = currentTheme();
@@ -378,7 +378,7 @@ function ensureFontOptions(cur) {
 
 async function setTheme(theme) {
   await state.patch({ ui: { theme: theme } });
-  // applyTheme 收的是主题名（'dark' / 'light'），不是整个 cfg ——
+  // applyTheme 收的是主题名（'dark' / 'light'），不是整个 cfg，
   // 早先传了整个对象，indexOf 匹配不上就一路回落 dark，看着就是「点了没反应」
   applyTheme((state.cfg && state.cfg.ui && state.cfg.ui.theme) || theme);
   fillThemeCards();
@@ -426,7 +426,7 @@ function fillGlobal() {
 /* ---------------- 网络代理 ----------------
    两个按钮合一：输入框空着就「扫描」，填了东西就「保存」。
    扫描走主进程（internal/netproxy.Detect）：先看一眼 Windows 系统代理，
-   没开再去常见端口上问一句「你是 HTTP 还是 SOCKS5 代理」——
+   没开再去常见端口上问一句「你是 HTTP 还是 SOCKS5 代理」，
    用户不用自己去翻 Clash 面板抄端口。 */
 
 const PROXY_SCHEMES = ['http', 'https', 'socks5', 'socks5h'];
@@ -508,7 +508,7 @@ async function detectProxy() {
  * 刷新 git-lfs 状态。
  *
  * 查询**不触发下载**（后端只是看本地有没有），所以可以在页面初始化时
- * 顺手调一次 —— 不会因为用户打开设置页就产生 6MB 流量。
+ * 顺手调一次，不会因为用户打开设置页就产生 6MB 流量。
  */
 async function refreshLfsStatus() {
   const dot = $('#lfsDot');
@@ -525,7 +525,7 @@ async function refreshLfsStatus() {
       btn.hidden = true;
     } else {
       dot.className = 'lfs-dot bad';
-      text.textContent = '未安装 —— 上传时勾选 LFS 会自动装，也可以现在装';
+      text.textContent = '未安装。上传时勾选 LFS 会自动装，也可以现在装';
       btn.hidden = false;
     }
   } catch (e) {
@@ -538,7 +538,7 @@ async function refreshLfsStatus() {
 /**
  * 安装 git-lfs。
  *
- * 安装过程要下 6MB，必须有反馈 —— 进度从 /ipc/events 的 SSE 流来
+ * 安装过程要下 6MB，必须有反馈，进度从 /ipc/events 的 SSE 流来
  * （事件 task 为 lfs-install）。这里只订阅、不改别的。
  */
 async function installLfs() {
@@ -573,7 +573,7 @@ async function installLfs() {
 export default {
   init() {
     // 平台标识只展示可连接的平台；实际选择仍在新建向导第一步完成。
-    // 图标尺寸照「全部配置」卡片里那枚走（15px 放在 29px 的色块里）——
+    // 图标尺寸照「全部配置」卡片里那枚走（15px 放在 29px 的色块里），
     // 之前用 20px 顶在 22px 的块里，四边只剩 1px，看着就是撑满了
     const brand = $('#platBrand');
     if (brand) {

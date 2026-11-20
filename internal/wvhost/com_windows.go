@@ -4,7 +4,7 @@
 //
 // 为什么不用 cgo / go-ole：本项目保持零第三方依赖，而 WebView2 要用的
 // COM 面其实很窄（两个回调 + 三个接口的六七个方法），手写完全可控。
-// 手写的代价是 vtable 下标必须**逐字对着 WebView2.h 核对**——MIDL 生成的
+// 手写的代价是 vtable 下标必须**逐字对着 WebView2.h 核对**，MIDL 生成的
 // 接口方法顺序就是虚表顺序，差一个槽位就是跳到别人的函数上，直接崩。
 package wvhost
 
@@ -46,7 +46,7 @@ var (
 // vcall 调 COM 接口的第 index 个虚表方法（index 含 IUnknown 的 0/1/2）。
 //
 // obj 是接口指针（指向的对象首字段是虚表指针）。指针运算全走 unsafe.Add、
-// 只在传给 SyscallN 的那一刻才转 uintptr —— go vet 只认这个形状。
+// 只在传给 SyscallN 的那一刻才转 uintptr，go vet 只认这个形状。
 func vcall(obj unsafe.Pointer, index int, args ...uintptr) uintptr {
 	vt := *(*unsafe.Pointer)(obj)
 	fn := *(*uintptr)(unsafe.Add(vt, index*8))
@@ -66,7 +66,7 @@ func vcallOut(obj unsafe.Pointer, index int) unsafe.Pointer {
 //
 // 回调参数里收到的接口指针（env/controller/core）必须显式持有：
 // 回调返回后 WebView2 会释放它那侧的引用，这里不加的话对象被析构，
-// 浏览器进程会随之被「优雅关闭」——整个进程树一秒内静默退出，
+// 浏览器进程会随之被「优雅关闭」，整个进程树一秒内静默退出，
 // 无崩溃转储、无日志、宿主还活着，极难排查。
 func comAddRef(obj unsafe.Pointer) {
 	if obj != nil {

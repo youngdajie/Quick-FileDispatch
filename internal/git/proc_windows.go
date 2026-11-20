@@ -8,7 +8,7 @@ import (
 )
 
 // hideWindow 让 git 子进程不弹控制台窗口。
-// 少了这条，界面上每问一次 git:status 就会闪一下黑框 —— Electron 版对应的是
+// 少了这条，界面上每问一次 git:status 就会闪一下黑框，Electron 版对应的是
 // execFile 的 windowsHide: true。
 func hideWindow(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {

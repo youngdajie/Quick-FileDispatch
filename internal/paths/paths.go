@@ -1,7 +1,7 @@
 // Package paths 复刻渲染层 src/renderer/js/lib/links.js 里的几个路径 / 名字工具。
 //
 // 为什么 Go 侧还要再写一遍：上传、改名、删除都要在**服务端**把路径规范化，
-// 不能指望前端传进来的就是干净的 —— 越界防护必须握在真正动手的那一侧。
+// 不能指望前端传进来的就是干净的，越界防护必须握在真正动手的那一侧。
 // 两边规则必须一致（比如都把反斜杠换成正斜杠），否则「界面上看着在 a/b，
 // 实际写到了 a\b」这种错位很难查。
 package paths
@@ -61,7 +61,7 @@ func BaseName(name string) string {
 }
 
 // Sanitize 把文件名里的非法字符换成下划线，去掉开头的点，限长 180。
-// 空结果给 "untitled" —— 宁可叫这个名字，也不要写出一个看不见的文件。
+// 空结果给 "untitled"，宁可叫这个名字，也不要写出一个看不见的文件。
 func Sanitize(name string) string {
 	s := reBadChars.ReplaceAllString(name, "_")
 	s = reLeadDot.ReplaceAllString(s, "")
@@ -88,7 +88,7 @@ func FormatBytes(n int64) string {
 		i++
 	}
 	// v>=100 只留整数（"1.2 GB" 看着比 "1.23 GB" 干净），
-	// 小于 10 才留两位 —— 和 links.js 的三档规则一致
+	// 小于 10 才留两位，和 links.js 的三档规则一致
 	formatted := strconv.FormatFloat(v, 'f', 2, 64)
 	switch {
 	case v >= 100:
@@ -168,7 +168,7 @@ func IsTextName(name string) bool {
  * 只有迁移和表单回填会用到它：判断「这条规则能不能用在某个平台上」。
  *
  * 为什么值得为迁移单独维护一份：jsDelivr 是 GitHub 专属、cnb_raw 是 CNB 专属，
- * 硬塞过去会生成一条根本打不开的链接 —— 而它只在「老配置升级」时发生一次，
+ * 硬塞过去会生成一条根本打不开的链接，而它只在「老配置升级」时发生一次，
  * 平时根本没人会点到，错了能错很久。
  */
 
@@ -194,7 +194,7 @@ func AutoRuleOf(platform string) string {
 }
 
 // RuleFits 判断这条规则能不能用在某个平台上。
-// 认 'auto' —— 它在两个平台的列表里都在，不用单独判断。
+// 认 'auto'，它在两个平台的列表里都在，不用单独判断。
 func RuleFits(ruleID, platform string) bool {
 	p := platform
 	if p != "cnb" {

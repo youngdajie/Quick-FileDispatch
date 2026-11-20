@@ -2,7 +2,7 @@
  * 「上传到此文件夹」mini 上传弹窗。
  *
  * 从文件管理页空白处右键叫出来，目标目录固定 = 当前 view.dir（仓库内相对路径）。
- * 用模态弹窗的形态，但**没有走 dom.js 的 modal()** —— 全项目只有 #modalWrap 一个
+ * 用模态弹窗的形态，但**没有走 dom.js 的 modal()**，全项目只有 #modalWrap 一个
  * 弹层容器，modal() 会 wrap.innerHTML='' 把正在开着的弹层整个换掉（见 dir-picker
  * 那段注释）。而这个弹窗里要能再叠一层「压缩前后对比」（openCompare 走的就是
  * modal()），两者必须同时存在，所以这里自建一个覆盖层，复用 .modal /
@@ -17,15 +17,15 @@
  * 「沿用上传页参数 / 自定义（一次性）」。
  *
  * 文件名与主上传页走**同一套改名规则**（cfg.rename 的 mode / prefix / hashLength，
- * 复用 compress.js 的 buildFileName）—— 同一产品两个上传入口，行为必须一致。
+ * 复用 compress.js 的 buildFileName），同一产品两个上传入口，行为必须一致。
  *
  * **上传流程本身也共用**：本文件只负责「弹窗这一份界面怎么显示」，
  * 转 base64 / 开进度 / 调 cloud.upload / 结果映射 / 同步提示 / 广播事件
- * 全部走 lib/upload-run.js —— 与主上传页是同一份代码。
+ * 全部走 lib/upload-run.js，与主上传页是同一份代码。
  * （2026-09-26 抽出去的：之前两处各写一份，很快就出现了
  *  「主页面有进度条、弹窗没有」这类偏差。）
  *
- * LFS 开关的显隐与记忆走 lib/lfs.js，同样与主上传页共用 ——
+ * LFS 开关的显隐与记忆走 lib/lfs.js，同样与主上传页共用，
  * 连 localStorage 的键都是同一个，在哪边勾的另一个入口都认。
  */
 
@@ -34,7 +34,7 @@ import state from './state.js';
 import { CompressPool, defaultThreads, fileToArrayBuffer, buildFileName } from './compress.js';
 import { canCompare, openCompare } from './compare.js';
 // 与主上传页**共用一份**上传流程与 LFS 开关逻辑。
-// 两个入口对用户来说是同一件事，行为必须一致 —— 各写一份的话
+// 两个入口对用户来说是同一件事，行为必须一致，各写一份的话
 // 「主页面有进度条、右键弹窗没有」这类偏差迟早出现。
 import { runUpload, uploadResultMessage } from './upload-run.js';
 import * as LFS from './lfs.js';
@@ -234,7 +234,7 @@ function updateItem(it) {
   const cls = statusClass(it);
   st.className = cls ? 'q-status ' + cls : 'q-status';
   st.textContent = STATUS_TEXT[it.status] || it.status;
-  // title 只在真有错误时给 —— 空值会渲染成 title="" 这种没意义的属性
+  // title 只在真有错误时给，空值会渲染成 title="" 这种没意义的属性
   if (it.error) st.title = it.error;
   else st.removeAttribute('title');
 
@@ -442,7 +442,7 @@ function addFiles(fileList) {
 /**
  * 进度条的元素 id（与 build() 生成的结构一一对应）。
  *
- * 共享的 startProgressBar 按 id 找元素 —— 这里只声明「本弹窗把进度条
+ * 共享的 startProgressBar 按 id 找元素，这里只声明「本弹窗把进度条
  * 放在哪几个节点上」，DOM 结构本身在 build() 里。这样两个上传入口
  * 共用同一套进度渲染逻辑，只是挂在不同节点上。
  */
@@ -539,7 +539,7 @@ function build() {
     '<input type="file" id="miniInput" multiple hidden />' +
     '</div>' +
     '<div id="miniDecision"></div>' +
-    // LFS 开关。复用主上传页的 .up-lfs 样式 —— 两个入口长得一样，
+    // LFS 开关。复用主上传页的 .up-lfs 样式，两个入口长得一样，
     // 用户才认得出「这是同一个功能」。
     '<label class="up-lfs" id="miniLfsRow" hidden>' +
     '<input type="checkbox" id="miniLfs" />' +
@@ -574,7 +574,7 @@ function wire(target) {
   dirEl.dataset.dir = target || '';
 
   // LFS 开关：与主上传页共用同一套「按平台显隐 + 记住选择」的逻辑，
-  // 连 localStorage 的键都是同一个 —— 在主页面勾了，这里打开也是勾上的。
+  // 连 localStorage 的键都是同一个，在主页面勾了，这里打开也是勾上的。
   const lfsBox = $('#miniLfs', wrap);
   LFS.syncLfsUI(state.cfg, { row: $('#miniLfsRow', wrap), box: lfsBox });
   if (lfsBox) {

@@ -3,8 +3,8 @@
 // Win32 窗口：无边框（页面铺满整个窗口）、自带单实例锁、按显示器 DPI 缩放最小尺寸。
 //
 // 无边框的配方（Windows 经典款）：
-//   - 样式保留 WS_OVERLAPPEDWINDOW —— 贴边分屏、任务栏动画全靠它；
-//   - WM_NCCALCSIZE 直接返回 0、客户区 = 整个窗口矩形（不缩！）——
+//   - 样式保留 WS_OVERLAPPEDWINDOW，贴边分屏、任务栏动画全靠它；
+//   - WM_NCCALCSIZE 直接返回 0、客户区 = 整个窗口矩形（不缩！），
 //     非客户区一个像素都不留，DWM 就没地方画标题栏和系统边框（2.8.0-go
 //     曾经「客户区往里缩一圈边框厚度」，结果那一圈被 DWM 画成了原生白框）；
 //   - 最大化时窗口矩形比屏幕大一圈边框，这时反而要往里缩一圈，
@@ -115,7 +115,7 @@ const (
 var gHwnd atomic.Uintptr
 
 // rect / point / minmaxinfo / wndClassExW / msg 都是 Win32 结构体的内存布局，
-// 字段顺序错一个都是灾难 —— 对着 Windows SDK 的定义抄，别「优化」顺序。
+// 字段顺序错一个都是灾难，对着 Windows SDK 的定义抄，别「优化」顺序。
 type rect struct{ left, top, right, bottom int32 }
 
 type point struct{ x, y int32 }
@@ -205,7 +205,7 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 	case wmNcCalcSize:
 		if w != 0 {
 			// 客户区 = 整个窗口矩形。不调 DefWindowProc（它会把标题栏那一条
-			// 划走），Windows 就没有任何非客户区可画 —— 原生标题栏彻底消失。
+			// 划走），Windows 就没有任何非客户区可画，原生标题栏彻底消失。
 			// 2.8.1-go 在这里「往里缩一圈边框厚度」，那圈留下的非客户区
 			// 恰好被 DWM 画成了用户看到的原生白框，别再改回去。
 			p := (*nccalcsizeParams)(l)
@@ -222,7 +222,7 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 			return 0
 		}
 		// wParam=FALSE 也必须接住：CreateWindowExW 创建期发的是这一档，
-		// 漏掉就落进 DefWindowProc，客户区存成「带框」的 —— 首帧就带着
+		// 漏掉就落进 DefWindowProc，客户区存成「带框」的，首帧就带着
 		// 原生标题栏，要等最小化/还原触发重算才消失（2.8.1-go 实测）。
 		// 返回 0 的语义就是「客户区 = lParam 指的那个窗口矩形」。
 		return 0
@@ -236,7 +236,7 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 
 	case wmNcHitTest:
 		// 页面铺满后，边缘命中测试基本都被 WebView2 子窗口吃掉，轮不到
-		// 本窗口 —— 缩放改由页面缩放条 + win:resizeEdge 负责（resize_windows.go）。
+		// 本窗口，缩放改由页面缩放条 + win:resizeEdge 负责（resize_windows.go）。
 		// 这份命中测试留着兜底：万一哪条系统路径直接问到本窗口，边缘照常回
 		// 缩放代号，行为不至于倒退。最大化状态下不缩放。
 		if z, _, _ := procIsZoomed.Call(hwnd); z != 0 {
@@ -334,7 +334,7 @@ func dpiOf(hwnd uintptr) uint32 {
 // iconFromICO 从 .ico 字节里挑一张指定尺寸的图做 HICON。
 //
 // .ico = ICONDIR(6字节) + count 个 ICONDIRENTRY(16字节) + 各档位图像数据。
-// 不用 LookupIconIdFromDirectoryEx —— 它返回的 id 对文件格式的语义
+// 不用 LookupIconIdFromDirectoryEx，它返回的 id 对文件格式的语义
 // 和资源格式不一样（读的是 nID 那两个字节的位重叠），自己挑更直白。
 func iconFromICO(data []byte, size int) uintptr {
 	if len(data) < 6 {

@@ -17,7 +17,7 @@ import { installedFontGroups } from '../lib/appearance.js';
 const CPLinks = window.CPLinks;
 const CPWm = window.CPWatermark;
 
-/** 水印配色快捷项（#1296db 是默认）——原设置页的色板跟着水印一起迁了过来 */
+/** 水印配色快捷项（#1296db 是默认），原设置页的色板跟着水印一起迁了过来 */
 const WM_PRESETS = ['#1296db', '#ffffff', '#101722', '#ff4d4f', '#20c997', '#f5a623'];
 
 let pool = null;
@@ -138,7 +138,7 @@ function updateItem(it) {
   const cls = statusClass(it);
   st.className = cls ? 'q-status ' + cls : 'q-status';
   st.textContent = STATUS_TEXT[it.status] || it.status;
-  // title 只在真有错误时给 —— 空值会渲染成 title="" 这种没意义的属性
+  // title 只在真有错误时给，空值会渲染成 title="" 这种没意义的属性
   if (it.error) st.title = it.error;
   else st.removeAttribute('title');
   return el;
@@ -244,7 +244,7 @@ function compressOptions() {
     targetSizeKB: v('#upTargetSize'),
     skipIfSmaller: on('#upSkipSmaller', true),
     skipBelowKB: v('#upSkipBelow'),
-    // 水印参数从「图片设置」的水印块里现读 —— 以前是从 cfg 直接带过去的，
+    // 水印参数从「图片设置」的水印块里现读，以前是从 cfg 直接带过去的，
     // 迁到上传页之后这里就是唯一数据源
     watermark: {
       enabled: on('#upWmEnabled', false),
@@ -253,7 +253,7 @@ function compressOptions() {
       opacity: (Number($('#upWmOpacity').value) || 35) / 100,
       fontSize: Number($('#upWmFontSize').value) || 22,
       color: $('#upWmColor').value || '#1296db',
-      // 精确边距（距图边缘的像素）与字体 —— 以前这三项一个写死、两个靠字号推导
+      // 精确边距（距图边缘的像素）与字体，以前这三项一个写死、两个靠字号推导
       marginX: wmMargin('#upWmMarginX', 24),
       marginY: wmMargin('#upWmMarginY', 24),
       fontFamily: $('#upWmFont').value || '',
@@ -322,7 +322,7 @@ async function processPending() {
   const pctEl = $('#upProgressPct');
   prog.hidden = false;
   // 进度条得说清当前在干什么：这里是**本地压缩**，不是上传。
-  // 之前只动宽度、不设文案，条上留着上一次上传的「上传中」——
+  // 之前只动宽度、不设文案，条上留着上一次上传的「上传中」，
   // 明明在压图却写着上传中（杰哥点名的）。上传阶段由 describeProgress 负责。
   if (label) label.textContent = '压缩中';
   if (detail) detail.textContent = '';
@@ -394,7 +394,7 @@ async function processPending() {
 
 /**
  * 点缩略图：能对比就拉对比，否则退回普通放大预览。
- * 队列和结果两处共用 —— 两边的判断条件本来就是一回事。
+ * 队列和结果两处共用，两边的判断条件本来就是一回事。
  */
 function openThumbFor(id) {
   const it = queue.find((q) => String(q.id) === String(id));
@@ -441,7 +441,7 @@ function lfsEnabled() {
 
 /**
  * 进度条的元素 id。共享模块按 id 找元素，所以这里只是「这份界面把进度条
- * 放在了哪几个节点上」的声明 —— 结构本身在 index.html 里。
+ * 放在了哪几个节点上」的声明，结构本身在 index.html 里。
  */
 const UPLOAD_PROGRESS_IDS = {
   prog: 'upProgress',
@@ -463,7 +463,7 @@ async function doUpload() {
   }
   running = true;
   $('#btnUpload').disabled = true;
-  // 全部先标「等待」而不是「上传中」—— 分批上传时同一时刻只有一批在传，
+  // 全部先标「等待」而不是「上传中」，分批上传时同一时刻只有一批在传，
   // 一次性全标「上传中」会让用户以为十个文件同时在跑。
   ready.forEach((it) => {
     it.status = 'pending';
@@ -475,7 +475,7 @@ async function doUpload() {
   try {
     // 上传流程与 mini 弹窗**共用一份**（lib/upload-run.js）：
     // 分批、转 base64、开进度、调接口、结果映射、同步提示、广播事件都在那边。
-    // 这里只负责「上传页该怎么显示」—— 条目状态、总计、结果面板。
+    // 这里只负责「上传页该怎么显示」，条目状态、总计、结果面板。
     const res = await runUpload({
       ready: ready,
       dir: dir,
@@ -709,7 +709,7 @@ const persistQuickOptions = debounce(() => {
 /**
  * 「图片设置」的折叠状态。
  *
- * 记在配置的 ui.imgSetOpen 里 —— 原来用 localStorage，那个依赖 WebView2 的
+ * 记在配置的 ui.imgSetOpen 里，原来用 localStorage，那个依赖 WebView2 的
  * userDataFolder 是否持久，写在配置里更稳，也和 theme / manageView 那几项
  * 界面偏好保持了同一处。
  *
@@ -737,7 +737,7 @@ let wmPicker = null;
 
 /**
  * 边距那两个标签随「位置」走：右下角时它们该读作「距右边缘 / 距底边缘」，
- * 换到左上角就成了「距左 / 距上」—— 标签不动的话，用户填 24 根本不知道
+ * 换到左上角就成了「距左 / 距上」，标签不动的话，用户填 24 根本不知道
  * 这 24 是贴着哪条边，还得自己脑补。
  * （标签口径由 lib/watermark.js 定义，预览面板用的是同一份）
  */
@@ -749,7 +749,7 @@ function syncWmMarginLabels() {
   if (!mxLabel || !myLabel) return;
   mxLabel.textContent = pair[0];
   myLabel.textContent = pair[1];
-  // 居中 / 平铺时边距没有意义，灰掉而不是藏起来 —— 藏了会让整个栅格跳一下
+  // 居中 / 平铺时边距没有意义，灰掉而不是藏起来，藏了会让整个栅格跳一下
   const off = pos === 'center' || pos === 'tile';
   ['#upWmMarginX', '#upWmMarginY'].forEach((sel) => {
     const el = $(sel);
@@ -839,7 +839,7 @@ function renderWmPresets() {
 
 /**
  * 目标目录不该靠手打。点「浏览目录」直接列出本地现有目录，逐层点进去，
- * 选中的路径写回 #upDir —— 和手动输入完全等价（同一个 input）。
+ * 选中的路径写回 #upDir，和手动输入完全等价（同一个 input）。
  */
 let pickDir = '';
 
@@ -871,7 +871,7 @@ async function dpLoad(dir) {
   body.innerHTML = '<div class="dir-pick-empty">读取中…</div>';
   if (msg) msg.textContent = '';
   try {
-    // 只读本机这份目录 —— 不再去问远端。
+    // 只读本机这份目录，不再去问远端。
     // 原来本地这一层为空时会再查一次云端兜底，结果「点浏览目录 = 发网络请求」，
     // 既慢（等一轮 REST）又让人以为这程序离不开网络；本地仓库本来就是同一份东西。
     const res = await window.cloudpic.cloud.list({ dir: pickDir, source: 'local' });
@@ -1077,7 +1077,7 @@ function bindUploadOptions() {
    *
    * 用来决定 resize 时还要不要把 shell 拉回顶部：用户既然滚下去读参数了，
    * 改窗口尺寸就不该把他弹回顶上。滚轮 / 触摸拖动 / 方向键翻滚都算「自己滚」；
-   * 拖滚动条这一种没监听 —— 它和「改窗口」同时发生的概率低到不值得为它加代码。
+   * 拖滚动条这一种没监听，它和「改窗口」同时发生的概率低到不值得为它加代码。
    */
   let userScrolledAway = false;
   const markScrolledAway = () => { userScrolledAway = true; };
@@ -1086,7 +1086,7 @@ function bindUploadOptions() {
    * 占位高度 = 内容区可视高 − shell 自身高 − 40。
    *
    * 「上传选项」是上传页最后一个区块，下面只剩几十像素，所以原来展开后
-   * 根本滚不到它 —— scrollHeight 不够就是不够，scrollTo 再准也会被夹到 max
+   * 根本滚不到它，scrollHeight 不够就是不够，scrollTo 再准也会被夹到 max
    * （QA 实测：有文件时最多滚到 shell 顶部仍距内容区顶 584px；空队列时
    * applyFit 直接判「没溢出」把滚动关掉，scrollTop 恒为 0）。
    *
@@ -1108,14 +1108,14 @@ function bindUploadOptions() {
    * 让占位「刚好够顶到顶部」。
    *
    * 上面那条公式只是拍脑袋的近似：页面底部除了占位还有 .page 自己的下内边距
-   * （以及它那条抵富余的负 margin），所以按公式垫出来的高度可能差十几个像素 ——
+   * （以及它那条抵富余的负 margin），所以按公式垫出来的高度可能差十几个像素，
    * 900 高窗口实测：滚到 max 时 shell 顶部仍在 27px 处，就是差这一口气。
    *
    * 这里直接反推：要让 shell 顶部落在 16px 处，滚动内容必须够长到
    * 「shell 的绝对位置 − 16」；不够就把差值补进占位高度。
    * 补多少就是多少，不会多垫出空白滚动区。
    *
-   * shell 的绝对位置 = 当前 scrollTop + 它离内容区顶的距离 —— 这个和式
+   * shell 的绝对位置 = 当前 scrollTop + 它离内容区顶的距离，这个和式
    * 不受 scrollTop 被夹住的影响，所以随时量都准。
    */
   const growPadToReachTop = () => {
@@ -1148,7 +1148,7 @@ function bindUploadOptions() {
   /**
    * 展开后把「上传选项」顶到内容区顶部（留 16px 呼吸）。
    *
-   * 滚动容器是 #content 自己，不是 window —— 这个页面里 body 根本不滚。
+   * 滚动容器是 #content 自己，不是 window，这个页面里 body 根本不滚。
    * 不用 scrollIntoView：那会把祖先滚动容器一起带着动。
    *
    * 目标值用两个 getBoundingClientRect 相减再叠加 scrollTop 求：
@@ -1199,7 +1199,7 @@ function bindUploadOptions() {
   };
 
   // 等高度过渡跑完再滚：过渡期间 shell 的位置一直在变，提前滚只是在追一个移动的目标。
-  // 按 propertyName 过滤 —— 里面的输入框、下拉也各有过渡，别被它们触发。
+  // 按 propertyName 过滤，里面的输入框、下拉也各有过渡，别被它们触发。
   body.addEventListener('transitionend', (e) => {
     if (e.target !== body || e.propertyName !== 'grid-template-rows') return;
     if (toggle.getAttribute('aria-expanded') === 'true') scrollToShell();
@@ -1214,7 +1214,7 @@ function bindUploadOptions() {
     $('#page-upload').classList.toggle('options-open', open);
 
     if (open) {
-      // 顺序要紧：先把占位垫上、放开滚动，再滚 —— 反过来的话这次 scrollTo
+      // 顺序要紧：先把占位垫上、放开滚动，再滚，反过来的话这次 scrollTo
       // 会被旧的 scrollHeight 夹住，等于没滚
       addPad();
       openContentScroll();
@@ -1223,7 +1223,7 @@ function bindUploadOptions() {
       return;
     }
     // 折叠：先撤占位（高度立刻变短），再把 overflowY 交还给 applyFit。
-    // ⚠️ 回滚必须等高度真的收完 —— 收的过程中内容越来越短，浏览器会把 scrollTop
+    // ⚠️ 回滚必须等高度真的收完，收的过程中内容越来越短，浏览器会把 scrollTop
     // 一路夹回新的 max，正在跑的平滑滚动会被这次夹取顶掉，最后停在 max 上
     // （QA 回合实测：10 个文件时折叠后停在 386，回不到展开前的 120）。
     removePad();
@@ -1257,7 +1257,7 @@ function bindUploadOptions() {
       growPadToReachTop();
       if (!content || !shell) return;
       // 顺手把 shell 重新贴回顶部：视口一变，原来那个 scrollTop 对应的位置就歪了
-      // （实测 640→900 高时 shell 顶部掉到 275px 处 —— 变大那一下占位还没跟上，
+      // （实测 640→900 高时 shell 顶部掉到 275px 处，变大那一下占位还没跟上，
       // scrollTop 先被夹了一截，位置就是这么丢的）。
       // 用瞬时赋值而不是平滑滚动：resize 每帧都在动，平滑滚动只会让画面一直追。
       if (userScrolledAway) return; // 用户自己滚开去读下面的参数了，别把他拽回来

@@ -1,7 +1,7 @@
 /**
  * 配置字段的「一份定义」。
  *
- * 只服务一个入口：设置页的配置向导弹窗（lib/config-wizard.js）—— 一屏一项。
+ * 只服务一个入口：设置页的配置向导弹窗（lib/config-wizard.js），一屏一项。
  * 首次安装时这个向导也承担新手引导，所以字段文案要能独立看懂，不能依赖外部解说。
  *
  * 以前向导和新手指引各写一份：标签、占位符、帮助文案、校验规则全都要改两遍，
@@ -36,7 +36,7 @@ export const TOKEN_HELP = {
     '<br>Token 只保存在本机，用 Windows 系统级加密（DPAPI）存储，不会写到任何仓库里',
   cnb:
     'CNB 需要 <b>访问令牌</b>，在「个人设置 → 访问令牌」创建，勾选 <b>repo-code</b>（仓库代码读写）等权限' +
-    '注意必须用<b>经典令牌</b>——MCP 令牌调不了 REST 接口（会一路 404）' +
+    '注意必须用<b>经典令牌</b>。MCP 令牌调不了 REST 接口，会一路 404' +
     '申请地址：<a href="#" data-ext="https://cnb.cool/profile/token">cnb.cool/profile/token</a>' +
     '<br>Token 只保存在本机，用 Windows 系统级加密存储，不会写到任何仓库里'
 };
@@ -110,7 +110,7 @@ export const FIELDS = {
     title: '仓库叫什么名字',
     html: (d) =>
       field('仓库名', 'wzRepo', d.repo, 'my-files', '只填仓库名，不带用户名，也不要带斜杠') +
-      '<p class="wz-note">仓库不存在也可以先填 —— 程序会在验证那一步告诉你它到底能不能用</p>',
+      '<p class="wz-note">仓库不存在也可以先填，程序会在验证那一步告诉你它到底能不能用</p>',
     // 仓库名里出现 / 或 \ 基本都是把 owner/repo 整段粘进来了，直接抹掉
     bind: (d) =>
       bindInput('#wzRepo', () => d.repo, (v) => (d.repo = v), (v) => v.replace(/[\\/]/g, '').trim()),
@@ -120,7 +120,7 @@ export const FIELDS = {
     label: '分支',
     title: '用哪个分支',
     html: (d) =>
-      field('分支', 'wzBranch', d.branch || 'main', 'main', '留空就用 main —— 新建的仓库本来也就是它') +
+      field('分支', 'wzBranch', d.branch || 'main', 'main', '留空就用 main，新建的仓库本来也就是它') +
       '<p class="wz-note">填的不是默认分支也没关系，上传会往这里写</p>',
     bind: (d) => bindInput('#wzBranch', () => d.branch || 'main', (v) => (d.branch = v || 'main')),
     valid: () => true

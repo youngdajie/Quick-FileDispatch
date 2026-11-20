@@ -11,12 +11,12 @@ import (
 // GitHub 的「读引用」和「更新引用」路径不一样：
 //
 //	GET   /git/refs/{ref}   读引用（实测写成单数 /git/ref/ 它也认）
-//	PATCH /git/refs/{ref}   更新引用 —— **只认复数**，单数直接 404
+//	PATCH /git/refs/{ref}   更新引用，**只认复数**，单数直接 404
 //
 // 早先 uploadGitData / MoveBatch 里 GET 和 PATCH 共用了一个 "…/git/ref/heads/xxx"，
 // 于是：blob 建好了、tree 建好了、commit 也建好了，最后那一步 PATCH 404。
 // 用户看到的是「上传失败：仓库或分支不存在，请检查用户名 / 仓库名 / 分支名」，
-// 可分支明明是好的、Token 也有权限 —— 前面每一步都不报错，只错最后一下。
+// 可分支明明是好的、Token 也有权限，前面每一步都不报错，只错最后一下。
 // 文件管理页走本地 git push、不碰这个 API，所以「能推」和「传不上」能同时成立。
 //
 // 这个测试把 PATCH 的路径钉死。想验证它确实有效，把 write.go 改回单数跑一遍即可。

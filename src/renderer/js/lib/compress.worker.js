@@ -1,11 +1,11 @@
 /**
- * 压缩 Worker —— 跑在独立线程，配合多 Worker 池吃满多核 CPU
+ * 压缩 Worker，跑在独立线程，配合多 Worker 池吃满多核 CPU
  * JPEG / WebP / PNG 用 OffscreenCanvas 的 Chromium 原生编解码器；
- * AVIF 走内置的 libavif（wasm）——因为 Chromium 只能解码 AVIF，不能编码
+ * AVIF 走内置的 libavif（wasm）：因为 Chromium 只能解码 AVIF，不能编码
  * （canvas.convertToBlob({type:'image/avif'}) 会静默返回 PNG，别被骗了）。
  */
 
-// 水印绘制是页面和 worker 共用的那一份（见 lib/watermark.js 顶部说明）——
+// 水印绘制是页面和 worker 共用的那一份（见 lib/watermark.js 顶部说明），
 // worker 是 classic worker，只能用 importScripts 引经典脚本，引不来 ES module。
 importScripts('/js/lib/watermark.js');
 

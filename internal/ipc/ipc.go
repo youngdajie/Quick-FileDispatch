@@ -18,7 +18,7 @@ import (
 
 // Handler 处理一次调用。payload 是原样的 JSON（可能是 null）；
 // 返回的 any 会被序列化成 JSON 回给渲染层；返回 error 表示这次调用失败，
-// 对应 Electron 里的 reject —— 渲染层那边会走 catch。
+// 对应 Electron 里的 reject，渲染层那边会走 catch。
 type Handler func(payload json.RawMessage) (any, error)
 
 // Registry 是通道表。渲染层可能并发打多个接口，所以读写都要加锁。

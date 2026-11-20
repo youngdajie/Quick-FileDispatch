@@ -13,7 +13,7 @@
  *     （渲染层的 catch 里读的就是 e.message）；
  *   - payload 原样 JSON 化，null / 不给都是 null。
  *
- * 通道名逐字对照 src/main/preload.js，两边必须同步改 —— 名字差一个字母，
+ * 通道名逐字对照 src/main/preload.js，两边必须同步改，名字差一个字母，
  * 界面上表现成「点了没反应」，而且不报错，很难查。
  *
  * 这版还补了两件 WebView2 壳需要的事（渲染层不用知道）：
@@ -195,7 +195,7 @@
       /**
        * Electron 版订阅的是主进程推过来的 win:maximized 事件。
        * HTTP 这条路上没有事件通道，改用轮询：每 400ms 问一次状态，
-       * 变了才回调 —— 渲染层的用法（onMaximized(applyMax)）不变。
+       * 变了才回调，渲染层的用法（onMaximized(applyMax)）不变。
        */
       onMaximized: function (listener) {
         let last = null;
@@ -270,7 +270,7 @@
    * 星野/点阵画不进去，看得出一条段落缝（被杰哥打回）。现在页面铺满，
    * 由这里在窗口四边 + 四角放几条隐形缩放条：按下时把方向告诉宿主
    * （win:resizeEdge），宿主在 UI 线程轮询光标位置自己改窗口矩形，松手
-   * 由宿主用 GetAsyncKeyState 判断 —— 页面只负责「从哪个方向开始缩」，
+   * 由宿主用 GetAsyncKeyState 判断，页面只负责「从哪个方向开始缩」，
    * 拖动过程一个字节都不用发。
    */
   function installResizeStrips() {
@@ -321,7 +321,7 @@
    *
    * WebView2 的原生非客户区接管（IsNonClientRegionSupportEnabled）按预先
    * 算好的 drag 区域在浏览器进程里拦鼠标：落点只要在 drag 区内，事件根本
-   * 不进 DOM —— 缩放条哪怕 z-index 顶格也收不到 pointerdown（2026-09-23
+   * 不进 DOM，缩放条哪怕 z-index 顶格也收不到 pointerdown（2026-09-23
    * A/B 探针实证：topbar 临时改 no-drag 后事件立刻出现，恢复 drag 又被吞）。
    * 所以在 topbar 里垫几块 no-drag 的透明垫片，让出顶边条、两个上角、
    * 左右条与顶栏重叠的部分；垫片 pointer-events:none，只影响区域计算，

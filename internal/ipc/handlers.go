@@ -131,7 +131,7 @@ func (e *Env) repoKey() string {
 // Register 把这一版实现的通道挂上去。
 //
 // 通道名逐字对照 src/main/preload.js 与 main.js 里的 ipcMain.handle，
-// 别自己改名 —— 渲染层是按名字调的，改一个字母就是「点了没反应」。
+// 别自己改名，渲染层是按名字调的，改一个字母就是「点了没反应」。
 func Register(r *Registry, env *Env) {
 	registerUpdate(r, env)
 
@@ -141,7 +141,7 @@ func Register(r *Registry, env *Env) {
 	if env.roots == nil {
 		env.roots = &rootGuard{roots: map[string]bool{}}
 	}
-	// 配置里已经绑了本地目录的话，启动时就得放行 ——
+	// 配置里已经绑了本地目录的话，启动时就得放行，
 	// 否则刷新一次界面，本地图片预览会先 403 一次（要等下一次 config:set 才恢复）
 	if dir := env.Store.LocalDir(); dir != "" {
 		env.allowRoot(dir)
@@ -175,13 +175,13 @@ func Register(r *Registry, env *Env) {
 	})
 
 	// 扫一眼本机有没有在跑的代理（Windows 系统代理 → 常见端口的握手探测）。
-	// 设置页那个「扫描」按钮用它；找不到就返回 found:false，不报错 ——
+	// 设置页那个「扫描」按钮用它；找不到就返回 found:false，不报错，
 	// 「这台机器没开代理」是正常结果，不是异常。
 	r.Handle("app:detectProxy", func(json.RawMessage) (any, error) {
 		return netproxy.Detect(), nil
 	})
 
-	// 本机字体家族名。GDI 一次枚举搞定（见 internal/winfont），不再绕 PowerShell ——
+	// 本机字体家族名。GDI 一次枚举搞定（见 internal/winfont），不再绕 PowerShell，
 	// 那条路既慢又在这台机器上跑不出结果，而它被渲染层的启动链路 await 着，
 	// 慢一步界面就晚一步上主题色。
 	r.Handle("app:fonts", func(json.RawMessage) (any, error) {
@@ -191,7 +191,7 @@ func Register(r *Registry, env *Env) {
 	// git-lfs 状态与安装。只在 CNB 用 LFS 上传时才是必需的，但设置页
 	// 提前把状态摆出来，用户不用等到上传失败了才发现缺东西。
 	//
-	// 注意这个查询**不触发下载** —— 只是看本地有没有。
+	// 注意这个查询**不触发下载**，只是看本地有没有。
 	// 真正的安装是 lfsInstall（可能几十秒，带进度事件）。
 	r.Handle("app:lfsStatus", func(json.RawMessage) (any, error) {
 		return env.lfsStatus(), nil
@@ -266,7 +266,7 @@ func Register(r *Registry, env *Env) {
 		}
 
 		// 可选参数：仓库里的相对目录。管理页那个按钮要停在**当前目录**，
-		// 不能一律打开根 —— 人在三级目录里点它，就该打开三级目录。
+		// 不能一律打开根，人在三级目录里点它，就该打开三级目录。
 		var sub string
 		_ = json.Unmarshal(payload, &sub)
 		target := dir
@@ -278,7 +278,7 @@ func Register(r *Registry, env *Env) {
 				target = joined
 			}
 		}
-		// 目标可能还不存在（云端刚建的目录、本地没同步下来）。逐级往上退到存在的为止 ——
+		// 目标可能还不存在（云端刚建的目录、本地没同步下来）。逐级往上退到存在的为止，
 		// 打开一个不存在的路径，资源管理器会弹个很难看的一级错误框。
 		for target != dir {
 			if st, err := os.Stat(target); err == nil && st.IsDir() {
@@ -359,12 +359,12 @@ func Register(r *Registry, env *Env) {
 	/* ---------------------------------------------------------- Git */
 
 	// Git 版本：引导流程（配置向导的「本地目录」那一步）和设置页都要先问一句
-	// 「本机有没有 git」。返回 {version:"2.47.0"}，没装就是空串 —— 渲染层判的是
+	// 「本机有没有 git」。返回 {version:"2.47.0"}，没装就是空串，渲染层判的是
 	// gv.version 有没有值，而不是这个通道有没有抛错。
 	//
 	// 这个通道以前没实现，界面上表现成一条 unhandled rejection：功能看着正常
 	// （引导里那步本来就该显示「未检测到 Git」），但控制台是脏的，排查真问题时
-	// 会被它带偏 —— 所以宁可实现掉，不留「故意不实现」的通道。
+	// 会被它带偏，所以宁可实现掉，不留「故意不实现」的通道。
 	r.Handle("git:version", func(json.RawMessage) (any, error) {
 		return map[string]any{"version": git.Version(context.Background())}, nil
 	})
@@ -681,7 +681,7 @@ func isSafeTarget(s string) bool {
 	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		return true
 	}
-	// mailto: 也放行 —— 关于页的「电子邮件」入口点了要能唤起系统邮件客户端。
+	// mailto: 也放行，关于页的「电子邮件」入口点了要能唤起系统邮件客户端。
 	// 它只能带起邮件程序，给不了命令执行面，所以放进白名单是安全的。
 	if strings.HasPrefix(lower, "mailto:") {
 		return true

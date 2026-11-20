@@ -16,7 +16,7 @@ import (
 
 // profileFields 是「属于这一份配置」的字段：切 profile 时整组一起换。
 //
-// linkRule / customDomain / linkFormat 也在内 —— 一份配置 = 仓库信息 + 本地目录 + 文件链接。
+// linkRule / customDomain / linkFormat 也在内，一份配置 = 仓库信息 + 本地目录 + 文件链接。
 // 早先它们放在顶层当全局设置，结果切到另一个平台时，平台专属的规则
 // （如 jsdelivr 只给 GitHub）在新平台的下拉里不存在，表单只能回落到「自动」，
 // 一保存就把用户的规则冲掉了。
@@ -40,7 +40,7 @@ func profileDefaultOf(k string) string {
 
 // GetToken 取当前生效那份的明文 Token。
 //
-// 只在本进程内部用，绝不经过 IPC 出去 —— 界面上看到的永远是掩码。
+// 只在本进程内部用，绝不经过 IPC 出去，界面上看到的永远是掩码。
 func (s *Store) GetToken() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -49,7 +49,7 @@ func (s *Store) GetToken() string {
 
 // GetProfileToken 取某份配置的明文 Token。
 //
-// 自己没存，就顺着「同平台 + 同 owner/repo/branch」找一份有 Token 的借用 ——
+// 自己没存，就顺着「同平台 + 同 owner/repo/branch」找一份有 Token 的借用，
 // 导入进来的配置天生不带凭据，靠这条把可用性体检（profile:check）做得有意义，
 // 否则每份导入的配置都会显示「本机没有可用 Token」，其实只是没存在它自己身上。
 func (s *Store) GetProfileToken(id string) string {
@@ -88,7 +88,7 @@ func (s *Store) decryptToken(holder map[string]any) string {
 		}
 		plain, err := s.vault.Decrypt(raw)
 		if err != nil {
-			// 解不开就当没有 —— 但要把原因留给你排查
+			// 解不开就当没有，但要把原因留给你排查
 			if s.onTokenFail != nil {
 				s.onTokenFail(err)
 			}
@@ -104,7 +104,7 @@ func (s *Store) decryptToken(holder map[string]any) string {
 
 // encryptInto 把 Token 加密后写进某个持有者。
 //
-// 加密失败（平台不支持 / DPAPI 不可用）时**不落明文**，直接报错 ——
+// 加密失败（平台不支持 / DPAPI 不可用）时**不落明文**，直接报错，
 // 「已加密」这个承诺不能打折，关于页上是这么写的。
 func (s *Store) encryptInto(holder map[string]any, token string) error {
 	delete(holder, "_tokenEnc")
@@ -162,7 +162,7 @@ func copyToken(from, to map[string]any) {
 
 // migrate 逐版升级老配置。
 //
-// 每一版的注释都写清「为什么要动」和「为什么只动这一类」——
+// 每一版的注释都写清「为什么要动」和「为什么只动这一类」，
 // 迁移跑在用户看不见的地方，写错了不会报错，只会表现为
 // 「我的某个设置怎么自己变了」，那是最难查的一类问题。
 func migrate(cfg map[string]any) map[string]any {
@@ -196,7 +196,7 @@ func migrate(cfg map[string]any) map[string]any {
 	}
 	if v < 5 {
 		// 路径模板取消：上传目标目录改到上传页自己选。
-		// 残留值必须删掉 —— 留着就是一个看不见却还会影响上传路径的字段。
+		// 残留值必须删掉，留着就是一个看不见却还会影响上传路径的字段。
 		delete(cfg, "pathTemplate")
 		cfg["version"] = 5
 	}
@@ -278,7 +278,7 @@ func migrate(cfg map[string]any) map[string]any {
 		/**
 		 * 顶层是「当前生效那份」的镜像，必须跟着它对齐。
 		 * 不对齐就出大问题：老的全局规则是 jsdelivr（GitHub 专属）、生效配置却是 CNB，
-		 * 那份配置只能拿 'auto'，可顶层还留着 jsdelivr —— 生成链接读的是顶层，
+		 * 那份配置只能拿 'auto'，可顶层还留着 jsdelivr，生成链接读的是顶层，
 		 * 于是给 CNB 仓库拼出一条 jsdelivr 链接；而且下次保存任何设置时
 		 * syncActive 又会把顶层这个 jsdelivr 写回 CNB 那份配置里，越描越黑。
 		 */
@@ -290,7 +290,7 @@ func migrate(cfg map[string]any) map[string]any {
 	}
 	if v < 9 {
 		// bgBlur 换了语义：以前是「毛玻璃强度」（0-24，越大人越透、还带模糊），
-		// 现在是「面板不透明度」（0-100，越大越实心）。模糊那套先撤了 ——
+		// 现在是「面板不透明度」（0-100，越大越实心）。模糊那套先撤了，
 		// 老逻辑里强度 0 反而是全白实心，跟直觉反着来。
 		// 按 (1 - 旧/24) * 100 换算，同一档位观感尽量对上：
 		//   旧 0（关毛玻璃 = 实心） → 新 100（不透明）
@@ -310,7 +310,7 @@ func migrate(cfg map[string]any) map[string]any {
 		//   旧的边距 m = round(size × 0.9)，右下角时 x 边距就是 m；
 		//   旧的 y 是文字垂直中心（h - size - m），换算成「文字底边距底边」
 		//   就是 size/2 + m ≈ size × 1.4。
-		// 图更宽时旧实现的边距会跟着字号一起变大，新实现是固定像素 ——
+		// 图更宽时旧实现的边距会跟着字号一起变大，新实现是固定像素，
 		// 这正是这次要的效果：说「距右边 20px」就是 20px，不再随图浮动。
 		if wm, ok := cfg["watermark"].(map[string]any); ok {
 			fs := 22.0
@@ -347,7 +347,7 @@ func migrate(cfg map[string]any) map[string]any {
 		cfg["version"] = 11
 	}
 	if v < 12 {
-		// 自定义背景图与毛玻璃已整体下线，把老配置里那两个字段清掉 ——
+		// 自定义背景图与毛玻璃已整体下线，把老配置里那两个字段清掉，
 		// 留着不会报错，但会让 config.json 里一直躺着两个没人读的键，
 		// 也让「恢复默认设置」之后的配置和老版本长得一模一样，查问题费劲。
 		if ui, ok := cfg["ui"].(map[string]any); ok {
@@ -415,7 +415,7 @@ func normalizePlatform(v any) string {
 //
 // BBCode 已移除：它只对论坛有用，而这两个平台（GitHub / CNB）的用户吃的是
 // Markdown 或裸链接。存量配置里可能还选着它，放着不管会表现为
-// 「设置页下拉空着、复制出来的东西退化成裸地址」，所以一律回落到 Markdown ——
+// 「设置页下拉空着、复制出来的东西退化成裸地址」，所以一律回落到 Markdown，
 // 那是移除前最接近用户本意的默认值。
 func normalizeLinkFormat(v any) string {
 	switch s := strings.TrimSpace(str(v)); s {
@@ -665,7 +665,7 @@ func (s *Store) DeleteProfile(id string) (map[string]any, error) {
 // 写进去只会让导入端指向一个不存在的目录。导入端拿到空 localDir 之后
 // 会引导用户为本机重新绑定目录。
 //
-// Token 是明文落在 JSON 里的 —— 导出前必须由渲染层弹确认框。
+// Token 是明文落在 JSON 里的，导出前必须由渲染层弹确认框。
 func (s *Store) ExportProfiles() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -766,7 +766,7 @@ func (s *Store) ImportProfiles(payload map[string]any) (*ImportResult, error) {
 			"repo":     strings.TrimSpace(defStr(m["repo"], "")),
 			"branch":   defStr(strings.TrimSpace(defStr(m["branch"], "")), "main"),
 			"apiBase":  strings.TrimSpace(defStr(m["apiBase"], "")),
-			// 本地路径绝不从文件里带过来 —— 换台机器它多半不存在
+			// 本地路径绝不从文件里带过来，换台机器它多半不存在
 			"localDir":     "",
 			"linkRule":     defStr(m["linkRule"], defStr(st0["linkRule"], "auto")),
 			"customDomain": defStr(m["customDomain"], defStr(st0["customDomain"], "")),
@@ -811,7 +811,7 @@ func (s *Store) ImportProfiles(payload map[string]any) (*ImportResult, error) {
 
 	/**
 	 * 只恢复「真·全局」的那两项（链接格式 / 预览代理）。
-	 * 链接规则和自定义域名现在跟着配置走，上面已经按每份配置还原过了 ——
+	 * 链接规则和自定义域名现在跟着配置走，上面已经按每份配置还原过了，
 	 * 这里再往顶层写一遍，等于用文件里那份配置的规则覆盖掉本机当前生效配置的规则，
 	 * 用户明明只是导进来几份备份，自己正在用的规则却被改了。
 	 */

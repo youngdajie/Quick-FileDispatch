@@ -24,7 +24,7 @@ import { openMiniUpload } from '../lib/upload-mini.js';
 import state from '../lib/state.js';
 
 const CPLinks = window.CPLinks;
-/** 后缀算不算「能当文本看」——和主进程云端的判断用的是同一份（UMD 共享） */
+/** 后缀算不算「能当文本看」，和主进程云端的判断用的是同一份（UMD 共享） */
 const CPHL = window.CPHighlight;
 const PAGE = 120;
 
@@ -83,7 +83,7 @@ let replaceTarget = null;
 
 /**
  * 框选拖完那一刻，浏览器还会补一个 click。
- * 那个 click 落在条目上时如果带着 Ctrl，就会把刚框进来的这一格又取消掉 ——
+ * 那个 click 落在条目上时如果带着 Ctrl，就会把刚框进来的这一格又取消掉，
  * 所以拖完短暂闭麦，让这个尾巴 click 直接丢掉。
  */
 let suppressClickUntil = 0;
@@ -156,7 +156,7 @@ function linkOf(it) {
 /**
  * 音视频预览的参数。
  *
- * src 用的是和图片预览、缩略图完全同一个拼法（absLocalPath + localUrl）——
+ * src 用的是和图片预览、缩略图完全同一个拼法（absLocalPath + localUrl），
  * /__local 是唯一放行绑定目录的出口，换成别的方式拼路径会被后端 403 掉。
  * localPath 只给「在资源管理器中显示」用，所以是绝对路径而不是 /__local 直链。
  * link / format 给标题栏那两个按钮用：链接格式跟着文件管理页的设置走。
@@ -235,14 +235,14 @@ function selectedFiles() {
  * 选中只有三条路：勾复选框、右键、在空白处按住左键拖框。
  *
  * 以前是「整块 tile 点一下就选中」，于是每次想双击预览、双击进目录，都会先
- * 把它选上，回头还得手动取消 —— 这是这次重做最主要的动机。
+ * 把它选上，回头还得手动取消，这是这次重做最主要的动机。
  * 现在单击条目不再改变选中状态（Ctrl / Cmd + 单击保留，当桌面上的肌肉记忆）。
  */
 function findItem(path) {
   return view.items.find((i) => i.path === path) || null;
 }
 
-/** 只刷新 class / aria，不重建 DOM —— 拖框选每移动一下都要跑，重建会卡 */
+/** 只刷新 class / aria，不重建 DOM，拖框选每移动一下都要跑，重建会卡 */
 function syncTileChecks() {
   const grid = $('#mgGrid');
   if (grid) {
@@ -298,7 +298,7 @@ function syncHeadCheck() {
  * 按住左键拖动 = 拉一个选框，碰到的条目都选上（OpenList 那种手感）。
  * 按住 Ctrl / Cmd 则是叠加到现有选区，而不是替换。
  *
- * 选框挂在 body 上用 position: fixed —— 全部按视口坐标算，
+ * 选框挂在 body 上用 position: fixed，全部按视口坐标算，
  * 不用去跟 .content 的滚动位置对账，滚动时也不会错位。
  *
  * fromTile 表示这框是从某个条目身上拉起来的（长按触发）。区别只有一个：
@@ -337,7 +337,7 @@ function startMarquee(e, fromTile) {
   const move = (ev) => {
     const w = Math.abs(ev.clientX - e.clientX);
     const h = Math.abs(ev.clientY - e.clientY);
-    // 只是点了一下空白，还没拖起来 —— 先不画选框，免得闪一下
+    // 只是点了一下空白，还没拖起来，先不画选框，免得闪一下
     if (!moved && w < 4 && h < 4) return;
     moved = true;
     suppressClickUntil = Date.now() + 350;
@@ -402,7 +402,7 @@ function menuForItem(it) {
     {
       label: isText(it) ? '预览 / 编辑' : '预览',
       icon: ICONS.eye,
-      // 音视频都要能从这里进 —— 和双击走同一个 openPreview，不新增菜单项
+      // 音视频都要能从这里进，和双击走同一个 openPreview，不新增菜单项
       disabled: !isImg(it) && !isVideo(it) && !isAudio(it) && !isText(it),
       onClick: () => openPreview(it)
     },
@@ -472,7 +472,7 @@ function blankMenuItems() {
 /**
  * 在当前目录下新建一个空文件夹。
  *
- * 只动**本地**目录（和改名 / 删除同一路）—— 建完要在左侧点「提交并推送」
+ * 只动**本地**目录（和改名 / 删除同一路），建完要在左侧点「提交并推送」
  * 才进仓库。而且 git 不跟踪空目录，所以要等里面放了文件才会出现在云端，
  * 弹窗里把这一点说清楚，免得用户以为没生效。
  */
@@ -541,7 +541,7 @@ async function createFolder(handle) {
  * 「打开管理页时自动拉取云端」真正要做的事：让本地目录变成这份配置对应的仓库。
  *
  * 以前 syncLocal 碰到「不是 Git 仓库」直接 skipped，于是管理页左边认出来了、
- * 却什么也没发生 —— 杰哥点名的就是这个。现在先问后端一句四态（git:inspect）：
+ * 却什么也没发生，杰哥点名的就是这个。现在先问后端一句四态（git:inspect）：
  *   empty        空目录 → 显示提示并从云端克隆下来，完成时有动效
  *   ready        已是这份配置的仓库 → 按设置里的策略 pull
  *   foreign-repo 是**别处**的 Git 仓库 → 直接报错，绝不覆盖
@@ -549,7 +549,7 @@ async function createFolder(handle) {
  */
 let localNoticeTimer = 0;
 
-/** 收起提示条 —— 状态好了就得让它走，别一直挂着过时的报错 */
+/** 收起提示条，状态好了就得让它走，别一直挂着过时的报错 */
 function clearLocalNotice() {
   const el = $('#mgLocalNotice');
   if (!el) return;
@@ -579,7 +579,7 @@ function showLocalNotice(kind, text) {
  *
  * 这条以前是「一次性写入、永不清除」：空目录克隆成功后、或用户自己把目录
  * 变成仓库之后，旧的那条红字会一直挂着；而「检测」按钮只刷新云端对比，
- * 根本不碰提示条 —— 杰哥截图里「本地与云端一致」却还挂着「非空且不是
+ * 根本不碰提示条，杰哥截图里「本地与云端一致」却还挂着「非空且不是
  * Git 仓库」就是这个。
  *
  * 判定以 git:inspect 的四态为准；但当它说「不是 Git 仓库」、而 git:status
@@ -719,7 +719,7 @@ async function prepareLocal(opts) {
 /**
  * 读当前目录。
  *
- * opts.silent：静默刷新 —— 不铺骨架屏、不清选择，数据回来只补差异。
+ * opts.silent：静默刷新，不铺骨架屏、不清选择，数据回来只补差异。
  *   「每次进文件管理都闪一下骨架」就是它治的：页面上本来就有上一次的内容，
  *   把它清掉再画一遍纯属自找闪烁。
  */
@@ -743,7 +743,7 @@ async function load(opts) {
   loadSide();
   /**
    * 延迟骨架：右侧读的是本地目录，正常情况下几十毫秒就回来了。
-   * 以前一进来就无条件铺一屏骨架，等数据到了再整块换掉 —— 用户看到的就是
+   * 以前一进来就无条件铺一屏骨架，等数据到了再整块换掉，用户看到的就是
    * 「闪一下」。这里改成只有真的慢了（>350ms）才补骨架：快路径下页面直接从
    * 「上屏内容 / 空白占位」过渡到真实列表，一帧骨架都不出现。
    */
@@ -779,7 +779,7 @@ async function load(opts) {
     view.shown = PAGE;
   } catch (e) {
     err(e.message || String(e));
-    // 静默刷新失败：手上还有上一批内容就别推翻它 —— 一次网络抖动不该把
+    // 静默刷新失败：手上还有上一批内容就别推翻它，一次网络抖动不该把
     // 用户眼前的列表清成错误页，提示一句就够
     if (silent && view.items.length) {
       view.loading = false;
@@ -810,7 +810,7 @@ async function load(opts) {
  *
  * 以前延迟 120ms + 180ms 淡入，截图那一拍遮罩还没起来；加上实测主线程被 git
  * 调用卡住时淡入会停在 0 好几帧，用户只看到一句静态文字。
- * 现在遮罩同步出现，并至少留 600ms 再收 —— 本机检测几十毫秒完事时，
+ * 现在遮罩同步出现，并至少留 600ms 再收，本机检测几十毫秒完事时，
  * 一闪而过等于没显示。
  */
 /** 遮罩最短展示时长：短于此看不清，长于此又拖慢交互 */
@@ -847,12 +847,12 @@ async function loadSide() {
   clearTimeout(sideCheckTimer);
   if (side) {
     side.setAttribute('aria-busy', 'true');
-    // 同步挂类：不排队、不淡入 —— 进入页面的第一帧就要看见遮罩
+    // 同步挂类：不排队、不淡入，进入页面的第一帧就要看见遮罩
     side.classList.add('is-checking');
   }
   try {
     await refreshGitState();
-    // 每次重画左侧都复核一遍本地目录状态 —— 提示条不能是「一次性写入、永不清除」；
+    // 每次重画左侧都复核一遍本地目录状态，提示条不能是「一次性写入、永不清除」；
     // 状态恢复成仓库后，这里会主动把过时的红字收起来
     await syncLocalNotice();
     // 本地状态和云端比对并行不了：都要跑 git / 网络，串行更省事
@@ -876,7 +876,7 @@ async function loadSide() {
 /**
  * 存储用量条。
  *
- * 数据来自 CNB 的 charge 接口 —— 注意那是**组织级**的（/{org}/-/charge/…），
+ * 数据来自 CNB 的 charge 接口，注意那是**组织级**的（/{org}/-/charge/…），
  * 仓库维度的接口没公开，所以这里的数字是「这个账号下所有仓库」的合计，
  * tooltip 里会写明，免得被当成单个仓库的用量。
  */
@@ -902,7 +902,7 @@ async function refreshCloudQuota() {
     box.hidden = !html;
     box.innerHTML = html;
   } catch (e) {
-    // 查不到就静静收起来 —— 侧栏的主体信息不该被一根容量条牵连
+    // 查不到就静静收起来，侧栏的主体信息不该被一根容量条牵连
     box.hidden = true;
     box.innerHTML = '';
   }
@@ -912,7 +912,7 @@ async function refreshCloudQuota() {
  * 容量条上方那条居中短波浪。
  *
  * 内联 SVG 而不是 CSS background：写在 CSS 里的 SVG 属于独立文档，
- * stroke 的 currentColor 取不到外层元素的颜色，只能硬编码色值 —— 那样换主题
+ * stroke 的 currentColor 取不到外层元素的颜色，只能硬编码色值，那样换主题
  * 就断了。内联进来就跟着 .sq-wave 的 color 走。
  */
 const SQ_WAVE =
@@ -988,12 +988,12 @@ async function refreshGitState() {
  * 云端检测器。
  *
  * 走云端接口上传 / 删除时，本地是「被顺带同步」的一方。但如果改动是从别处来的
- * —— 网页端直接提交、另一台电脑推的、同事合的 PR —— 本地这边是不知道的：
+ *，网页端直接提交、另一台电脑推的、同事合的 PR，本地这边是不知道的：
  * 界面看着一切正常，实际已经落后云端好几个提交，甚至两边都改了、分叉了。
  *
  * 这个检测器就是把这件事显式摆出来：拿本地 HEAD 和云端 HEAD 比，谁新谁旧、
  * 差几个提交，一眼可见，并给出一个能直接点的动作（拉取 / 推送）。
- * 它只读不写 —— 真正的拉与推都要用户点按钮。
+ * 它只读不写，真正的拉与推都要用户点按钮。
  */
 
 /** 自动检测节流：翻目录会连着触发 load()，5 秒内不重复打云端接口 */
@@ -1053,7 +1053,7 @@ function renderCloudDetect(d) {
   }
 
   // 哈希只显 7 位、不加外框（瘦身：以前是个带边框的药丸，两个框占掉半行），
-  // 完整 commit 塞进 title —— 悬停会由自绘云朵气泡显示完整的 40 位 sha。
+  // 完整 commit 塞进 title，悬停会由自绘云朵气泡显示完整的 40 位 sha。
   // 没有完整值时不挂 title：空 title 会让气泡弹出一个空壳
   const shaSpan = (short, full, extra) => {
     const t = full ? ' title="' + escapeHtml(full) + '"' : '';
@@ -1087,8 +1087,8 @@ function renderCloudDetect(d) {
 
   const MAP = {
     same: { cls: 'ok', text: '本地与云端一致', act: '' },
-    'local-behind': { cls: 'bad', text: '云端更新 — 本地落后 ' + d.behind + ' 个提交', act: 'pull' },
-    'local-ahead': { cls: 'bad', text: '本地更新 — 领先云端 ' + d.ahead + ' 个提交', act: 'push' },
+    'local-behind': { cls: 'bad', text: '云端更新，本地落后 ' + d.behind + ' 个提交', act: 'pull' },
+    'local-ahead': { cls: 'bad', text: '本地更新，领先云端 ' + d.ahead + ' 个提交', act: 'push' },
     diverged: { cls: 'bad', text: '两边分叉：本地领先 ' + d.ahead + '、落后 ' + d.behind, act: '' },
     'no-local': { cls: '', text: '这台电脑还没克隆仓库，先克隆下来才能管理文件', act: '' },
     unknown: { cls: 'bad', text: '提交历史比不出来' + (d.cloud && d.cloud.message ? '：' + d.cloud.message : ''), act: '' }
@@ -1194,7 +1194,7 @@ function filtered() {
   const k = view.sortKey;
   const d = view.sortDir;
   list.sort((a, b) => {
-    // 文件夹永远排在文件前面 —— 混在一起找东西太累
+    // 文件夹永远排在文件前面，混在一起找东西太累
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
     let r = 0;
     if (k === 'size') r = (a.size || 0) - (b.size || 0);
@@ -1225,7 +1225,7 @@ function renderBreadcrumb() {
  * 这样两种视图共用同一套 DOM 和同一套事件，不用写两份渲染逻辑。
  *
  * 复选框从「一个 ✓ 字符」换成了自绘控件（.mg-check）：勾中态、半选态、
- * 深浅主题下都看得清；同时把原来的悬停工具条整块删掉 —— 五个按钮压在缩略图上
+ * 深浅主题下都看得清；同时把原来的悬停工具条整块删掉，五个按钮压在缩略图上
  * 既挡内容又容易误点，操作全搬到右键菜单里了。
  */
 /* ---------------------------------------------------------------- 缩略图 */
@@ -1234,7 +1234,7 @@ function renderBreadcrumb() {
  * 大图不要直接把原图塞进 <img src>。
  *
  * 壁纸这类 4000×3000 的图，浏览器会把**整张**解码进内存（约 48 MB）再缩到
- * 一百多像素显示 —— 一屏 120 个 tile 就是 5 GB 级的解码峰值，切页和滚动
+ * 一百多像素显示，一屏 120 个 tile 就是 5 GB 级的解码峰值，切页和滚动
  * 必卡（杰哥的「壁纸收藏」就是这个情况）。
  *
  * 办法：进视口时才去取原图，用 createImageBitmap 的 resize 参数**在解码
@@ -1280,7 +1280,7 @@ function thumbObserver() {
 /** 给当前所有待加载的缩略图挂上观察器（每次渲染后调） */
 function observeThumbs() {
   const io = thumbObserver();
-  // 每次都是整块 innerHTML 重建，旧元素已经从 DOM 里没了 —— 先断掉所有旧观察，
+  // 每次都是整块 innerHTML 重建，旧元素已经从 DOM 里没了，先断掉所有旧观察，
   // 否则那些已经没用的 img 会被 observer 一直引用着，切几次目录就积一堆
   io.disconnect();
   document.querySelectorAll('#mgGrid img[data-thumb]').forEach((img) => io.observe(img));
@@ -1324,7 +1324,7 @@ async function decodeThumb(img) {
     img.src = objUrl;
     img.classList.add('thumb-loaded');
   } catch (e) {
-    // 降采样这条路失败了就退回原图直出 —— 至少内容能显示出来，
+    // 降采样这条路失败了就退回原图直出，至少内容能显示出来，
     // 后续的加载失败兜底（attachImageFallback）继续管 error
     if (img.isConnected && url) img.src = url;
   }
@@ -1363,7 +1363,7 @@ function tileHtml(it, idx) {
       '" alt=""';
     // 命中缓存就直接给 src（排序 / 筛选 / 加载更多时不重复解码）；
     // 否则只记 URL，交给缩略图引擎：进视口才 fetch + createImageBitmap 降采样
-    // —— 不设 src，设了就等于让浏览器去解码整张原图（壁纸一张 48MB）。
+    //，不设 src，设了就等于让浏览器去解码整张原图（壁纸一张 48MB）。
     thumb = cached
       ? '<img src="' + escapeHtml(cached) + '"' + attrs + ' />'
       : '<img data-thumb="' + escapeHtml(u.primary) + '"' + attrs + ' />';
@@ -1438,7 +1438,7 @@ function setViewMode(mode, persist, paint) {
  * 上一次真正画进 DOM 的那批内容（模式 + 目录 + 每一项的路径/大小/时间）。
  *
  * 静默刷新时数据往往一模一样，这时候再 innerHTML 一遍 = 所有缩略图重新解码、
- * 入场动画重播 —— 用户看到的就是「刷新了一下」。签名没变就直接跳过。
+ * 入场动画重播，用户看到的就是「刷新了一下」。签名没变就直接跳过。
  */
 let gridSig = '';
 
@@ -1595,7 +1595,7 @@ async function exportSelected() {
  *
  * 底图是本地克隆，所以起码得有个 Git 仓库，才谈得上「看着目录挑」。
  *
- * 同步状态不当作开关：本地落后 / 分叉时照样能挑，只是把话说在前面 ——
+ * 同步状态不当作开关：本地落后 / 分叉时照样能挑，只是把话说在前面，
  * 你选的这个目录在云端可能还没建，记得先同步再提交。原因有两个：
  *   1. 只盯着 relation === 'same' 会让「提交历史比不出来」的情况（自定义 API
  *      地址，检测器自己都会提示这种）永远用不上这个功能；
@@ -1702,7 +1702,7 @@ function dpSyncHint() {
     el.innerHTML = '<span class="dl-note">' + escapeHtml(pk.why) + '</span>';
     return;
   }
-  // 路径本身用常规色，只有「没对上」那句才染暖色 —— 整行都变黄反而看不清路径
+  // 路径本身用常规色，只有「没对上」那句才染暖色，整行都变黄反而看不清路径
   el.innerHTML =
     '<span class="dl-path">' + escapeHtml(absLocalPath(dir)) + '</span>' +
     (pk.synced ? '' : ' <span class="dl-note">（' + escapeHtml(pk.why) + '，选完记得同步）</span>');
@@ -2026,7 +2026,7 @@ function bind() {
 
   /*
    * 在资源管理器里打开**当前目录**（不是本地根目录）。
-   * 按钮原来挂在顶栏，那会儿拿不到「当前在哪个目录」，只能开根 ——
+   * 按钮原来挂在顶栏，那会儿拿不到「当前在哪个目录」，只能开根，
    * 挪到这里之后按 view.dir 精确打开，人在三级目录里点它，开的就是三级目录。
    * 后端会做防穿越校验，目标还不存在时逐级往上退到最近的存在目录。
    */
@@ -2066,7 +2066,7 @@ function bind() {
 
   $('#btnMgGrid').onclick = () => setViewMode('grid', true);
   $('#btnMgList').onclick = () => setViewMode('list', true);
-  // 用上次记下的视图模式 —— 别再每次重启都退回网格。
+  // 用上次记下的视图模式，别再每次重启都退回网格。
   // paint=false：这时列表还没 load，重绘只会闪一下空状态
   setViewMode(savedViewMode(), false, false);
 
@@ -2101,9 +2101,9 @@ function bind() {
   });
 
   // 滚动懒渲染。
-  // 容器是 .mg-main **不是** .content —— 管理页把自己撑满并 overflow:hidden，
+  // 容器是 .mg-main **不是** .content，管理页把自己撑满并 overflow:hidden，
   // 滚动发生在内部的 .mg-main 里。早先监听 .content，那个 scroll 永远不触发
-  // （.content 在这页根本不滚），列表就卡死在第一批 120 个 —— 杰哥 230 张
+  // （.content 在这页根本不滚），列表就卡死在第一批 120 个，杰哥 230 张
   // 只看到 120 张，就是这个。
   const scroller = $('.mg-main');
   if (scroller) {
@@ -2190,9 +2190,9 @@ function bind() {
   /**
    * 按住左键拖动 → 框选。
    *
-   * 以前只认空白处，条目身上按下去什么都不发生 —— 想框一片夹着文件的区域，
+   * 以前只认空白处，条目身上按下去什么都不发生，想框一片夹着文件的区域，
    * 得绕开每一个格子找缝下笔，很难用。现在条目上也能起手，但不能像空白处
-   * 那样「按下去立刻开框」：那样单击、双击全被抢走。折中是延迟判定 ——
+   * 那样「按下去立刻开框」：那样单击、双击全被抢走。折中是延迟判定，
    * 按住不动超过 180ms，或者拖出 4px，才认定这是框选。
    */
   const HOLD_MS = 180;
@@ -2272,7 +2272,7 @@ function bind() {
     const it = findItem(tile.dataset.path);
     if (!it) return;
     // 音视频先拦一道：以前它们掉进最后那条 else，被当成外链甩给浏览器。
-    // 解不了的格式也走这里 —— 播放器自己会说「播放不了」，而不是换个地方失败
+    // 解不了的格式也走这里，播放器自己会说「播放不了」，而不是换个地方失败
     if (isVideo(it)) {
       previewVideo(mediaArgs(it));
       return;
@@ -2303,7 +2303,7 @@ function bind() {
  * 侧栏收起 / 展开。
  *
  * 真正动的只有 <div class="mg-body"> 上那一个类，宽度、淡出、把手的位移
- * 全在 CSS 里过渡 —— 这里一帧都不碰样式，收起时才不会一顿一顿的。
+ * 全在 CSS 里过渡，这里一帧都不碰样式，收起时才不会一顿一顿的。
  *
  * save 为真才落盘（ui.mgSideCollapsed）：页面初始化、切配置这些「跟着配置走」
  * 的时机只回填状态，不能再写回去，否则一次启动会白写两遍配置。
@@ -2344,7 +2344,7 @@ export default {
   },
 
   onEnter() {
-    // 先让本地目录就绪（空目录会自动克隆），再读列表 ——
+    // 先让本地目录就绪（空目录会自动克隆），再读列表，
     // 反过来会先渲染一屏「空」，等克隆完再跳一下。
     // 页面上已经有上一次的内容时走静默刷新：不铺骨架、不清选择，
     // 数据没变连 DOM 都不重建（见 renderGrid 的签名比对）。

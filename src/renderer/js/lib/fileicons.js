@@ -65,7 +65,7 @@ const EXT_CATEGORY = {
  * 类型 -> 图标路径（24x24 viewBox，**实心**，靠 evenodd 挖出内部细节）
  *
  * 设计口径（2026-11-07 杰哥要求重做）：
- *   - 一律实心（fill），不再用细描边 —— 描边图标和图片缩略图并排时太轻、
+ *   - 一律实心（fill），不再用细描边，描边图标和图片缩略图并排时太轻、
  *     显得「小一号」，尤其在列表视图里像没长开
  *   - 圆角、圆润：主体容器 rx 都在 2.4~3，避免直角硬边
  *   - 内部细节用 fill-rule="evenodd" 挖洞表达，单色也能看清，不依赖背景色
@@ -167,7 +167,7 @@ export function isImageName(name) {
   return categoryOf(name, false) === 'image';
 }
 
-/** 生成图标 HTML —— 尺寸交给 CSS（.fi 的宽高），颜色由 .fi-<type> 决定 */
+/** 生成图标 HTML，尺寸交给 CSS（.fi 的宽高），颜色由 .fi-<type> 决定 */
 export function fileIcon(name, opts) {
   const cat = opts && opts.isDir ? 'dir' : categoryOf(name, false);
   return (

@@ -1,7 +1,7 @@
 // Package local 读写「绑定到本地的那个仓库目录」，对应 Electron 版的 src/main/local.js。
 //
 // 管理页默认直接读本地（快），只有切到「远程」才去调接口。
-// 所以列目录 / 统计 / 目录树这三件事在 Go 侧都得有，而且要快 ——
+// 所以列目录 / 统计 / 目录树这三件事在 Go 侧都得有，而且要快，
 // 界面每进一层目录就问一次。
 package local
 
@@ -35,7 +35,7 @@ func skipName(name string) bool {
 	return false
 }
 
-// Entry 是列表里的一项，字段和 local.js 的返回值逐字对应 ——
+// Entry 是列表里的一项，字段和 local.js 的返回值逐字对应，
 // 渲染层直接按这些名字取值，改一个就是「某列空白」。
 type Entry struct {
 	Name    string `json:"name"`
@@ -47,7 +47,7 @@ type Entry struct {
 }
 
 // ListDir 列出 root 下 rel 目录的内容。
-// 目录在前、文件在后，同层按名称用中文排序规则排 —— 和 Electron 版一致，
+// 目录在前、文件在后，同层按名称用中文排序规则排，和 Electron 版一致，
 // 不然同一个仓库两边顺序不一样，用户会以为文件丢了。
 func ListDir(root, rel string) ([]Entry, error) {
 	abs, err := paths.SafeJoin(root, rel)
@@ -103,7 +103,7 @@ func ListDir(root, rel string) ([]Entry, error) {
 }
 
 // Count 递归统计 { 文件数, 总字节, 图片数 }。深度上限 8 层，
-// 和 Electron 版一致 —— 再深也只是数字，不值得继续递归。
+// 和 Electron 版一致，再深也只是数字，不值得继续递归。
 type Count struct {
 	Files  int64 `json:"files"`
 	Bytes  int64 `json:"bytes"`
@@ -142,7 +142,7 @@ type Node struct {
 	Children []Node `json:"children"`
 }
 
-// Tree 只取到 maxDepth 层，默认 2 层 —— 和 Electron 版一致。
+// Tree 只取到 maxDepth 层，默认 2 层，和 Electron 版一致。
 // 展开到很深会让一次点击等很久，而且那棵树展开后也没人看。
 func Tree(root, rel string, depth, maxDepth int) []Node {
 	if depth > maxDepth {

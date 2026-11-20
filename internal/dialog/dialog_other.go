@@ -18,7 +18,7 @@ type Filter struct {
 func SetOwner(hwnd uintptr) {}
 
 // ChooseDir / OpenFile / SaveFile 在非 Windows 上都没有实现：
-// 返回明确错误，而不是悄悄给个空串 —— 空串会被上层当成「用户取消了」，
+// 返回明确错误，而不是悄悄给个空串，空串会被上层当成「用户取消了」，
 // 于是界面什么都不发生，比报错更难查。
 func ChooseDir(title, defaultPath string) (string, error) {
 	return "", errors.New("选择文件夹对话框只实现了 Windows 版")

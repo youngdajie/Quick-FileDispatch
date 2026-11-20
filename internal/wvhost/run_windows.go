@@ -41,7 +41,7 @@ func Run(o Options) error {
 
 	// WebView2 是 COM 组件，宿主线程必须是 STA。忘了这一步会得到
 	// 0x800401F0（CO_E_NOTINITIALIZED），而且环境目录都建得出来，
-	// 错误却在异步回调里才到 —— 特意记一笔，别再查一遍。
+	// 错误却在异步回调里才到，特意记一笔，别再查一遍。
 	hr, _, _ := procCoInitializeEx.Call(0, coInitApartmentThreaded)
 	// S_OK(0) / S_FALSE(1) 都算成「已初始化」；RPC_E_CHANGED_MODE 说明
 	// 线程已是 MTA（理论上不会发生，别去 uninitialize 也无妨）
@@ -133,7 +133,7 @@ func Run(o Options) error {
 
 // applyRoundedCorners 给窗口四角加系统圆角：
 // DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE=33, DWMWCP_ROUND=2)。
-// 裁剪发生在 DWM 合成期 —— 抗锯齿、宿主代码零参与、最大化自动变方角。
+// 裁剪发生在 DWM 合成期，抗锯齿、宿主代码零参与、最大化自动变方角。
 // 半径由系统定死（约 8px），API 没有精确半径参数，也没有 6px 这一档。
 // 这是 Win11 起的属性：Win10 的 dwmapi 会拒绝（E_INVALIDARG），失败即
 // 没有圆角，静默跳过就行。
@@ -202,7 +202,7 @@ func IsMaximized() bool {
 // 进入原生的拖动 / 双击最大化循环。渲染层自己没法拖无边框窗口
 // （-webkit-app-region 是 Electron 专属）……本来是这么设计的，
 // 实测证明这条路靠不住：按下时浏览器进程握着鼠标捕获，宿主的拖动
-// 循环收不到鼠标移动，窗口纹丝不动 —— 正常拖动已改由 WebView2 的
+// 循环收不到鼠标移动，窗口纹丝不动，正常拖动已改由 WebView2 的
 // IsNonClientRegionSupportEnabled 原生接管（见 webview2_windows.go）。
 // 这里留着当老运行时的兜底：lParam 必须带真实光标坐标，传 0 的话
 // 移动循环拿 (0,0) 当锚点，行为不可预期。
@@ -223,7 +223,7 @@ func BeginDrag() {
 
 // ResizeEdge 曾以这个名字存在过两次，都没成：
 //   - 2.9.0-go 当天加、当天删：从 HTTP 协程 SendMessage(WM_NCLBUTTONDOWN)
-//     进系统缩放循环，按下时浏览器进程握着鼠标捕获，循环收不到鼠标移动 ——
+//     进系统缩放循环，按下时浏览器进程握着鼠标捕获，循环收不到鼠标移动，
 //     拖动能用是因为新运行时走了 IsNonClientRegionSupportEnabled 的原生接管，
 //     不是这条路的功劳。
 //   - 现在的 win:resizeEdge 只借了这个名字：投递方向到 UI 线程后轮询

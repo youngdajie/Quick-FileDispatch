@@ -73,7 +73,7 @@ const ICON_CLOSE =
  *   wide       图片预览那样的宽版
  *   className  额外挂到 .modal 上的类名（文本编辑器用 'code' 撑大并换布局）
  *   actions    标题右侧的小按钮 [{ icon, label, title, className, onClick }]
- *              文本预览的「在浏览器打开」就走这里 —— 放标题栏才符合直觉，
+ *              文本预览的「在浏览器打开」就走这里，放标题栏才符合直觉，
  *              沉到底栏会和「保存 / 关闭」混在一起变成一排同权重的按钮
  *   closeX     是否在右上角放一个关闭叉（自绘）。文本预览那种没有底栏按钮、
  *              也不让点遮罩关的弹层需要它，否则用户只能按 Esc 才知道怎么退
@@ -125,7 +125,7 @@ export function modal(opts) {
     head.appendChild(acts);
   }
 
-  // 关闭叉放在 actions 之后 —— 也就是说，它永远在最右边（右上角）
+  // 关闭叉放在 actions 之后，也就是说，它永远在最右边（右上角）
   if (o.closeX) {
     const x = document.createElement('button');
     x.type = 'button';
@@ -216,7 +216,7 @@ const ICON_COPY_LINK =
 /**
  * 图片 / 视频 / 音频三种预览框共用的标题栏操作。
  *
- * 「复制链接」的格式不在预览框里另设一套下拉 —— 它读文件管理页那个
+ * 「复制链接」的格式不在预览框里另设一套下拉，它读文件管理页那个
  * #mgFormat（或配置里的 linkFormat），用户在设置里选过什么，这里就用什么。
  * 预览模块只认传进来的 format 字符串，格式化交给 CPLinks 那份唯一实现。
  */
@@ -257,7 +257,7 @@ export function previewActions(opts) {
 
 /**
  * 图片预览。
- * link 给了就在标题栏挂「复制链接 / 浏览器打开」—— 和视频、音频预览保持
+ * link 给了就在标题栏挂「复制链接 / 浏览器打开」，和视频、音频预览保持
  * 同一套位置与图标，不然同一个页面上几种预览框的按钮要重新找。
  */
 export function previewImage(src, name, link, format) {
@@ -333,7 +333,7 @@ export function contextMenu(opts) {
     el.appendChild(b);
   });
 
-  // 先放到左上角外面量尺寸，再收进视口 —— 避免先闪一下再跳位置
+  // 先放到左上角外面量尺寸，再收进视口，避免先闪一下再跳位置
   el.style.left = '-9999px';
   el.style.top = '0';
   document.body.appendChild(el);

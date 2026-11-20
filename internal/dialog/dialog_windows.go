@@ -8,12 +8,12 @@
 //
 // 选文件夹用 IFileOpenDialog + FOS_PICKFOLDERS（现代对话框），不用老掉牙的
 // SHBrowseForFolderW。换掉它的三个原因，都是实测踩出来的：
-//  1. 老接口不认宿主窗口 —— 对话框开在主窗口**背后**，用户以为点了没反应，
+//  1. 老接口不认宿主窗口，对话框开在主窗口**背后**，用户以为点了没反应，
 //     于是反复点，一次点出一堆窗口；
 //  2. 老接口那个树形对话框又小又挤，找几层嵌套目录要横向拖滚动条；
 //  3. 新接口支持 SetFolder 指定初始目录，老接口要设置初始目录得写回调。
 //
-// IFileDialog 的代价是要自己搭 COM 的 vtable 调用 —— 本文件里那点 comCall 就够，
+// IFileDialog 的代价是要自己搭 COM 的 vtable 调用，本文件里那点 comCall 就够，
 // 一个「选文件夹」不值得为它引入第三方库。
 package dialog
 
@@ -89,7 +89,7 @@ var (
 
 // comCall 调 COM 接口的第 slot 个虚函数（0/1/2 是 QueryInterface/AddRef/Release）。
 //
-// 接口指针指向的是「虚表指针」，虚表里按顺序排着函数指针 ——
+// 接口指针指向的是「虚表指针」，虚表里按顺序排着函数指针，
 // 这就是 C++ 对象在内存里的样子，也是能在纯 Go 里调 COM 的全部秘密。
 func comCall(p uintptr, slot int, args ...uintptr) uintptr {
 	if p == 0 {
@@ -150,7 +150,7 @@ func utf16PtrToString(p uintptr) string {
 
 // ChooseDir 弹出「选择文件夹」对话框，返回选中的路径。
 //
-// 用户取消时返回空串和 nil 错误 —— 取消是正常结果，不是失败。
+// 用户取消时返回空串和 nil 错误，取消是正常结果，不是失败。
 // 重复调用（上一个还开着）会直接返回空串，避免连点弹出一堆窗口。
 func ChooseDir(title, defaultPath string) (string, error) {
 	if dirOpening.Swap(true) {
@@ -160,14 +160,14 @@ func ChooseDir(title, defaultPath string) (string, error) {
 
 	// COM 要求「初始化」和「调用」在同一个 OS 线程上。
 	// Go 的 goroutine 会在 OS 线程之间迁移，不锁住的话
-	// CoInitializeEx 和 IFileDialog 可能落在不同线程上 ——
+	// CoInitializeEx 和 IFileDialog 可能落在不同线程上，
 	// 那种情况下对话框要么不显示，要么点了没反应。
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
 	// S_OK(0) = 这个线程刚被初始化；S_FALSE(1) = 已经初始化过了。
 	// 这两种都要在退出时配一次 CoUninitialize。
-	// RPC_E_CHANGED_MODE(0x80010106) 表示线程已按别的模式初始化过 ——
+	// RPC_E_CHANGED_MODE(0x80010106) 表示线程已按别的模式初始化过，
 	// 那就别动它，也别 uninitialize。
 	if hr, _, _ := procCoInitializeEx.Call(0, coInitApartmentThreaded); hr == 0 || hr == 1 {
 		defer procCoUninitialize.Call()

@@ -17,7 +17,7 @@ import (
 //	启用 LFS → 写文件（= 前端压缩/水印之后的输出）→ add → commit
 //
 // 关键判据是第 4 步：仓库里存的必须是 LFS **指针**而不是原内容。
-// 只看 .gitattributes 有那一行是不够的 —— filter 没生效的话，
+// 只看 .gitattributes 有那一行是不够的，filter 没生效的话，
 // 文件照样以普通 blob 进仓库，用户以为走了 LFS 其实没走。
 func TestLFSEndToEndWorkflow(t *testing.T) {
 	hasGitLFS(t)
@@ -55,7 +55,7 @@ func TestLFSEndToEndWorkflow(t *testing.T) {
 	// 4) 决定性验证：仓库里存的必须是指针，不是原内容
 	stored := gitOut(t, dir, "show", "HEAD:"+rel)
 	if !strings.HasPrefix(stored, "version https://git-lfs.github.com/spec/v1") {
-		t.Fatalf("文件没走 LFS —— 仓库里存的是原内容（前 120 字节）：\n%.120s", stored)
+		t.Fatalf("文件没走 LFS，仓库里存的是原内容（前 120 字节）：\n%.120s", stored)
 	}
 	if !strings.Contains(stored, "oid sha256:") {
 		t.Errorf("LFS 指针缺少 oid：\n%s", stored)
@@ -88,7 +88,7 @@ func TestLFSEndToEndWorkflow(t *testing.T) {
 // TestLFSMultipleFilesWithMixedPaths 验证一批混合路径（图片 / 非图片 /
 // 深层目录 / 中文名）能全部正确进入 LFS。
 //
-// 真实的上传批次就是混的 —— 用户一次拖进 20 个文件，
+// 真实的上传批次就是混的，用户一次拖进 20 个文件，
 // 压缩器只处理图片，其它原样上传，但**都要走 LFS**。
 func TestLFSMultipleFilesWithMixedPaths(t *testing.T) {
 	hasGitLFS(t)

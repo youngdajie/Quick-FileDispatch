@@ -22,7 +22,7 @@ import (
 
 /* ------------------------------------------------------------ 连接信息 */
 
-// conn 是当前生效那份配置的「连接信息」—— 建客户端 / 调 git 都要它。
+// conn 是当前生效那份配置的「连接信息」，建客户端 / 调 git 都要它。
 func (e *Env) conn() (map[string]any, *cloud.Client, error) {
 	cfg := e.Store.Raw()
 	owner, _ := cfg["owner"].(string)
@@ -45,7 +45,7 @@ func strOf(v any) string {
 	return s
 }
 
-// isCNB 判断当前配置是不是 CNB —— CNB 的写操作全部走 git 通道。
+// isCNB 判断当前配置是不是 CNB，CNB 的写操作全部走 git 通道。
 func isCNB(cfg map[string]any) bool {
 	return strOf(cfg["platform"]) == "cnb"
 }
@@ -133,7 +133,7 @@ func (e *Env) cloudList(payload map[string]any) (any, error) {
 	localReady := localReadyFast(cfg)
 
 	// 管理页默认读本地（快）；本地不可用时**静默退回远程**，
-	// 而不是报错 —— 用户只是想看文件列表，不该被「本地目录没绑」挡住。
+	// 而不是报错，用户只是想看文件列表，不该被「本地目录没绑」挡住。
 	if strOf(payload["source"]) == "local" && localReady {
 		items, err := local.ListDir(strOf(cfg["localDir"]), dirRel)
 		if err != nil {
@@ -164,7 +164,7 @@ func (e *Env) localReady(cfg map[string]any) bool {
 // localReadyFast 给 cloud:list 的首屏用：只看磁盘上有没有 .git。
 //
 // localReady() 每次都会同步起一个 `git rev-parse` 子进程，Windows 上冷启动
-// 几百毫秒起步 —— 列本地文件本该是几十毫秒的事，不该为一个布尔标记等它。
+// 几百毫秒起步，列本地文件本该是几十毫秒的事，不该为一个布尔标记等它。
 // 真正的仓库身份判定由左侧检测器（git:status / git:inspect）异步去做，
 // 这里只决定「列本地还是退回远程」；普通仓库的 .git 是目录，worktree /
 // submodule 是文件，两种都算就绪。边界情况（父目录才是仓库）会退回远程，
@@ -228,7 +228,7 @@ func (e *Env) cloudStats(payload map[string]any) (any, error) {
 		})
 		return out, err
 	}
-	// 远程统计要递归调接口（最多 60 次请求），切配置时最容易被反复触发 —— 必须缓存
+	// 远程统计要递归调接口（最多 60 次请求），切配置时最容易被反复触发，必须缓存
 	return e.cache.Cached("stats|remote|"+key, repoStatsTTL, func() (any, error) {
 		_, client, err := e.conn()
 		if err != nil {
@@ -302,7 +302,7 @@ func (e *Env) cloudUpload(payload map[string]any) (any, error) {
 		var batchErr error
 		if isCNB(cfg) {
 			// 勾了 LFS 才需要 git-lfs。它可能要现下载（约 6MB），
-			// 所以**先准备好再开始传** —— 失败就直接返回，
+			// 所以**先准备好再开始传**，失败就直接返回，
 			// 不让用户白等一轮压缩和克隆。
 			if useLFS {
 				if err := e.ensureLFS(rep); err != nil {
@@ -360,7 +360,7 @@ func (e *Env) cloudUpload(payload map[string]any) (any, error) {
 			}
 		}
 	}
-	// 进度条的终态。成功/失败都要明确推一次 —— 否则前端会一直停在
+	// 进度条的终态。成功/失败都要明确推一次，否则前端会一直停在
 	// 「上传中 87%」，直到用户自己刷新页面。
 	if uploaded > 0 {
 		rep.Done(fmt.Sprintf("已上传 %d 个文件", uploaded))
@@ -381,7 +381,7 @@ func (e *Env) cloudUpload(payload map[string]any) (any, error) {
 
 // lfsStatus 报告 git-lfs 的可用状态。
 //
-// **不触发下载** —— 设置页一打开就问一下，不该因此产生网络流量。
+// **不触发下载**，设置页一打开就问一下，不该因此产生网络流量。
 // 真正的安装是 lfsInstall（可能几十秒，带进度事件）。
 func (e *Env) lfsStatus() map[string]any {
 	exe, _, ok := lfs.Find(e.ConfigDir)
@@ -426,7 +426,7 @@ func (e *Env) lfsInstall() (any, error) {
 // ensureLFS 确保 git-lfs 可用（没装就自动下载安装）。
 //
 // 装好后必须把 bin 目录注入 git 子进程的 PATH：git 执行 filter.lfs.clean
-// 时要找名叫 git-lfs 的可执行文件，找不到的话 `git add` 会直接报错 ——
+// 时要找名叫 git-lfs 的可执行文件，找不到的话 `git add` 会直接报错，
 // 而且报的是「git-lfs: command not found」这种用户完全看不懂的话。
 func (e *Env) ensureLFS(rep *progress.Reporter) error {
 	binDir, err := lfs.Ensure(context.Background(), e.ConfigDir, func(status string) {
@@ -461,7 +461,7 @@ func boolOf(v any) bool {
 	return b
 }
 
-// fileTooBigMsg：文件超限的提示跟着平台走 ——
+// fileTooBigMsg：文件超限的提示跟着平台走，
 // 两个平台上限不同（GitHub 100MB / CNB 200MB），说错了用户会以为是程序有 bug。
 func fileTooBigMsg(platform string, size int64) string {
 	if platform == "cnb" {
@@ -792,7 +792,7 @@ func (e *Env) detectCloud() (any, error) {
 		return out, nil
 	}
 	if sha == "" {
-		// 云端 HEAD 都没读到（空分支 / 接口不通），别再去 fetch ——
+		// 云端 HEAD 都没读到（空分支 / 接口不通），别再去 fetch，
 		// 比不出结论，白跑一次网络还可能把真实远端的凭据试探一遍
 		out["relation"] = "unknown"
 		out["ok"] = true
@@ -871,7 +871,7 @@ func repoLabel(cfg map[string]any) string {
 // cloudQuota 查 CNB 的存储用量，给管理页左侧画一根容量条。
 //
 // 刻意**不返回 error**：所有失败都塞进 {ok:false, reason:…}。
-// 容量只是锦上添花的参考信息，不该因为它挂了就让整个侧栏报错 ——
+// 容量只是锦上添花的参考信息，不该因为它挂了就让整个侧栏报错，
 // 那会盖掉下面更有用的「本地与云端是否同步」。
 func (e *Env) cloudQuota() (any, error) {
 	cfg := e.Store.Raw()
@@ -981,7 +981,7 @@ func (e *Env) syncLocal(reason string) any {
 	}
 
 	/*
-	 * 以前这里只判 IsRepo，不是就直接 skipped —— 「打开管理页时自动拉取云端」
+	 * 以前这里只判 IsRepo，不是就直接 skipped，「打开管理页时自动拉取云端」
 	 * 于是永远不生效（杰哥点名的）。现在按四态走：
 	 *   empty        空目录 → 直接从云端克隆下来
 	 *   foreign-repo 别处的仓库 → 报错，绝不 pull（否则拉的是别人的仓库）
@@ -1066,7 +1066,7 @@ func (e *Env) gitClone(payload map[string]any) (any, error) {
 		Branch: branch, Token: token, Dir: dir,
 	})
 	if r.OK {
-		// 克隆成功就把这个目录记成本地目录 —— 用户原本可能没绑。
+		// 克隆成功就把这个目录记成本地目录，用户原本可能没绑。
 		// 但指定 profileId 时（向导里在编辑另一份配置），目录已经写在那份
 		// 归档里了，别把**当前激活**配置的 localDir 顺手改掉。
 		if strOf(payload["profileId"]) == "" {
@@ -1211,7 +1211,7 @@ func (e *Env) fsLocalDelete(payload map[string]any) (any, error) {
 // fsLocalMkdir 在本地目录里新建一个空文件夹。
 //
 // 只动本地：和改名 / 删除同一路（改完要「提交并推送」才进仓库）。
-// 注意 git **不跟踪空目录** —— 新建的文件夹要等里面有文件才会出现在云端，
+// 注意 git **不跟踪空目录**，新建的文件夹要等里面有文件才会出现在云端，
 // 界面上会提醒这一点，不然用户会以为没生效。
 func (e *Env) fsLocalMkdir(payload map[string]any) (any, error) {
 	cfg := e.Store.Raw()
@@ -1246,7 +1246,7 @@ func (e *Env) fsLocalMkdir(payload map[string]any) (any, error) {
 // 而 JSON.stringify(Uint8Array) **不会**变成数组，而是变成 {"0":104,"1":105}
 // 这种数字键对象（结构化克隆才有 TypedArray 语义，HTTP+JSON 这条路上没有）。
 // 于是三个吃字节的通道（cloud:upload / cloud:replace / fs:localWrite）在 Go
-// 壳下全部报「期望字节数组或 base64 字符串」——这条兼容分支就是为了补上这个
+// 壳下全部报「期望字节数组或 base64 字符串」，这条兼容分支就是为了补上这个
 // 落差，渲染层一个字都不用改。
 //
 // 三种都要认：Array.from(buffer) 在大文件上会产生一个几十万元素的 JSON 数组，
@@ -1365,10 +1365,10 @@ func min(a, b int) int {
 // 产物是**带 padding 的标准 base64**（+ 和 /）。这里用 base64.StdEncoding：
 //
 //   - 标准字符集（不认 - / _ 的 URL 安全变体）
-//   - 必须有 padding（=）—— FileReader 总是给
+//   - 必须有 padding（=），FileReader 总是给
 //
 // 旧实现走 json.Marshal + json.Unmarshal 凑效，是因为 base64 字符集
-// 恰好没有 JSON 需要转义的字符 —— 看起来"碰巧能行"，但没有任何
+// 恰好没有 JSON 需要转义的字符，看起来"碰巧能行"，但没有任何
 // 注释说明意图，新人改 base64 解码时极易引入回归。
 func decodeBase64(s string) ([]byte, error) {
 	out, err := base64.StdEncoding.DecodeString(s)

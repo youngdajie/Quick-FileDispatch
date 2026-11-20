@@ -26,7 +26,7 @@ func hasGitLFS(t *testing.T) string {
 // 正确的跟踪规则。
 //
 // 为什么要跑真的 git：EnableInRepo 的全部价值就是「git 认不认这些规则」，
-// 用 mock 测等于没测 —— 真正的失败模式是 .gitattributes 写错格式、
+// 用 mock 测等于没测，真正的失败模式是 .gitattributes 写错格式、
 // 或者 filter 没注册上，那些只有真 git 才看得出来。
 func TestEnableInRepoWritesGitAttributes(t *testing.T) {
 	hasGitLFS(t)
@@ -72,7 +72,7 @@ func TestEnableInRepoWritesGitAttributes(t *testing.T) {
 	t.Logf(".gitattributes 内容：\n%s", ga)
 
 	// 2) 关键验证：git 是否真的认为这些文件要走 LFS。
-	//    check-attr 会输出 "filter: lfs" —— 这是「LFS 生效」的唯一权威判据。
+	//    check-attr 会输出 "filter: lfs"，这是「LFS 生效」的唯一权威判据。
 	//    光看 .gitattributes 有那一行不代表 git 认（格式错了照样匹配不上）。
 	for _, p := range paths {
 		out := gitOut(t, dir, "check-attr", "filter", "--", p)
@@ -92,7 +92,7 @@ func TestEnableInRepoWritesGitAttributes(t *testing.T) {
 //
 // 真实场景就是重复的：用户勾着 LFS 传了三次同一批文件，
 // EnableInRepo 会被调三次。第二次开始 `git lfs track` 会因为
-// 「规则已存在」返回非零退出码 —— 没加 --force 的话这里就炸了。
+// 「规则已存在」返回非零退出码，没加 --force 的话这里就炸了。
 func TestEnableInRepoIdempotent(t *testing.T) {
 	hasGitLFS(t)
 

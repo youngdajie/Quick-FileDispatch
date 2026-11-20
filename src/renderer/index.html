@@ -13,7 +13,7 @@
 <!-- 启动画面：全屏、纯品牌色，不跟主题走。
      为什么不跟主题：这会儿配置还没读出来，跟着猜反而会先闪一下另一种底色；
      固定一套深色底 + 蓝色光晕，淡出时界面自己浮现，观感是连贯的。
-     层级压在窗口控制按钮（10001）之下 —— 启动时也能直接关窗口。 -->
+     层级压在窗口控制按钮（10001）之下，启动时也能直接关窗口。 -->
 <div id="bootSplash" aria-hidden="true">
   <div class="bs-inner">
     <div class="bs-mark">
@@ -188,7 +188,7 @@
             </div>
           </div>
           <!-- 上传进度：百分比 + 已传/总量 + 速度。数据来自后端的 SSE 流
-               （/ipc/events），不是前端自己估的 —— git push 走 CNB 时
+               （/ipc/events），不是前端自己估的，git push 走 CNB 时
                进度只有 git 自己知道。 -->
           <div class="up-progress" id="upProgress" hidden>
             <div class="up-progress-head">
@@ -241,14 +241,14 @@
 
           <!-- CNB 专属：把文件内容存进对象存储（LFS），仓库里只留一个指针。
                只在平台是 CNB 时出现（GitHub 走 Git Data API，没有这个选项）。
-               好处写在文案里 —— 用户不知道「对象存储」和「仓库存储」是两笔账。 -->
+               好处写在文案里，用户不知道「对象存储」和「仓库存储」是两笔账。 -->
           <label class="up-lfs" id="upLfsRow" hidden>
             <input type="checkbox" id="upLfs" />
             <span class="up-lfs-text">
               <b>用 LFS 对象存储</b>
               <span class="hint">
                 文件内容存进 CNB 对象存储（独立 100GiB 免费额度），仓库里只留一个指针
-                大文件推荐开启 —— 不占仓库额度，别人 clone 时也不会把大文件一起拖下来
+                大文件推荐开启，不占仓库额度，别人 clone 时也不会把大文件一起拖下来
               </span>
             </span>
           </label>
@@ -257,7 +257,7 @@
           </p>
 
           <!-- 图片设置：压缩 + 水印全部集中在这里（原设置页两块卡整体迁入），
-               可折叠 —— 日常只改目录/文件名/前缀，这些低频参数收起来不占地方 -->
+               可折叠，日常只改目录/文件名/前缀，这些低频参数收起来不占地方 -->
           <div class="up-imgset" id="upImgSet">
             <button type="button" class="uis-head" id="upImgSetHead" aria-expanded="false" aria-controls="upImgSetBody">
               <svg class="uis-chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -473,7 +473,7 @@
               <button type="button" class="side-mini" id="btnMgDetect" title="重新检测本地与云端的提交差异">检测</button>
             </div>
             <!-- 本地目录四态提示（空目录自动拉取 / 别处仓库报错）。
-                 单独一块、不塞进 mgGitState —— 那个每次 load 都会被重画覆盖。 -->
+                 单独一块、不塞进 mgGitState，那个每次 load 都会被重画覆盖。 -->
             <div class="side-local-notice" id="mgLocalNotice" hidden></div>
             <div class="side-git" id="mgGitState">—</div>
             <div class="side-git side-git-cloud" id="mgCloudState">
@@ -561,7 +561,7 @@
             <div class="card-body">
               <div class="prof-list" id="profileList"></div>
               <div class="prof-empty" id="profileEmpty" hidden>
-                还没有归档的配置把上面填好，点「验证并归档」——验证通过后会出现在这里，点一下卡片就能切换
+                还没有归档的配置。把上面填好，点「验证并归档」，验证通过后会出现在这里，点一下卡片就能切换
               </div>
             </div>
           </section>
@@ -644,8 +644,8 @@
           <div class="settings-group-label"><span>04</span> 存储与维护</div>
           <section class="card settings-half">
             <div class="card-head">
-              <h2>大文件上传（git-lfs）</h2>
-              <p>上传时勾选「用 LFS 对象存储」才会用到它装一次就一直有效</p>
+              <h2>Git-LFS</h2>
+              <p>上传时勾选「用 LFS 对象存储」才会用到它</p>
             </div>
             <div class="card-body">
               <div class="lfs-row">
@@ -654,8 +654,7 @@
                 <button type="button" class="btn btn-sm" id="btnLfsInstall" hidden>立即安装</button>
               </div>
               <p class="field-note">
-                CNB 的对象存储与仓库存储是<b>两笔独立额度</b>（各 100 GiB）
-                大文件走 LFS 不占仓库额度，别人 clone 时也不会把大文件一起拖下来
+                不走仓库存储，走 LFS 对象存储，只对 CNB 生效
               </p>
             </div>
           </section>

@@ -10,7 +10,7 @@ import (
 /*
  * 读 Windows 那个「系统代理」开关。
  *
- * 只认注册表，因为 Clash / v2rayN 那一类软件默认就是改这里 ——
+ * 只认注册表，因为 Clash / v2rayN 那一类软件默认就是改这里，
  * 也正是本程序（和我门给 git 子进程的环境变量）读不到的那个地方。
  * 用 syscall 直接调 advapi32，不引 golang.org/x/sys：这点需求不值得为它
  * 破掉「零第三方依赖」。
@@ -26,7 +26,7 @@ func systemProxy() (string, bool) {
 	}
 	defer syscall.RegCloseKey(key)
 
-	// 开关关着的时候 ProxyServer 里还留着上次的地址 —— 那是个死地址，
+	// 开关关着的时候 ProxyServer 里还留着上次的地址，那是个死地址，
 	// 照着它填进去只会让用户以为「扫描扫错了」
 	if on, ok := queryDword(key, "ProxyEnable"); !ok || on == 0 {
 		return "", false

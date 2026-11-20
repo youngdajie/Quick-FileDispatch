@@ -74,7 +74,7 @@ func TestEnvCarriesProxy(t *testing.T) {
 }
 
 // ★ 端到端：设了代理之后，http.Client 发出去的请求必须**真的经过那个代理**。
-// 这条是整个功能的核心 —— 前面几条只验证"参数解析对了"，
+// 这条是整个功能的核心，前面几条只验证"参数解析对了"，
 // 只有这条能证明"流量确实走了代理"。
 func TestRequestsActuallyGoThroughProxy(t *testing.T) {
 	defer Set("")
@@ -93,7 +93,7 @@ func TestRequestsActuallyGoThroughProxy(t *testing.T) {
 	_, _ = client.Get("http://example.invalid/whatever")
 
 	if atomic.LoadInt32(&hits) == 0 {
-		t.Fatal("请求没有经过代理 —— 代理配置没生效")
+		t.Fatal("请求没有经过代理，代理配置没生效")
 	}
 }
 
@@ -182,6 +182,6 @@ func TestCNBRequestNeverReachesProxy(t *testing.T) {
 	_, _ = client.Get("http://nonexistent-proxy-test.cnb.cool/x") // 会失败，无所谓
 
 	if n := atomic.LoadInt32(&hits); n != 0 {
-		t.Fatalf("CNB 域名的请求打到了代理上（%d 次）—— 国内平台应该直连", n)
+		t.Fatalf("CNB 域名的请求打到了代理上（%d 次），国内平台应该直连", n)
 	}
 }

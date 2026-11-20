@@ -1,6 +1,6 @@
 /**
  * 共享工具：路径模板 / 链接规则 / 链接格式化
- * UMD 写法 —— 主进程用 require 加载，渲染层用 <script> 加载，逻辑只有一份
+ * UMD 写法，主进程用 require 加载，渲染层用 <script> 加载，逻辑只有一份
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -18,43 +18,43 @@
     {
       id: 'github_raw',
       name: 'GitHub Raw',
-      desc: 'raw.githubusercontent.com —— 最直接，但国内访问偶尔不稳',
+      desc: 'raw.githubusercontent.com，最直接，但国内访问偶尔不稳',
       platforms: ['github']
     },
     {
       id: 'jsdelivr',
       name: 'jsDelivr CDN',
-      desc: 'cdn.jsdelivr.net —— 全球加速，支持 GitHub 仓库，有缓存需等刷新',
+      desc: 'cdn.jsdelivr.net，全球加速，支持 GitHub 仓库，有缓存需等刷新',
       platforms: ['github']
     },
     {
       id: 'statically',
       name: 'Statically CDN',
-      desc: 'cdn.statically.io —— 另一条免费 CDN 线路',
+      desc: 'cdn.statically.io，另一条免费 CDN 线路',
       platforms: ['github']
     },
     {
       id: 'githack',
       name: 'Raw Githack',
-      desc: 'raw.githack.com —— 可返回正确的 Content-Type',
+      desc: 'raw.githack.com，可返回正确的 Content-Type',
       platforms: ['github']
     },
     {
       id: 'ghpages',
       name: 'GitHub Pages',
-      desc: '用户名.github.io —— 需要仓库开启 Pages 功能',
+      desc: '用户名.github.io，需要仓库开启 Pages 功能',
       platforms: ['github']
     },
     {
       id: 'cnb_raw',
       name: 'CNB Raw',
-      desc: 'cnb.cool/{owner}/{repo}/-/git/raw/{branch} —— 官方原始内容地址',
+      desc: 'cnb.cool/{owner}/{repo}/-/git/raw/{branch}，官方原始内容地址',
       platforms: ['cnb']
     },
     {
       id: 'cnb_jsdmirror',
       name: 'CNB 国内 CDN（JSDMirror）',
-      desc: 'cdn.jsdmirror.com/cnb/{owner}/{repo}@{branch} —— 给 CNB 仓库再套一层国内加速',
+      desc: 'cdn.jsdmirror.com/cnb/{owner}/{repo}@{branch}，给 CNB 仓库再套一层国内加速',
       platforms: ['cnb']
     },
     {
@@ -74,7 +74,7 @@
   /**
    * 链接格式的兜底归一。
    * 老配置里可能还存着已经下线的格式（BBCode 就是被移除的那个），
-   * 直接拿去喂 <select>.value 会变成空选中、喂 formatLink 会退化成裸链接 ——
+   * 直接拿去喂 <select>.value 会变成空选中、喂 formatLink 会退化成裸链接，
    * 两种都不是用户当初选的那一项，所以统一按 Markdown 处理。
    */
   function normalizeFormat(fmt) {

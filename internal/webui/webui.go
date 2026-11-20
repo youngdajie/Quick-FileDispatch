@@ -40,7 +40,7 @@ type handler struct {
 	// 传函数而不是字符串：切配置 / 绑新目录之后要立刻生效，不能缓存。
 	allows func(abs string) bool
 	// remote 抓远程仓库里的文件字节（私有仓库预览要用：Token 只留在后端）。
-	// 为 nil 时 /__remote 直接 503 —— 那时还没配好仓库，属正常状态。
+	// 为 nil 时 /__remote 直接 503，那时还没配好仓库，属正常状态。
 	remote func(rel string) ([]byte, string, error)
 	files  http.Handler
 
@@ -55,7 +55,7 @@ type handler struct {
 // New 组装路由。
 //
 // allows 决定 /__local 能读哪些路径；remote 给 /__remote 提供内容。
-// 两个都不能为 nil —— 前者是安全边界，后者缺失会让私有仓库的缩略图全部 404。
+// 两个都不能为 nil，前者是安全边界，后者缺失会让私有仓库的缩略图全部 404。
 // hub 是上传进度中心，可以为 nil（自检 / 无界面场景）。
 func New(reg *ipc.Registry, static fs.FS, bridge []byte,
 	allows func(string) bool,
@@ -132,7 +132,7 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
-			// 页面关了 / 刷新了 —— 必须走到这里，否则 Subscribe 的
+			// 页面关了 / 刷新了，必须走到这里，否则 Subscribe 的
 			// 通道会一直挂着，每刷新一次漏一个。
 			return
 
@@ -158,7 +158,7 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 // writeSSE 按 SSE 格式写一条事件，写完立刻 Flush。
 // 返回 false 表示连接已经断了，调用方该退出。
 //
-// 格式是 `data: <json>\n\n` —— json.Encoder 自带一个换行，
+// 格式是 `data: <json>\n\n`，json.Encoder 自带一个换行，
 // 所以还需要补一个空行，否则浏览器不会派发这条事件（SSE 以空行分隔消息）。
 func writeSSE(w io.Writer, rc *http.ResponseController, e progress.Event) bool {
 	if _, err := io.WriteString(w, "data: "); err != nil {
@@ -240,7 +240,7 @@ func (h *handler) ipc(w http.ResponseWriter, r *http.Request) {
 	}
 	// 请求体封顶：没有上限的话，一个几十 MB 的文件（base64 后还要再大 33%）
 	// 会以 JSON 的形式整块灌进来，解码时内存直接见底。
-	// 上限取 512MB —— 比两个平台的单文件红线（CNB 200MB / GitHub 100MB）
+	// 上限取 512MB，比两个平台的单文件红线（CNB 200MB / GitHub 100MB）
 	// 都留出富余，正常用撞不到，真撞到了也给一句人话而不是 OOM。
 	r.Body = http.MaxBytesReader(w, r.Body, maxIPCPayloadBytes)
 
@@ -291,7 +291,7 @@ func (h *handler) writeJSON(w http.ResponseWriter, v any) {
 // localFile 对应渲染层的 cloudpic.localUrl(绝对路径) → /__local?p=...
 //
 // 渲染层跑在 WebView 里拿不到文件系统，图片预览 / 文本预览都要经这里读盘。
-// 边界必须卡死：只允许读当前配置绑定的本地目录底下的文件 ——
+// 边界必须卡死：只允许读当前配置绑定的本地目录底下的文件，
 // 这个服务监听在 127.0.0.1 上，本机任何程序都能访问，
 // 不设边界的话它就变成了一个「读任意路径」的接口。
 func (h *handler) localFile(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +330,7 @@ func (h *handler) localFile(w http.ResponseWriter, r *http.Request) {
 //
 // 为什么不能让浏览器直接去取 raw 地址：私有仓库的直链带了签名会过期，
 // 而带 Token 请求又不能把 Token 交给渲染层。所以由后端代取一次，
-// Token 从头到尾不出进程 —— 这也是「预览代理」这件事唯一安全的做法。
+// Token 从头到尾不出进程，这也是「预览代理」这件事唯一安全的做法。
 //
 // 带 ETag：列表里同一张图会被反复请求（滚动、切页、刷新），
 // 没有 ETag 就要每次都真的去云端拉一遍。

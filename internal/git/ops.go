@@ -46,7 +46,7 @@ func AuthURL(platform, owner, repo, token string) string {
 	return "https://" + user + ":" + url.QueryEscape(token) + "@" + repoPath
 }
 
-// 提交身份 —— 应用往 GitHub / CNB 推文件时用的署名。
+// 提交身份，应用往 GitHub / CNB 推文件时用的署名。
 //
 // 早先写死成「JIE Dispatch」，结果每次由应用发起的提交都会在仓库里
 // 留下一个署名 JIE 的作者，贡献者列表里也多出一个「JIE Dispatch」。
@@ -64,7 +64,7 @@ func ConfigureIdentity(ctx context.Context, dir string) {
 
 /* ------------------------------------------------------------ 基础查询 */
 
-// HeadSHAFull 取完整 40 位 SHA。同步检测器用它和云端 HEAD 做**严格**比对 ——
+// HeadSHAFull 取完整 40 位 SHA。同步检测器用它和云端 HEAD 做**严格**比对，
 // 短 SHA 只有 7 位，碰撞概率虽小但没必要冒。
 func HeadSHAFull(ctx context.Context, dir string) string {
 	return run(ctx, []string{"rev-parse", "HEAD"}, dir, 20*time.Second).Stdout
@@ -103,7 +103,7 @@ type CloneParams struct {
 // Clone 把仓库克隆到本地。
 //
 // 目标目录已存在且非空时：如果它已经是仓库就直接算成功（不重复克隆），
-// 否则报错 —— 不能往一个装着别的东西的目录里克隆，那样会把用户文件弄乱。
+// 否则报错，不能往一个装着别的东西的目录里克隆，那样会把用户文件弄乱。
 func Clone(ctx context.Context, p CloneParams) OpResult {
 	if p.Dir == "" {
 		return OpResult{Message: "缺少目标目录"}
@@ -147,7 +147,7 @@ type PullParams struct {
 
 // Pull 让本地与云端保持一致。
 //
-// reset 策略直接 fetch + reset --hard，会**丢弃本地所有未提交的改动** ——
+// reset 策略直接 fetch + reset --hard，会**丢弃本地所有未提交的改动**，
 // 这是设置页里用户自己选的「强制对齐」，不是默认行为。
 func Pull(ctx context.Context, p PullParams) OpResult {
 	if p.Dir == "" {
@@ -215,7 +215,7 @@ type CommitParams struct {
 
 // CommitAndPush 把本地目录的**全部改动**提交并推到云端。
 //
-// 注意是 add -A：整个工作区的改动一起走。这是这个应用的定位决定的 ——
+// 注意是 add -A：整个工作区的改动一起走。这是这个应用的定位决定的，
 // 本地目录就是云端仓库的镜像，不是用户日常开发的工作区。
 func CommitAndPush(ctx context.Context, p CommitParams) OpResult {
 	if !IsRepo(ctx, p.Dir) {
@@ -255,7 +255,7 @@ func nothingToCommit(s string) bool { return nothingRe.MatchString(s) }
 // task 由上报方指定；phase 用 progress 包的常量；bytes/total 累计已传/总量
 // （total<=0 表示未知）；msg 是一句人话（可为空）。
 //
-// 它是函数而不是接口，是为了让 internal/cnb 那一层不必依赖 progress 包 ——
+// 它是函数而不是接口，是为了让 internal/cnb 那一层不必依赖 progress 包，
 // 桥接（回调 → 广播中心）留给 ipc 层做，那一层本来就两边都认识。
 type ProgressFunc func(phase string, bytes, total int64, msg string)
 
@@ -264,7 +264,7 @@ type ProgressFunc func(phase string, bytes, total int64, msg string)
 //
 // 为什么单独开一个函数而不是给 CommitAndPush 加个可空回调：
 // 绝大多数调用点（删文件、改名、推本地目录）都是几秒钟的事，
-// 而且用户没在等进度条 —— 给它们都加个参数是纯噪音。
+// 而且用户没在等进度条，给它们都加个参数是纯噪音。
 // 只有「用户点了上传、盯着进度条看」这一条链路需要实时反馈。
 func CommitAndPushStream(ctx context.Context, p CommitParams, onProgress ProgressFunc) OpResult {
 	if !IsRepo(ctx, p.Dir) {
@@ -400,9 +400,9 @@ var (
 // CleanError 把 git 的原始报错翻成人看得懂、且**能照着改**的一句话。
 //
 // 两件事必须做：
-//  1. 抹掉 URL 里的凭据 —— 报错里经常带着完整的 https://用户:Token@主机，
+//  1. 抹掉 URL 里的凭据，报错里经常带着完整的 https://用户:Token@主机，
 //     它会进日志、也可能被截图发出去；
-//  2. 认出几类典型失败并给具体建议 —— 「unknown error」这种没人能照着改。
+//  2. 认出几类典型失败并给具体建议，「unknown error」这种没人能照着改。
 func CleanError(r result) string {
 	if r.Err != nil && r.Err.Error() == "NOT_INSTALLED" {
 		return "未检测到 Git，请先安装 Git for Windows 并加入 PATH"

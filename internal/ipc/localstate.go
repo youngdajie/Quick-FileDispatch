@@ -5,7 +5,7 @@ package ipc
  *
  * 「打开管理页时自动拉取云端」这句话真正的意思，是让本地目录变成这份配置
  * 对应的那份仓库。以前 syncLocal 遇到「不是 Git 仓库」就直接 skipped 跳过，
- * 于是文件管理页识别出「本地不是 Git 仓库」之后什么也没发生 —— 杰哥点名的
+ * 于是文件管理页识别出「本地不是 Git 仓库」之后什么也没发生，杰哥点名的
  * 就是这里。
  *
  * 现在把「能不能落地」拆成四种状态，交给前端决定怎么做：
@@ -40,7 +40,7 @@ func remoteMatchesConfig(cfg map[string]any, remote string) bool {
 
 /**
  * inspectLocalDir 只读不写，回答「本地目录现在是什么状态」。
- * 供 git:inspect 通道和 profile:check 复用 —— 两边必须得出同一个结论，
+ * 供 git:inspect 通道和 profile:check 复用，两边必须得出同一个结论，
  * 否则管理页说能克隆、向导最后一步却说不行（或者反过来）。
  */
 func (e *Env) inspectLocalDir() map[string]any {

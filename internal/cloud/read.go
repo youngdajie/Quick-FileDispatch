@@ -7,7 +7,7 @@ import (
 
 /* ------------------------------------------------------------ 账号 / 仓库 */
 
-// Whoami 取当前 Token 对应的账号。这是「验证」的第一步 ——
+// Whoami 取当前 Token 对应的账号。这是「验证」的第一步，
 // 它能过，说明 Token 本身是有效的。
 func (c *Client) Whoami() (*UserInfo, error) {
 	data, err := c.req("GET", "/user", nil, nil)
@@ -78,7 +78,7 @@ func (c *Client) RepoInfo() (*RepoInfo, error) {
 // ListDir 列出某个目录。空 path 表示仓库根目录。
 //
 // 404 当「空目录」处理：新建的仓库、或者分支上还没有这个路径时，
-// 接口就返回 404 —— 那不是错误，用户看到空列表才是对的。
+// 接口就返回 404，那不是错误，用户看到空列表才是对的。
 func (c *Client) ListDir(path string) ([]Item, error) {
 	clean := trimSlashes(path)
 	var data any
@@ -148,7 +148,7 @@ func (c *Client) parseGitHub(data any) []Item {
 }
 
 // parseCNB：CNB 的 contents 返回 { type: 'tree'|'blob'|'empty', entries: [...] }。
-// 三种形状都要认 —— 只处理 tree 的话，「目录下只有一个文件」会显示成空的。
+// 三种形状都要认，只处理 tree 的话，「目录下只有一个文件」会显示成空的。
 func (c *Client) parseCNB(data any) []Item {
 	m, ok := data.(map[string]any)
 	if !ok {
@@ -210,7 +210,7 @@ type Count struct {
 // CountFiles 递归统计文件数与总字节。
 //
 // budget 限制总请求数：大仓库一次统计能打出上百次请求，
-// 而它只是界面角落里的一个数字 —— 不设上限会把接口配额刷爆，
+// 而它只是界面角落里的一个数字，不设上限会把接口配额刷爆，
 // 之后真正的上传反而报 403（频率限制）。
 func (c *Client) CountFiles(path string, depth int, acc *Count, budget *struct{ Requests, Max int }) *Count {
 	if acc == nil {
@@ -247,7 +247,7 @@ func (c *Client) CountFiles(path string, depth int, acc *Count, budget *struct{ 
 /* ------------------------------------------------------------ 读文件 */
 
 // ReadFile 读单个文件的内容（<= 1MB 时用）。
-// 读不到返回 nil 而不是错误 —— 调用方通常只是「试着读一下」。
+// 读不到返回 nil 而不是错误，调用方通常只是「试着读一下」。
 func (c *Client) ReadFile(path string) []byte {
 	entry, err := c.contentEntry(path)
 	if err != nil {
@@ -288,7 +288,7 @@ func (c *Client) contentEntry(path string) (any, error) {
 // ReadRaw 读原始字节。私有仓库也能读（带 Token），用于缩略图代理与文本预览。
 //
 // 404 单独翻译成「文件不存在」：这里读的是**具体的某一个文件**，
-// 而通用翻译会说「仓库或分支不存在」—— 用户刚改名 / 删过文件时
+// 而通用翻译会说「仓库或分支不存在」，用户刚改名 / 删过文件时
 // 看到那句话会去查仓库配置，白白绕一圈。
 func (c *Client) ReadRaw(path string) ([]byte, error) {
 	clean := trimSlashes(path)
@@ -309,7 +309,7 @@ func (c *Client) ReadRaw(path string) ([]byte, error) {
 	return body, nil
 }
 
-// HeadSHA 取分支 HEAD 的完整 commit SHA —— 云端同步检测器靠它和本地 HEAD 比对。
+// HeadSHA 取分支 HEAD 的完整 commit SHA，云端同步检测器靠它和本地 HEAD 比对。
 //
 // 读不到（分支不存在 / 空仓库）返回空串而不是报错：
 // 「这个分支还没有提交」是正常状态，该由调用方决定怎么提示。
@@ -361,7 +361,7 @@ type StorageQuota struct {
 //
 // 注意这是**组织级**的：CNB 的 charge 接口就开在组织这一层
 // （/{org}/-/charge/…），仓库维度的 repos-volume 参数没公开，调过去只会
-// 400。所以这里的数字实际是「这个账号下所有仓库」的合计 —— 界面上得说清楚，
+// 400。所以这里的数字实际是「这个账号下所有仓库」的合计，界面上得说清楚，
 // 别让人当成单个仓库的用量。
 type QuotaInfo struct {
 	Git    StorageQuota `json:"git"`    // 仓库存储
@@ -370,7 +370,7 @@ type QuotaInfo struct {
 
 // Quota 取存储用量与额度。只有 CNB 有这套接口（GitHub 没有对应的免费额度概念）。
 //
-// 额度和用量是两个接口，而且都只认组织 slug —— 不带仓库名。
+// 额度和用量是两个接口，而且都只认组织 slug，不带仓库名。
 func (c *Client) Quota() (*QuotaInfo, error) {
 	if !c.IsCNB() {
 		return nil, &ApiError{Message: "只有 CNB 提供容量接口"}

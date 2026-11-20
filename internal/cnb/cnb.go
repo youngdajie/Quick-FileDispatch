@@ -4,7 +4,7 @@
 //
 // CNB 的公开 Open API 里**没有**创建 Tree / 创建 Commit / 更新 Ref 的接口
 // （blob 接口的文档写着「通常与 Tree/Commit 接口配合使用」，但那两个并没开放）。
-// 孤立的 blob 没有落点，等于白造 —— 所以 CNB 的上传 / 删除 / 改名 / 替换
+// 孤立的 blob 没有落点，等于白造，所以 CNB 的上传 / 删除 / 改名 / 替换
 // 只能走 Git 本身：把仓库弄到一个工作区 → 改文件 → commit → push。
 //
 // # 工作区从哪来
@@ -14,7 +14,7 @@
 //	提交推送完立刻删掉，不在用户磁盘上留垃圾。
 //
 // 「绑的目录是别人的仓库」这条判断是硬的：不查就直接改，等于把 A 仓库的
-// 文件推进 B 仓库，而且 push 会真的成功 —— 后果比报错严重得多。
+// 文件推进 B 仓库，而且 push 会真的成功，后果比报错严重得多。
 package cnb
 
 import (
@@ -81,7 +81,7 @@ func remoteMatches(remote, platform, owner, repo string) bool {
 // 一串谁也不敢动的 bool。
 type UploadOptions struct {
 	// UseLFS 为 true 时这批文件走 Git LFS（CNB 侧计入「对象存储」额度，
-	// 与「仓库存储」分开计费）。**调用方负责确保 git-lfs 已安装** ——
+	// 与「仓库存储」分开计费）。**调用方负责确保 git-lfs 已安装**，
 	// 安装是耗时且可能失败的操作，应该由上层在开始前就准备好。
 	UseLFS bool
 	// OnProgress 是进度回调，可为 nil。
@@ -94,7 +94,7 @@ type UploadOptions struct {
 // （成功 / 失败原因），不至于被这一层吞掉。
 //
 // onStatus 用来上报「正在准备仓库」这类无百分比的阶段信息（可为 nil）。
-// 它主要给上传链路用 —— 临时克隆大仓库要几十秒，不给反馈就像卡死了。
+// 它主要给上传链路用，临时克隆大仓库要几十秒，不给反馈就像卡死了。
 func withWorkspace(ctx context.Context, c Conn, tmpRoot string, onStatus func(string), fn func(dir string) (git.OpResult, error)) (*Workspace, git.OpResult, error) {
 	say := func(s string) {
 		if onStatus != nil {
@@ -140,7 +140,7 @@ func withWorkspace(ctx context.Context, c Conn, tmpRoot string, onStatus func(st
 	return &Workspace{Used: "temp", Dir: tmp}, res, err
 }
 
-// removeDir 删掉临时工作区。删不掉就在 stderr 打一条 ——
+// removeDir 删掉临时工作区。删不掉就在 stderr 打一条，
 // 不打用户会被「磁盘越堆越满」咬到，但**仍**不返回 error：
 // 主流程已经成功了，再因为清理失败让前端看到一条红提示会让人以为
 // 上传出问题，下次启动可以再清（或用户手动删）。
@@ -225,7 +225,7 @@ func movePaths(dir string, items []MoveItem) error {
 // 整批是一次提交：20 个文件在仓库里只出现一条提交记录，
 // 和 GitHub 的 Git Data API 效果对齐（界面上不会看出两个平台的差别）。
 //
-// opts.UseLFS 为 true 时，这批文件会被 Git LFS 跟踪 —— 内容进 CNB 的
+// opts.UseLFS 为 true 时，这批文件会被 Git LFS 跟踪，内容进 CNB 的
 // 对象存储（免费 100GiB，与仓库存储分开算），仓库里只留一个指针。
 func UploadBatch(ctx context.Context, c Conn, tmpRoot string, files []File, message string, opts UploadOptions) ([]map[string]any, error) {
 	if len(files) == 0 {
@@ -302,7 +302,7 @@ func DeleteBatch(ctx context.Context, c Conn, tmpRoot string, rels []string, mes
 		msg = "chore: 删除文件"
 	}
 	ws, res, err := withWorkspace(ctx, c, tmpRoot, nil, func(dir string) (git.OpResult, error) {
-		// 删文件的同时清掉 .gitattributes 里残留的 LFS 规则 ——
+		// 删文件的同时清掉 .gitattributes 里残留的 LFS 规则，
 		// 删文件不会自动删规则，留着的话以后同名文件会被迫走对象存储
 		// （见 lfs.UntrackInRepo 的注释）。
 		lfs.UntrackInRepo(ctx, dir, rels)

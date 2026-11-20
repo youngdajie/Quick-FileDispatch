@@ -18,7 +18,7 @@ import (
 // 版本和平台变（本地传输还根本不输出进度），所以必须拿真家伙跑一次。
 //
 // 用 file:// 而不是裸路径：git 对「本地路径」会走硬链接优化，
-// 跳过打包环节、也就没有任何进度输出 —— 那样测了个寂寞。
+// 跳过打包环节、也就没有任何进度输出，那样测了个寂寞。
 // 加上 file:// 强制走正常传输协议。
 func TestRunStreamRealPush(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
@@ -55,7 +55,7 @@ func TestRunStreamRealPush(t *testing.T) {
 	// 4) 流式 push，收集**折叠后**的进度。
 	//
 	// 这里把三个真实函数串起来（RunStream + ParsePushLine + FoldPushProgress），
-	// 和 CommitAndPushStream 里的串联一致 —— 没法直接调 CommitAndPushStream
+	// 和 CommitAndPushStream 里的串联一致，没法直接调 CommitAndPushStream
 	// 是因为它的远端地址是从 platform/owner/repo 拼出来的，指不到本地裸仓库。
 	type ev struct {
 		phase        string
@@ -79,7 +79,7 @@ func TestRunStreamRealPush(t *testing.T) {
 	}
 
 	if len(events) == 0 {
-		t.Fatal("一条进度事件都没解析出来 —— 要么 RunStream 没读到 stderr，" +
+		t.Fatal("一条进度事件都没解析出来，要么 RunStream 没读到 stderr，" +
 			"要么 ParsePushLine 的格式对不上真实输出")
 	}
 
@@ -101,7 +101,7 @@ func TestRunStreamRealPush(t *testing.T) {
 
 	// 6) 关键断言：**只有上传阶段带数字**。
 	//
-	// 这是那个「进度条来回跳」问题的防线 —— git 的 Counting / Compressing /
+	// 这是那个「进度条来回跳」问题的防线，git 的 Counting / Compressing /
 	// Writing 三个阶段各自从 0% 走到 100%，只要有一个准备阶段带着数字漏出去，
 	// 界面上就会出现 33% → 100% → 33% 的回跳。
 	for _, e := range prepares {

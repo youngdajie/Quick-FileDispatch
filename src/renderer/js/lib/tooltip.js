@@ -2,13 +2,13 @@
  * 原生 title 提示的替身（全局装一次）。
  *
  * Chromium 给带 title 的元素画的那个系统小框在自绘界面里非常突兀：
- * 深色主题下黑底白字、出现在元素下方偏右、没有过渡。这里整个接管 ——
+ * 深色主题下黑底白字、出现在元素下方偏右、没有过渡。这里整个接管，
  * 悬停时先把 title 摘下来（原生就没机会弹），改画一个自绘的云朵气泡：
  * 圆角胶囊 + 小尾巴、宽度贴合文本、配色走主题变量、出现/消失带过渡。
  *
  * 状态机只有一条铁律：**title 的恢复只归 mouseout 管**（鼠标真正离开元素）。
  * 点击 / 滚动 / 缩放 / 失焦这些「鼠标还悬在元素上」的时机一律只收气泡、
- * 保持 title 摘除 —— 一旦提前还回去，原生黑框马上就会弹出来
+ * 保持 title 摘除，一旦提前还回去，原生黑框马上就会弹出来
  * （点一下顶栏的主题按钮、鼠标不动就能复现，露馅就是这么来的）。
  */
 
@@ -23,7 +23,7 @@ let stolenEl = null; // 当前 title 被摘除的元素（气泡可能还没显�
 /**
  * title 盯防：悬停（摘除）期间，外部代码如果又给这个元素赋了 title
  * （典型：点顶栏主题按钮 → 切主题 → updateChrome 重设按钮文案），
- * 必须立刻再摘掉 —— 否则在鼠标静止的窗口期里原生黑框就会弹出来。
+ * 必须立刻再摘掉，否则在鼠标静止的窗口期里原生黑框就会弹出来。
  * observer 只挂当前这一个元素，开销可忽略。
  */
 const titleWatch = new MutationObserver(() => {
@@ -40,7 +40,7 @@ function watch(node) {
 
 function el() {
   if (!tipEl) {
-    // 容器本身不画任何东西（无背景/边框），气泡体和尾巴是里面的两层 ——
+    // 容器本身不画任何东西（无背景/边框），气泡体和尾巴是里面的两层，
     // 尾巴用 z-index:-1 压在气泡体下面，只露出尖角，接缝处被气泡体的底色和边框盖住
     tipEl = document.createElement('div');
     tipEl.className = 'qfd-tip';
@@ -68,7 +68,7 @@ function anchorRect(el) {
     range.selectNodeContents(el);
     const r = range.getBoundingClientRect();
     // 文本明显比元素窄（说明是「宽格短字」）才按文本；否则（图标、整行链接、
-    // 文字占满）退回元素整体 —— 那本来就是居中正确的
+    // 文字占满）退回元素整体，那本来就是居中正确的
     if (r.width > 0 && r.width < box.width * 0.9) {
       return { left: r.left, width: r.width };
     }
@@ -119,7 +119,7 @@ function clearTimer() {
   }
 }
 
-/** 收起气泡但**不**动 title —— 所有「鼠标可能还在原地」的场景都走这里 */
+/** 收起气泡但**不**动 title，所有「鼠标可能还在原地」的场景都走这里 */
 function collapse() {
   clearTimer();
   shown = null;
@@ -144,7 +144,7 @@ function restoreTitle(target) {
 }
 
 /** 鼠标离开宿主（或离开窗口）：这时才把 title 还回去。
- *  只清理「自己人」的状态 —— 真实鼠标快速划过别的元素时，
+ *  只清理「自己人」的状态，真实鼠标快速划过别的元素时，
  *  那些无关元素的 mouseout 绝不能误杀正在排队/显示中的气泡 */
 function release(host) {
   if (stolenEl === host) {
@@ -164,7 +164,7 @@ export function installTooltips() {
     let target = e.target instanceof Element ? e.target.closest('[title]') : null;
     if (!target) {
       // 没 title 但带 data-ext 的链接也接进来：先把地址补成 title（顺手补全了
-      // 无障碍语义），再走标准摘除/恢复流程 —— 致敬卡、设置页的「申请地址」
+      // 无障碍语义），再走标准摘除/恢复流程，致敬卡、设置页的「申请地址」
       // 这类链接从此都有云朵提示
       const a = e.target instanceof Element ? e.target.closest('a[data-ext]') : null;
       if (a && a.dataset.ext) {
@@ -202,7 +202,7 @@ export function installTooltips() {
     release(from);
   });
 
-  // 下面这些时刻鼠标多半还悬在元素上 —— 只收气泡，title 留在摘除状态
+  // 下面这些时刻鼠标多半还悬在元素上，只收气泡，title 留在摘除状态
   document.addEventListener('mousedown', collapse);
   // 滚动 / 缩放 / 失焦同理；元素若真被滚走了，鼠标下一次移动会走 mouseout 还回去
   window.addEventListener('scroll', collapse, true);

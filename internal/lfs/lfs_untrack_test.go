@@ -49,7 +49,7 @@ func TestUntrackRemovesGitAttributesRule(t *testing.T) {
 //  1. 勾 LFS 上传 a.avif（仓库里是指针）
 //  2. 删文件但**不清规则**（模拟当时的旧代码行为，规则残留）
 //  3. 不勾 LFS 再传一个全新的 a.avif
-//     —— 修复后，UploadBatch 的 else 分支会先 untrack，
+//    ，修复后，UploadBatch 的 else 分支会先 untrack，
 //        这次必须走普通存储，而不是又被拖进对象存储
 func TestReuploadSameNameWithoutLFS(t *testing.T) {
 	hasGitLFS(t)
@@ -86,7 +86,7 @@ func TestReuploadSameNameWithoutLFS(t *testing.T) {
 		t.Fatalf("这一步故意不清规则，.gitattributes 应仍有 a.avif：\n%s", ga)
 	}
 
-	// 第 3 步：不勾 LFS 再传同名 —— 对应 UploadBatch 的 else 分支
+	// 第 3 步：不勾 LFS 再传同名，对应 UploadBatch 的 else 分支
 	UntrackInRepo(context.Background(), dir, []string{"a.avif"})
 	if err := os.WriteFile(filepath.Join(dir, "a.avif"), []byte("SECOND-DIFFERENT-CONTENT"), 0o644); err != nil {
 		t.Fatal(err)

@@ -8,7 +8,7 @@ import (
 // TestParsePushLine 覆盖 git push 输出的各种真实形状。
 //
 // 这些字符串是实测抓下来的（Windows 上 git 2.47 的输出），
-// 不是凭印象编的 —— 解析器的价值全在「格式对不对得上」，
+// 不是凭印象编的，解析器的价值全在「格式对不对得上」，
 // 用假的输入测等于没测。
 func TestParsePushLine(t *testing.T) {
 	// 与 humanBytes 一样做截断（int64 转换丢小数），期望值就这么算，
@@ -123,7 +123,7 @@ func TestParsePushLine(t *testing.T) {
 
 // TestTotalFromPercent 单独盯住「由百分比反推总字节」这条路径。
 //
-// 它是估算值（git 不给总量），但必须保持在合理范围 —— 算错的话
+// 它是估算值（git 不给总量），但必须保持在合理范围，算错的话
 // 界面上会出现「12 MB / 3 MB」这种一眼假的数字。
 func TestTotalFromPercent(t *testing.T) {
 	// 45% 时已传 1.20 MiB → 总量应该约等于 1.20/0.45 ≈ 2.67 MiB
@@ -144,9 +144,9 @@ func TestTotalFromPercent(t *testing.T) {
 // TestSplitCRLF 盯住「按 \r 切行」这条关键行为。
 //
 // git 的进度是 \r 原地刷新的，只认 \n 的话整段进度会被当成一行
-// 攒到结束才吐出来 —— 那正是「进度条到最后才跳一下」的成因。
+// 攒到结束才吐出来，那正是「进度条到最后才跳一下」的成因。
 //
-// 直接用真实的 scanCRLF（同包内可见），不复刻逻辑 ——
+// 直接用真实的 scanCRLF（同包内可见），不复刻逻辑，
 // 复刻出来的测试只能证明「我写的那份复刻是对的」。
 func TestSplitCRLF(t *testing.T) {
 	input := "Writing objects: 10% (1/10)\rWriting objects: 50% (5/10)\rWriting objects: 100% (10/10), done.\n"

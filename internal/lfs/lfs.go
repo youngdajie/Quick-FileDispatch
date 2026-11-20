@@ -1,7 +1,7 @@
 // Package lfs 负责 git-lfs 的查找、自动安装，以及在仓库里启用 LFS。
 //
 // 为什么需要这一层：CNB 的对象存储（免费 100GiB，与仓库存储分开计费）
-// 通过 Git LFS 协议访问。把大文件走 LFS 有两个实在的好处 ——
+// 通过 Git LFS 协议访问。把大文件走 LFS 有两个实在的好处，
 // 不占 git 仓库额度，而且 clone 仓库时不会把几百 MB 的大文件一起拉下来。
 //
 // 但 git-lfs 不是 git 自带的，用户机器上大概率没有。让用户自己去
@@ -12,7 +12,7 @@
 //  2. 再找系统 PATH 里的（用户自己装过就直接用）
 //  3. 都没有 → 下载便携版 zip → 解压到 <配置目录>/bin/
 //
-// 刻意**不动系统目录、不写注册表、不要管理员权限** —— 便携版解压即用，
+// 刻意**不动系统目录、不写注册表、不要管理员权限**，便携版解压即用，
 // 卸载程序时跟着配置目录一起删掉，不留痕迹。
 //
 // 下载源按「官方 → 国内镜像」的顺序重试，因为 GitHub Releases 在国内
@@ -81,7 +81,7 @@ func ExePath(cfgDir string) string { return filepath.Join(BinDir(cfgDir), "git-l
 // 返回的 binDir 是**需要注入到 git 子进程 PATH** 的目录（见 git.SetExtraPath）；
 // 如果是系统 PATH 里找到的，binDir 为空（不用注入）。
 //
-// 顺序：程序自己装的优先 —— 用户可能在系统里装了个旧版本，
+// 顺序：程序自己装的优先，用户可能在系统里装了个旧版本，
 // 我们装的是确定能配合本程序工作的那一个。
 func Find(cfgDir string) (exe string, binDir string, ok bool) {
 	if p := ExePath(cfgDir); fileExists(p) {
@@ -116,7 +116,7 @@ var versionRe = regexp.MustCompile(`git-lfs/(\d+\.\d+\.\d+)`)
 
 // InstalledVersion 跑一次 `<exe> version`，返回版本号；失败给空串。
 //
-// 用途是设置页那句「已安装 3.8.0」—— 光说「已安装」用户不知道装的是啥，
+// 用途是设置页那句「已安装 3.8.0」，光说「已安装」用户不知道装的是啥，
 // 排障时也少一个线索。
 func InstalledVersion(ctx context.Context, exe string) string {
 	if exe == "" {
@@ -145,7 +145,7 @@ func fileExists(p string) bool {
 
 // Ensure 保证 git-lfs 可用，必要时下载安装。
 //
-// onStatus 用来把「正在下载 / 解压」这类信息送进进度中心 ——
+// onStatus 用来把「正在下载 / 解压」这类信息送进进度中心，
 // 首次使用要下 5.9MB，不给任何反馈的话界面会像卡死了。
 // onStatus 可以为 nil。
 //
@@ -176,7 +176,7 @@ func Ensure(ctx context.Context, cfgDir string, onStatus func(string)) (string, 
 		return "", err
 	}
 
-	// 验证解压出来的确实能跑。这一步不是多余的 ——
+	// 验证解压出来的确实能跑。这一步不是多余的，
 	// 代理返回的 HTML 错误页、被截断的 zip 都会在这里被拦住，
 	// 而不是等到用户点了上传才发现 git-lfs 是个坏文件。
 	if !fileExists(ExePath(cfgDir)) {
@@ -303,13 +303,13 @@ type EnableParams struct {
 //
 // 做三件事：
 //
-//  1. git lfs install --local —— 往 .git/config 写 filter.lfs.*，
+//  1. git lfs install --local，往 .git/config 写 filter.lfs.*，
 //     这样这个仓库的 add/checkout 会自动走 LFS。用 --local 不用 --global：
 //     不污染用户的全局配置。
-//  2. （CNB）设置 lfs.<url>.locksverify —— 不设的话 git-lfs 在 push 时
+//  2. （CNB）设置 lfs.<url>.locksverify，不设的话 git-lfs 在 push 时
 //     会卡在「Locking support detected...」反复重试（CNB 侧有公开 issue）。
 //     显式设成 false 跳过锁定协商。
-//  3. git lfs track <path> —— 往 .gitattributes 写跟踪规则。
+//  3. git lfs track <path>，往 .gitattributes 写跟踪规则。
 //
 // 调用方拿到返回后要 **把 .gitattributes 一起 add 提交**，否则规则不生效。
 func EnableInRepo(ctx context.Context, p EnableParams) error {
@@ -335,7 +335,7 @@ func EnableInRepo(ctx context.Context, p EnableParams) error {
 			continue
 		}
 		// 直接 track，**没有 --force 这种参数**（git-lfs 的 track 根本没这个开关，
-		// 写了会直接报 "unknown flag" 而整个上传失败 —— 这是实测踩出来的）。
+		// 写了会直接报 "unknown flag" 而整个上传失败，这是实测踩出来的）。
 		//
 		// 天然幂等：对已经跟踪过的路径，git-lfs 输出「already supported」
 		// 但**退出码仍是 0**，也不需要重复写 .gitattributes。
@@ -349,7 +349,7 @@ func EnableInRepo(ctx context.Context, p EnableParams) error {
 // UntrackInRepo 移除一批路径的 LFS 跟踪规则。
 //
 // 为什么要显式 untrack：`git lfs track <路径>` 会把规则写进 .gitattributes，
-// 而那个文件**随提交永久留在仓库里**。删除文件并不会删规则 —— 于是出现过
+// 而那个文件**随提交永久留在仓库里**。删除文件并不会删规则，于是出现过
 // 「删掉 1.avif 后，再传一个全新的 1.avif（没勾 LFS）也被迫走对象存储」
 // 的 BUG（2026-09-26 实踩）。所以删除文件、或明确不勾 LFS 上传时，
 // 都要把这些路径的残留规则清掉。

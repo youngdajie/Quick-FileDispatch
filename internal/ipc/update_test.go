@@ -24,7 +24,7 @@ func TestNewerThan(t *testing.T) {
 	}
 }
 
-// 从 main.go 源码里抠 const version —— 这是查更新的首选路径，最要紧的一条。
+// 从 main.go 源码里抠 const version，这是查更新的首选路径，最要紧的一条。
 func TestPickGoVersion(t *testing.T) {
 	cases := []struct {
 		name string

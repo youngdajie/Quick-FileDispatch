@@ -5,14 +5,14 @@
  * **只有这一套上传流程**，两处的差异全部通过回调注入（各自怎么更新自己的列表）。
  *
  * 为什么必须共用，而不是各写一份：
- * 这两个入口对用户来说是**同一件事** —— 都是「把文件传到这个仓库」。
+ * 这两个入口对用户来说是**同一件事**，都是「把文件传到这个仓库」。
  * 流程上任何一处偏差都是 bug，而且是最难发现的那种（要两边都试一遍
  * 才看得出来）。实际踩过的：
  *   - 一边有实时进度条、另一边没有
  *   - 一边提示「本地目录已同步」、另一边默默跳过
  * 共享之后这类偏差从「靠人记得同步改」变成「结构上不可能发生」。
  *
- * 这里**不放任何 UI 文案和 DOM 结构**（除了必要的状态词）——
+ * 这里**不放任何 UI 文案和 DOM 结构**（除了必要的状态词），
  * 那些恰恰是两处应该不同的部分。
  */
 
@@ -38,7 +38,7 @@ import { planBatches } from './upload-batch.js';
  * **分批时的关键**：后端每个批次都从 0% 报起，直接显示的话进度条会
  * 「0→100% → 0→100%」来回跳，看起来像卡了又重来。所以这里维护一个
  * base（本批之前已完成的字节），把「本批字节」换算成「全局字节」
- * 再算百分比 —— 进度条就单调递增。
+ * 再算百分比，进度条就单调递增。
  *
  * @param {{prog:string, bar:string, label:string, detail:string, pct:string}} ids
  * @param {number} grandTotal 全部文件的总字节（用于算全局百分比）
@@ -126,10 +126,10 @@ export function startProgressBar(ids, grandTotal) {
  * 把「本地目录同步」的结果告诉用户。
  *
  * 三种情况都要有反馈。特别是 **skipped**：用户在设置里关掉了「自动拉取」
- * 时，云端传上去了但本地目录不会更新 —— 用户接着去文件管理页找刚传的文件，
+ * 时，云端传上去了但本地目录不会更新，用户接着去文件管理页找刚传的文件，
  * 找不到，以为上传失败了。不提示就等于让用户自己猜。
  *
- * （别的 skip 原因 —— 没绑本地目录、目录不是 git 仓库 —— 用户本来就知道，
+ * （别的 skip 原因，没绑本地目录、目录不是 git 仓库，用户本来就知道，
  * 提示反而啰嗦，所以只挑「关了自动拉取」这一种说。）
  */
 export function notifySync(sync) {
@@ -147,7 +147,7 @@ export function notifySync(sync) {
 /* ============================================================ 主流程 */
 
 /**
- * 执行一次上传 —— 两个上传入口**唯一的**上传路径。
+ * 执行一次上传，两个上传入口**唯一的**上传路径。
  *
  * 做完整条链路：分批 → 逐批转 base64 → 开进度 → 调接口 → 结果映射到条目
  * → 同步提示 → 广播「仓库变了」。
@@ -190,7 +190,7 @@ export async function runUpload(o) {
       pb.setBase(doneBytes, i + 1, batches.length);
       if (onBatch) onBatch(batch.items, i + 1, batches.length);
 
-      // 只转这一批的 base64 —— 内存峰值由此降到「单批」而非「全部」
+      // 只转这一批的 base64，内存峰值由此降到「单批」而非「全部」
       const files = [];
       for (const it of batch.items) {
         const data = await bytesToBase64(it.outBuffer);
@@ -206,7 +206,7 @@ export async function runUpload(o) {
           useLFS: !!useLFS
         });
       } catch (e) {
-        // 传输层失败（网络断、认证过期、超时）：后续批次不传了 ——
+        // 传输层失败（网络断、认证过期、超时）：后续批次不传了，
         // 接着传也只会同样失败，还让用户多等。
         stoppedAt = i;
         const msg = e.message || String(e);
@@ -251,14 +251,14 @@ export async function runUpload(o) {
       stoppedAt: stoppedAt
     };
   } finally {
-    // 一定收尾 —— 中途抛错也要关掉 SSE 订阅，
+    // 一定收尾，中途抛错也要关掉 SSE 订阅，
     // 不然每失败一次就漏一个订阅（服务端那个通道要等页面关才回收）。
     pb.end();
   }
 }
 
 /**
- * 生成上传结果的提示语 —— 两个入口的措辞必须一致。
+ * 生成上传结果的提示语，两个入口的措辞必须一致。
  *
  * @param {object} res runUpload 的返回
  * @param {string} unit '张'（上传页说「张」）| '个'（mini 说「个」）

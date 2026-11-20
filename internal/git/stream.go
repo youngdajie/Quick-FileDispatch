@@ -37,7 +37,7 @@ type StreamResult struct {
 //   - **onLine 在 goroutine 上同步执行**，必须快速返回。在里面做慢操作
 //     （写磁盘、发网络）会拖慢管道消费，git 的写端被堵住，push 反而变慢。
 //     本项目里它只做一件事：解析字符串 + 往广播中心投一条事件（非阻塞）。
-//   - **两个管道都要读**。哪怕 stdout 我们不用，也不能不读 —— 管道缓冲
+//   - **两个管道都要读**。哪怕 stdout 我们不用，也不能不读，管道缓冲
 //     满了 git 会卡死在写操作上（经典死锁）。
 //   - **超时用 CommandContext**，超时后 context 取消会杀掉进程。
 func RunStream(ctx context.Context, args []string, dir string, timeout time.Duration, onLine func(string)) StreamResult {
@@ -89,7 +89,7 @@ func RunStream(ctx context.Context, args []string, dir string, timeout time.Dura
 //
 // 为什么不能用默认的 bufio.ScanLines：git 的进度行是用 **\r 原地刷新**的
 // （不换行、覆盖当前行）。只认 \n 会把整整一段进度当成一行攒着，
-// 直到最后一个 \n 才吐出来 —— 那时候进度早就跑完了，等于没有实时。
+// 直到最后一个 \n 才吐出来，那时候进度早就跑完了，等于没有实时。
 func scanCRLF(r io.Reader, sink *strings.Builder, onLine func(string)) {
 	sc := bufio.NewScanner(r)
 	// 默认上限 64KB 对单个进度行够用，但 git 在某些情况下会把
@@ -116,7 +116,7 @@ func scanCRLF(r io.Reader, sink *strings.Builder, onLine func(string)) {
 func splitCRLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
 		// i+1 把分隔符也吃掉；\r\n 这种两字节分隔只吃 \r，
-		// 下一轮开头的 \n 会产生一个空 token —— 上面已经 skip 空行。
+		// 下一轮开头的 \n 会产生一个空 token，上面已经 skip 空行。
 		return i + 1, data[:i], nil
 	}
 	if atEOF && len(data) > 0 {
@@ -182,7 +182,7 @@ func ParsePushLine(line string) (PushProgress, bool) {
 		Done:    strings.Contains(line, ", done."),
 	}
 
-	// 已传字节。没有这一项（Compressing 行）时用「对象个数」兜底 ——
+	// 已传字节。没有这一项（Compressing 行）时用「对象个数」兜底，
 	// 至少让前端能画出进度，不至于只有百分比没有具体量。
 	if bm := pushBytesRe.FindStringSubmatch(line); bm != nil {
 		p.Bytes = humanBytes(bm[1], bm[2])
@@ -210,7 +210,7 @@ func ParsePushLine(line string) (PushProgress, bool) {
 // 33% → 100% → 50% → 100% → 33% → 100%，进度条来回跳，
 // 比完全没有进度还难受。
 //
-// 而前两个阶段本质是「本地打包」——在用户视角里都算准备。
+// 而前两个阶段本质是「本地打包」，在用户视角里都算准备。
 // 所以它们折叠成 total=0（前端据此画不确定态：条纹流动，不显示百分比）。
 //
 // 抽成独立函数是为了能被测试直接覆盖：这套折叠规则的正确性
@@ -227,7 +227,7 @@ func FoldPushProgress(pp PushProgress) (phase string, bytes, total int64, msg st
 
 // phaseForGitObject 把 git 的对象阶段映射成对用户友好的阶段名。
 //
-// Compressing 是「本地打包」——用户视角里这仍是准备阶段，还没开始传；
+// Compressing 是「本地打包」，用户视角里这仍是准备阶段，还没开始传；
 // Writing 才是真正在往远端发数据。区分开，进度条才不会在还没联网时
 // 就跳到 100% 又跌回 0。
 func phaseForGitObject(kind string) string {

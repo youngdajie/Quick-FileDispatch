@@ -37,7 +37,7 @@ type ProgressFunc func(done, total int64)
 
 // UploadBatch 批量上传。onProgress 可为 nil。
 //
-// GitHub 用 Git Data API 把整批文件合成**一次提交** —— 传 20 张图
+// GitHub 用 Git Data API 把整批文件合成**一次提交**，传 20 张图
 // 在仓库里只出现一条提交记录，而不是 20 条。
 // CNB 没有提交接口，直接拒绝（调用方应分流到 internal/cnb）。
 //
@@ -56,10 +56,10 @@ func (c *Client) UploadBatch(files []File, message string, onProgress ProgressFu
 func (c *Client) uploadGitData(files []File, message string, onProgress ProgressFunc) ([]Result, error) {
 	// ⚠️ 这里必须是 refs（**复数**）。GitHub 的两个接口路径不一样：
 	//     GET   /git/refs/{ref}   读引用（实测单数 /git/ref/ 它也认）
-	//     PATCH /git/refs/{ref}   更新引用 —— **只认复数**，写单数直接 404
+	//     PATCH /git/refs/{ref}   更新引用，**只认复数**，写单数直接 404
 	//
 	// 早先 GET 和 PATCH 共用了一个 "…/git/refs/heads/xxx"（抄的是 GET 那边的写法），
-	// 于是：blob 建好了、tree 建好了、commit 也建好了，**最后那一步 PATCH 404** ——
+	// 于是：blob 建好了、tree 建好了、commit 也建好了，**最后那一步 PATCH 404**，
 	// 用户看到的是「上传失败：仓库或分支不存在，请检查用户名 / 仓库名 / 分支名」，
 	// 可分支明明是好的、Token 也有权限。前面每一步都不报错，只错最后一下，
 	// 是最难查的那种（2026-10-08 实测 curl 确认：PATCH 单数 404、复数 401=路由存在）。
@@ -125,7 +125,7 @@ type Result struct {
 // DeleteBatch 批量删除。
 //
 // GitHub 的 contents DELETE 需要文件的 blob SHA，所以是逐个删
-// （每条一次提交）—— 这是平台接口的限制，没法合成一次。
+// （每条一次提交），这是平台接口的限制，没法合成一次。
 func (c *Client) DeleteBatch(paths []string, message string) ([]Result, error) {
 	if len(paths) == 0 {
 		return []Result{}, nil
@@ -159,7 +159,7 @@ func (c *Client) DeleteBatch(paths []string, message string) ([]Result, error) {
 // MoveBatch 批量移动 / 重命名。
 //
 // 走 Git Data API：内容写到新路径 + 旧路径置空（sha: null = 删除），
-// 整批只产生一次提交，**天然原子** —— 不会出现「新名字建好了，旧的还在」
+// 整批只产生一次提交，**天然原子**，不会出现「新名字建好了，旧的还在」
 // 这个中间状态。
 func (c *Client) MoveBatch(items []MoveItem, message string) ([]Result, error) {
 	if len(items) == 0 {
@@ -251,7 +251,7 @@ func (c *Client) commitTree(commitSHA string) (string, error) {
 // 直接把 body 数字显示给用户，会看到「9 MB 的文件传了 12 MB」这种
 // 一眼假的数字。换算系数就是两者长度之比，JSON 包装那几十字节可忽略。
 //
-// 这是 GitHub 侧唯一能拿到「单个大文件传到一半」的地方 ——
+// 这是 GitHub 侧唯一能拿到「单个大文件传到一半」的地方，
 // Git Data API 一个文件一次 POST，本来是没有中间进度的，
 // 靠 reqProgress 包装请求体读取才拿得到（见 cloud.go 的 progressReader）。
 func (c *Client) createBlob(b []byte, onProgress func(sent, total int64)) (string, error) {
@@ -310,7 +310,7 @@ func (c *Client) pushCommit(refPath, parentSHA, baseTree string, tree []map[stri
 	}
 	commitSHA := str(cmMap["sha"])
 
-	// force:false —— 有人抢先提交时这次推送会失败。
+	// force:false，有人抢先提交时这次推送会失败。
 	// 强推会**抹掉别人的提交**，宁可让用户看到冲突提示。
 	_, err = c.req("PATCH", refPath, nil, map[string]any{"sha": commitSHA, "force": false})
 	return err

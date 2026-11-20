@@ -189,7 +189,7 @@ func joinSlash(p map[string]any) string {
 // profileExport 导出归档配置到文件。
 //
 // ⚠️ 导出的 JSON 里 **Token 是明文**。这是刻意的（换台机器要能直接用），
-// 但必须由渲染层先弹确认框 —— 后端无法确认用户是否知情，所以这里
+// 但必须由渲染层先弹确认框，后端无法确认用户是否知情，所以这里
 // 只负责执行，确认的职责在界面上。
 func (e *Env) profileExport() (any, error) {
 	data := e.Store.ExportProfiles()

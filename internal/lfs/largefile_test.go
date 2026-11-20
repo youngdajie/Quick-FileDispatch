@@ -13,7 +13,7 @@ import (
 // 本文件测「大文件在走 LFS / 不走 LFS 两种模式下能否完成上传」。
 //
 // 用**本地裸仓库**当远端（file:// 强制走传输协议），所以不需要任何
-// 平台凭据 —— 但测的是完整的 git 通道：克隆 → 写文件 → 提交 → 推送。
+// 平台凭据，但测的是完整的 git 通道：克隆 → 写文件 → 提交 → 推送。
 // CNB 的上传走的正是这条链路（见 internal/cnb）。
 //
 // 大文件测试默认跳过：跑一次要造几百 MB 数据，很慢。
@@ -28,7 +28,7 @@ const mb = 1 << 20
 // 用 LCG 生成伪随机字节，压缩率接近 1（真实二进制文件就是这样）。
 func pseudoRandom(n int) []byte { return pseudoRandomSeed(n, 0x9E3779B97F4A7C15) }
 
-// pseudoRandomSeed 同上，但可以指定种子 —— 批量测试需要**每个文件内容不同**，
+// pseudoRandomSeed 同上，但可以指定种子，批量测试需要**每个文件内容不同**，
 // 否则 LFS 会按内容哈希把它们去重成一份，「10 个文件占多少空间」就测不出来。
 func pseudoRandomSeed(n int, seed uint64) []byte {
 	b := make([]byte, n)
@@ -59,7 +59,7 @@ func dirSize(t *testing.T, root string) int64 {
 }
 
 // runGit 跑一条 git 命令，返回输出与错误。
-// 与 mustRun 的区别：不自动 fail —— push 这种要自己判断成败并给上下文的场合用它。
+// 与 mustRun 的区别：不自动 fail，push 这种要自己判断成败并给上下文的场合用它。
 func runGit(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -150,7 +150,7 @@ func TestLargeFile200MBWithAndWithoutLFS(t *testing.T) {
 		// LFS 模式下，git 对象库里只有一个几百字节的指针，
 		// 真正的 200MB 在 LFS 自己的存储区。所以远端 git 仓库**应该很小**。
 		// 注意：本地 file:// 推送时，LFS 对象落在 bare 仓库的
-		// lfs/objects 下，所以总占用仍然接近文件大小 —— 这里断言的是
+		// lfs/objects 下，所以总占用仍然接近文件大小，这里断言的是
 		// 「git 对象库里没有原始内容」，用 git 侧的大小判断。
 		gitOnly := dirSize(t, filepath.Join(bare, "objects"))
 		t.Logf("远端 git 对象库占用：%.2f MB", float64(gitOnly)/float64(mb))
@@ -170,13 +170,13 @@ func TestLargeFile200MBWithAndWithoutLFS(t *testing.T) {
 
 // verifyStored 验证远端**实际存了什么**。
 //
-// 为什么不用 clone 验证：LFS 在 file:// 协议下的对象拉取不完整 ——
+// 为什么不用 clone 验证：LFS 在 file:// 协议下的对象拉取不完整，
 // clone 会因为 smudge 拉不到对象而 checkout 失败。那是**测试环境的限制**
 // （本地裸仓库不是一个完整的 LFS 服务端），不是产品的问题；真实平台
 // （CNB / GitHub）有完整的 LFS 服务端。
 //
 // 所以这里直接读裸仓库内部，用两个权威判据：
-//  1. git 对象的大小（cat-file -s）—— 指针还是原文件，一看便知；
+//  1. git 对象的大小（cat-file -s），指针还是原文件，一看便知；
 //  2. LFS 对象库里有没有对应大小的文件。
 func verifyStored(t *testing.T, bare, name string, fileSize int, useLFS bool) {
 	t.Helper()
@@ -264,7 +264,7 @@ func TestManyFilesBatch(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		// 每个文件内容不同 —— 否则会被 LFS 内容寻址去重成一份
+		// 每个文件内容不同，否则会被 LFS 内容寻址去重成一份
 		if err := os.WriteFile(abs, pseudoRandomSeed(each, uint64(i)*0x100000001B3+1), 0o644); err != nil {
 			t.Fatal(err)
 		}

@@ -10,7 +10,7 @@
 // 所以这里的分工是：
 //
 //	本包只负责「读」，外加 GitHub 的「写」；
-//	CNB 的「写」交给 internal/cnb —— 它把仓库弄到本地工作区，改完 commit + push。
+//	CNB 的「写」交给 internal/cnb，它把仓库弄到本地工作区，改完 commit + push。
 //
 // 把这条边界写清楚很重要：曾经有过的想法是「给 CNB 也造一套 blob 接口调用」，
 // 走到一半才发现没有 commit 落点，白写的 blob 在仓库里根本看不见。
@@ -123,7 +123,7 @@ func New(platform, owner, repo, branch, token, apiBase string) *Client {
 }
 
 // NormalizePlatform 只认 GitHub 与 CNB 两个平台（Gitee 已下线）。
-// 其它值一律当 github —— 存了个不认识的平台会让后续所有请求都失败，
+// 其它值一律当 github，存了个不认识的平台会让后续所有请求都失败，
 // 而且界面上没有任何入口能改回来。
 func NormalizePlatform(p string) string {
 	if strings.TrimSpace(p) == "cnb" {
@@ -138,7 +138,7 @@ func (c *Client) IsCNB() bool { return c.Platform == "cnb" }
 func (c *Client) Slug() string { return c.Owner + "/" + c.Repo }
 
 // FileLimitBytes 是平台对单个文件的硬上限。
-// GitHub 100MB，CNB 200MB。超过就不要发 —— 发了也是浪费一次完整上传的带宽。
+// GitHub 100MB，CNB 200MB。超过就不要发，发了也是浪费一次完整上传的带宽。
 func FileLimitBytes(platform string) int64 {
 	if platform == "cnb" {
 		return 200 * 1024 * 1024
@@ -185,7 +185,7 @@ func (c *Client) req(method, path string, query url.Values, body any) (any, erro
 //
 // 为什么能拿到进度：Go 的 http.Client 是通过 io.Reader 拉取 body 的，
 // 每次 Read 就对应「这一批字节交给了内核发送缓冲」。把它包一层计数，
-// 就得到了真实的传输进度 —— 既不需要平台支持分块上传，
+// 就得到了真实的传输进度，既不需要平台支持分块上传，
 // 也不需要客户端实现分片协议。
 //
 // onProgress 收到的是 **body 字节**（base64 + JSON 包装之后的），
@@ -260,7 +260,7 @@ func (c *Client) reqProgress(method, path string, query url.Values, body any,
 //     挡掉大部分更省事）。
 //   - **它是"已交付内核"，不是"对端已收到"**。大文件的末尾会有一小段
 //     滞后（内核缓冲里的数据还没发完，Read 就已经读到 EOF 了）。
-//     对本场景够用 —— 用户要看的是"在动"，不是精确的字节账。
+//     对本场景够用，用户要看的是"在动"，不是精确的字节账。
 type progressReader struct {
 	r          io.Reader
 	total      int64
@@ -349,7 +349,7 @@ func firstMessage(text []byte) string {
 // normalizeError 把 HTTP 状态码翻译成用户能照着改的提示。
 //
 // 这些文案是踩出来的：401 多半是 Token 过期，403 是 Token 没勾 repo 权限，
-// 404 在 CNB 上经常是「用了 MCP 令牌而不是经典令牌」—— 光说「404」
+// 404 在 CNB 上经常是「用了 MCP 令牌而不是经典令牌」，光说「404」
 // 用户根本不知道该去哪儿改。
 func normalizeError(platform string, status int, msg string) string {
 	lower := strings.ToLower(msg)
@@ -366,7 +366,7 @@ func normalizeError(platform string, status int, msg string) string {
 		return "没有权限：请确认 Token 勾选了仓库读写权限"
 	case 404:
 		if platform == "cnb" && (strings.Contains(lower, "mcp") || strings.Contains(lower, "token")) {
-			return "CNB 返回 404：多半是 Token 类型不对 —— MCP 令牌不能调 REST 接口，请改用「经典令牌」"
+			return "CNB 返回 404：多半是 Token 类型不对。MCP 令牌不能调 REST 接口，请改用「经典令牌」"
 		}
 		return "仓库或分支不存在：请检查用户名 / 仓库名 / 分支名，以及 Token 是否可访问该私有仓库"
 	case 413:

@@ -51,8 +51,8 @@ const ICON_CHEVRON =
 
 /**
  * hero 大图标（内联版 logo）。和 assets/logo.svg 同一份图形，但拆成两层：
- *   外层 rect（蓝色圆角方块）—— 静止；
- *   内层 <g class="hero-logo-mark">（罗盘图形）—— 点击时飞速旋转。
+ *   外层 rect（蓝色圆角方块），静止；
+ *   内层 <g class="hero-logo-mark">（罗盘图形），点击时飞速旋转。
  * 用 <img> 做不到只转内层，所以这里内联；gradient 的 id 全局唯一免得撞车。
  */
 const LOGO_SVG =
@@ -90,7 +90,7 @@ const LOGO_SVG =
  *
  * 起因：这一页原先把「Electron / Node.js」写死在表里。项目在 2.8.0 之后分出一支
  * 用 Go 重写的版本（CNB 的 go 分支），到 3.0.0 起转正为唯一主线，Electron 版则
- * 定格在 v2.8.0 不再更新；两侧共用这份渲染层 —— 再写成死表，就会出现
+ * 定格在 v2.8.0 不再更新；两侧共用这份渲染层，再写成死表，就会出现
  * 「Go 版程序自称基于 Electron」这种自相矛盾。
  *
  * 判据取 app.info() 的字段，不猜环境：Go 版给 go（后端运行时）、electron 留空；
@@ -127,7 +127,7 @@ const CORE_TECH = [
 ];
 
 /**
- * 每条技术的许可与出处。**不确定的宁可不写** —— 写错比不写更糟。
+ * 每条技术的许可与出处。**不确定的宁可不写**，写错比不写更糟。
  * 带链接的都是官方许可证页或项目主页，点过去能自己核对；
  * 开放标准（Web Worker 之类）没有单独的许可证，就直说。
  *
@@ -208,7 +208,7 @@ let techOpen = -1;
 
 /**
  * 点技术标签：展开该项说明；再点同一个收起。
- * 卡片每次整块重建而不是只换文字 —— 这样入场动画每次都能重新触发。
+ * 卡片每次整块重建而不是只换文字，这样入场动画每次都能重新触发。
  */
 function toggleTech(idx) {
   const fold = $('#techFold');
@@ -334,7 +334,7 @@ function render() {
     '<div class="about-shortcut-row"><span class="about-shortcut-key"><kbd>Ctrl</kbd> + <kbd>N</kbd></span><span>在文件管理页的当前目录下新建文件夹</span></div>' +
     '<div class="about-shortcut-row"><span class="about-shortcut-key">拖拽</span><span>从资源管理器拖文件到窗口即可上传</span></div>' +
     '<div class="about-shortcut-row"><span class="about-shortcut-key">双击</span><span>进入文件夹，或放大查看图片</span></div>' +
-    '<div class="about-shortcut-row"><span class="about-shortcut-key">单击文件</span><span>选中后可批量复制链接、导出、改名或删除</span></div>' +
+    '<div class="about-shortcut-row"><span class="about-shortcut-key">右键单击</span><span>选中后可批量复制链接、导出、改名或删除</span></div>' +
     '<div class="about-shortcut-row"><span class="about-shortcut-key">文件操作</span><span>复制链接、预览、重命名、移动、替换或删除</span></div>' +
     '<div class="about-shortcut-row"><span class="about-shortcut-key">本地状态</span><span>有本地改动时点「提交并推送」同步到云端</span></div>' +
     '<div class="about-shortcut-row"><span class="about-shortcut-key"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd></span><span>打开开发者工具</span></div>' +
@@ -383,7 +383,7 @@ export default {
       const logo = e.target.closest('.about-logo');
       if (logo) {
         // 彩蛋：点图标，罗盘图形飞速转三圈（蓝方块不动）。
-        // 先摘类再强制重排一次 —— 连点也能重新播动画；播完清掉标记
+        // 先摘类再强制重排一次，连点也能重新播动画；播完清掉标记
         logo.classList.remove('spin');
         void logo.offsetWidth;
         logo.classList.add('spin');

@@ -48,7 +48,7 @@ func newRepoCache() *repoCache {
 
 // Cached 带缓存地跑一次查询。
 //
-// ttl <= 0 表示「不缓存结果，只做并发去重」—— 用于必须现算的场合。
+// ttl <= 0 表示「不缓存结果，只做并发去重」，用于必须现算的场合。
 // 并发去重是这里最有价值的部分：同一个 key 正在算的时候，后来者跟着等，
 // 而不是各自再起一批 git 进程。
 func (c *repoCache) Cached(key string, ttl time.Duration, fn func() (any, error)) (any, error) {
@@ -84,7 +84,7 @@ func (c *repoCache) Cached(key string, ttl time.Duration, fn func() (any, error)
 
 // Invalidate 作废全部缓存。
 //
-// 仓库内容一变（上传 / 删除 / 改名 / 替换 / 推送 / 拉取 / 克隆）就要调它 ——
+// 仓库内容一变（上传 / 删除 / 改名 / 替换 / 推送 / 拉取 / 克隆）就要调它，
 // 不清会让界面继续显示旧数字，用户以为上传失败了。
 func (c *repoCache) Invalidate() {
 	c.mu.Lock()

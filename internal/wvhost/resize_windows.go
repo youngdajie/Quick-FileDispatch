@@ -64,7 +64,7 @@ const (
 var resizeActive atomic.Uint32
 
 // ResizeEdge 由 ipc 的 win:resizeEdge 处理函数在 HTTP 协程里调。
-// 方向合法就投递消息立即返回 —— 窗口操作不碰，缩放循环在 UI 线程跑。
+// 方向合法就投递消息立即返回，窗口操作不碰，缩放循环在 UI 线程跑。
 func ResizeEdge(dir string) bool {
 	var code uintptr
 	switch dir {

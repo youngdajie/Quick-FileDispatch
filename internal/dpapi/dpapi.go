@@ -3,7 +3,7 @@
 // # 为什么不能只调 CryptProtectData
 //
 // 一开始最容易想到「safeStorage 在 Windows 上就是 DPAPI」，于是直接调
-// CryptProtectData —— 结果 Electron 留下的密文一个都解不开，报
+// CryptProtectData，结果 Electron 留下的密文一个都解不开，报
 // "The data is invalid"。原因是 Chromium 从 M80 起换了格式：
 //
 //	Local State 里存一把 AES-256-GCM 密钥，这把密钥本身才用 DPAPI 保护；
@@ -17,14 +17,14 @@
 //
 //	"DPAPI" (5) || CryptProtectData(32 字节 AES 密钥)
 //
-// 照这个格式读写，两边的配置就能互相解开 —— 用户从 Electron 版升级过来，
+// 照这个格式读写，两边的配置就能互相解开，用户从 Electron 版升级过来，
 // Token 不用重填。这一层是整个迁移里最容易静默失败的地方：解不开的时候
 // 界面只会显示「没有 Token」，然后让人以为是配置丢了。
 //
 // # 只支持 Windows
 //
 // 别的平台没有 DPAPI，也不该假装加密了。Encrypt 会明确返回错误，
-// 让调用方提示用户，而不是悄悄把明文写进 config.json ——
+// 让调用方提示用户，而不是悄悄把明文写进 config.json，
 // 「已加密」这个承诺不能打折。
 package dpapi
 
@@ -74,7 +74,7 @@ func New(dir string) *Vault {
 var errUnsupported = errors.New("当前平台不支持 Token 加密（依赖 Windows DPAPI）")
 
 // Available 报告本机能不能真正加解密（跑一次往返验证）。
-// 只调 CryptProtectData 成功不代表端到端可用 —— Local State 可能写不进去。
+// 只调 CryptProtectData 成功不代表端到端可用，Local State 可能写不进去。
 func (v *Vault) Available() bool {
 	_, err := v.key32()
 	if err != nil {
@@ -124,7 +124,7 @@ func (v *Vault) Decrypt(cipher []byte) ([]byte, error) {
 	if len(cipher) > len(v10Prefix) && string(cipher[:len(v10Prefix)]) == string(v10Prefix) {
 		return v.decryptV10(cipher)
 	}
-	// 不是 v10 —— 当裸 DPAPI 试一次
+	// 不是 v10，当裸 DPAPI 试一次
 	return rawDecrypt(cipher)
 }
 

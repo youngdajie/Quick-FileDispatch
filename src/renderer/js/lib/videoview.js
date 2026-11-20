@@ -2,7 +2,7 @@
  * 内置视频播放器
  *
  * 为什么要有它：双击文件管理里的视频，以前落进「其余一律外链」那条分支，
- * 结果是浏览器新开一个标签页去播本地文件 —— 而用户的预期是「像图片一样就地看」。
+ * 结果是浏览器新开一个标签页去播本地文件，而用户的预期是「像图片一样就地看」。
  * 这里把 /__local 直链（绝对路径经 cloudpic.localUrl 转过来）喂给 <video>，
  * 文件不出本机，关掉弹层就把句柄和音频输出一起放掉。
  *
@@ -10,7 +10,7 @@
  * 下载三个按钮，和这个应用的观感对不上，用户也明确说过不要音量。
  *
  * 解不了的格式（mkv / avi / rmvb 这类）不进播放流程，直接给提示 +
- * 「在资源管理器中显示」—— 与其让 <video> 报一个空的 error 让人对着黑框发呆，
+ * 「在资源管理器中显示」，与其让 <video> 报一个空的 error 让人对着黑框发呆，
  * 不如把「换个播放器」这条唯一的出路摆到面前。
  */
 
@@ -18,7 +18,7 @@ import { modal, err, escapeHtml, friendlyError, paintRange, previewActions } fro
 
 /** Chromium（WebView2 内核）自己就能解的容器 */
 const PLAYABLE_EXTS = ['mp4', 'm4v', 'webm', 'ogv', 'ogg', 'mov'];
-/** 一样是视频，但浏览器解不了 —— 只给提示，不假装能播 */
+/** 一样是视频，但浏览器解不了，只给提示，不假装能播 */
 const UNSUPPORTED_EXTS = ['mkv', 'avi', 'rmvb', 'flv', 'wmv', 'mpg', 'mpeg', 'ts'];
 /** 音频：常见那几个都在里面，浏览器自己能解 */
 const PLAYABLE_AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'oga', 'm4a', 'aac', 'flac', 'opus', 'weba'];
@@ -90,7 +90,7 @@ export function canPlayAudioInBrowser(name) {
  * 是不是视频文件。
  *
  * 注意这里**包含**浏览器解不了的那些（mkv / avi …）：调用方靠它决定
- * 「别甩给浏览器，进内置播放器」，解不了的那一刻由播放器给出提示 ——
+ * 「别甩给浏览器，进内置播放器」，解不了的那一刻由播放器给出提示，
  * 如果这里只认能播的，mkv 双击后又会掉回外链那条老路。
  */
 export function isVideoName(name) {
@@ -123,7 +123,7 @@ function fmtClock(sec) {
 /**
  * 就地预览一条媒体（视频或音频）。
  *
- * 两者共用一套自绘控件 —— 播放/暂停、进度、时间；区别只在有没有画面：
+ * 两者共用一套自绘控件，播放/暂停、进度、时间；区别只在有没有画面：
  * 音频放一块封面，<audio> 元素自己不显示（显示也只会是个空控件）。
  *
  * opts:
@@ -174,7 +174,7 @@ function previewMedia(kind, opts) {
 
   /**
    * 解不了 / 读不出来：收起控件，只留一行说明和一个能落地的动作。
-   * 先 releaseVideo() 再换内容 —— 元素虽然会被换掉，但解码器和音频输出
+   * 先 releaseVideo() 再换内容，元素虽然会被换掉，但解码器和音频输出
    * 是浏览器进程里的资源，不显式停一次不会随 DOM 消失。
    */
   function showFallback() {
@@ -220,7 +220,7 @@ function previewMedia(kind, opts) {
     video.addEventListener('ended', paintPlayBtn);
     // 容器对、编码不对（比如 H.265 的 mp4）时只有这个事件会说话
     video.addEventListener('error', showFallback);
-    // 点画面也能播 / 停 —— 鼠标最自然的落点
+    // 点画面也能播 / 停，鼠标最自然的落点
     video.addEventListener('click', toggle);
     playBtn.onclick = toggle;
 
@@ -307,7 +307,7 @@ function previewMedia(kind, opts) {
     if (dragging) paintClock(targetTime(), video.duration);
   }
 
-  /** 松手才落 currentTime —— 全程只在这一次真正 seek */
+  /** 松手才落 currentTime，全程只在这一次真正 seek */
   function commitSeek() {
     if (!video) return;
     dragging = false;
@@ -363,7 +363,7 @@ function previewMedia(kind, opts) {
   /**
    * 把媒体元素彻底停下来并断开数据源。
    *
-   * 只 pause() 不够：元素还挂在数据源上，文件句柄、解码器、音频输出都留着 ——
+   * 只 pause() 不够：元素还挂在数据源上，文件句柄、解码器、音频输出都留着，
    * 连着预览几个文件，进程里的音频流会一直累积（表现为预览过的文件被占用、
    * 想重命名/删除时失败）。音频尤其明显，所以关闭时这条必须走。
    */

@@ -10,7 +10,7 @@ import (
 	"unsafe"
 )
 
-// 取切片首元素的指针。空切片给 nil —— 不能对空切片取 &b[0]（会 panic）。
+// 取切片首元素的指针。空切片给 nil，不能对空切片取 &b[0]（会 panic）。
 func ptrOf(b []byte) unsafe.Pointer {
 	if len(b) == 0 {
 		return nil

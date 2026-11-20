@@ -6,10 +6,10 @@
  * 文本文件就地看、就地改、就地存回去，才是这个页面该有的手感。
  *
  * 三件事：
- *  1. 只读预览 —— 语法着色，和浏览器里的开发者工具看到的是一个观感；
- *  2. 就地编辑 —— 高亮层与输入层上下叠放（textarea 透明、pre 在背后），
+ *  1. 只读预览，语法着色，和浏览器里的开发者工具看到的是一个观感；
+ *  2. 就地编辑，高亮层与输入层上下叠放（textarea 透明、pre 在背后），
  *     打字时着色跟着变，不用切模式；
- *  3. 保存 —— 本地走 fs:localWrite、云端走 cloud:replace，
+ *  3. 保存，本地走 fs:localWrite、云端走 cloud:replace，
  *     换行符与 BOM 按读进来时的样子原样写回（不然 Git 里就是满屏 diff）。
  */
 
@@ -81,7 +81,7 @@ export function previewText(opts) {
     className: 'code',
     dismissable: false,
     buttons: false,
-    // 这层既没有底栏按钮、也不让点遮罩关 —— 右上角必须给个明确的退出口，
+    // 这层既没有底栏按钮、也不让点遮罩关，右上角必须给个明确的退出口，
     // 否则用户得猜到还能按 Esc
     closeX: true,
     node: body,
@@ -189,7 +189,7 @@ export function previewText(opts) {
   function showBlocked(res) {
     const r = (res && res.reason) || '';
     const copy = {
-      binary: ['这是二进制文件，没法按文本看', '后缀看着像文本，但内容里有空字节 —— 图片、压缩包、可执行文件都属于这一类'],
+      binary: ['这是二进制文件，没法按文本看', '后缀看着像文本，但内容里有空字节。图片、压缩包、可执行文件都属于这一类'],
       utf16: ['这个文件的编码暂时不支持', '内容像是 UTF-16（Windows 记事本另存为「Unicode」就会这样），换个编码另存为 UTF-8 再看'],
       tooLarge: [
         '文件太大，不在这里打开',
@@ -235,7 +235,7 @@ export function previewText(opts) {
     ta = body.querySelector('.tv-ta');
     // 输入层任何时候都不能有底色 / 字色：文字是透明的，看得见的是背后那层高亮。
     // 全局的 `textarea:focus` 会给输入框糊上不透明底 + 描边，正好把高亮层盖死，
-    // 表现就是「点进编辑一片空白」。CSS 里已按特异性压住了，这里再补一道内联样式 ——
+    // 表现就是「点进编辑一片空白」。CSS 里已按特异性压住了，这里再补一道内联样式，
     // 这条不变式值得冗余，它挂掉的时候界面是完全没法用的。
     ta.style.background = 'transparent';
     ta.style.color = 'transparent';
@@ -248,7 +248,7 @@ export function previewText(opts) {
     // 光标必须先归零再 focus。
     //
     // 给 textarea 赋 value 会把选区丢到**末尾**，此时直接 focus()，浏览器为了
-    // 「让光标进入视野」会把输入框一路滚到最后一行 —— 用户看到的就是
+    // 「让光标进入视野」会把输入框一路滚到最后一行，用户看到的就是
     // 「点一下编辑，文本唰地滑到了文件结尾」。先把光标放到开头，focus 就
     // 不会再滚动；随后再把视野放回原来的位置。
     ta.selectionStart = ta.selectionEnd = 0;
@@ -256,7 +256,7 @@ export function previewText(opts) {
     ta.scrollLeft = 0;
     ta.focus();
 
-    // 视野回到只读时的位置，光标落在视野首行行首 —— 你看的是哪儿，就从哪儿改
+    // 视野回到只读时的位置，光标落在视野首行行首，你看的是哪儿，就从哪儿改
     const caret = charAtLineStart(top);
     if (caret > 0) ta.setSelectionRange(caret, caret);
     ta.scrollTop = top;
@@ -288,15 +288,15 @@ export function previewText(opts) {
   function paint() {
     if (!codeEl) return;
     const html = H ? H.highlight(st.text, lang) : escapeHtml(st.text);
-    // 末尾补一个换行 —— 不是画蛇添足，是两层能对齐的必需品。
+    // 末尾补一个换行，不是画蛇添足，是两层能对齐的必需品。
     //
     // 块级 <pre> 会忽略**最后一个**换行符（CSS 的规矩：块末尾的空行不产生行盒），
-    // 而 <textarea> 必须为它留出一行 —— 否则光标就没法停在最后一行。
+    // 而 <textarea> 必须为它留出一行，否则光标就没法停在最后一行。
     // 于是一模一样的文本，pre 排 461 行、textarea 排 462 行，内容高度正好差
     // 一个行高（这个文件上实测 21.25px）。
     //
     // 滚动是 textarea 主导、pre 跟从（syncScroll 方向单一）。滚到底时 ta 能到
-    // 9296，pre 的上限只有 9274，被自己的高度卡住 —— 表现就是「点最下面那几行，
+    // 9296，pre 的上限只有 9274，被自己的高度卡住，表现就是「点最下面那几行，
     // 光标比看到的偏一行」。补上这个换行，两层的内容高度就一致了。
     //
     // 只读态复用同一个 paint()，于是只读 / 编辑来回切也不会跳。

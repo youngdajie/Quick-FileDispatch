@@ -169,7 +169,7 @@ export function openColorPicker(opts) {
       if (e.button !== 0) return;
       e.preventDefault();
       // setPointerCapture 对「非活跃 pointerId」会抛 NotFoundError，
-      // 不能让它把整个按下流程带崩 —— 拿不到捕获也一样能靠 document 上的
+      // 不能让它把整个按下流程带崩，拿不到捕获也一样能靠 document 上的
       // pointermove 继续跟手。
       try {
         if (el.setPointerCapture) el.setPointerCapture(e.pointerId);

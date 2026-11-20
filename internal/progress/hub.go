@@ -1,7 +1,7 @@
 // Package progress 是上传进度的广播中心。
 //
 // 为什么需要它：上传链路（尤其是 CNB 的 git push）是一个几十秒起步的
-// 阻塞调用。前端拿到响应之前完全是黑盒 —— 用户看到的就是「点了没反应」，
+// 阻塞调用。前端拿到响应之前完全是黑盒，用户看到的就是「点了没反应」，
 // 然后突然弹一个成功。这个包把中间过程从后端推到前端。
 //
 // 传输用 SSE（Server-Sent Events），不用轮询也不用 WebSocket：
@@ -12,7 +12,7 @@
 //     （本项目从头到尾不引外部包，见 README 的取舍说明）；
 //   - 浏览器的 EventSource 原生支持，带自动重连，前端不用写重连逻辑。
 //
-// 事件是**易失**的：没有订阅者时直接丢弃，不做历史回放。理由很直接 ——
+// 事件是**易失**的：没有订阅者时直接丢弃，不做历史回放。理由很直接，
 // 进度是「此刻正在发生什么」，迟到的进度没有意义，反而会让进度条
 // 突然回跳。前端连上后从下一个事件开始跟，界面初始态是「准备中」。
 package progress
@@ -52,7 +52,7 @@ type Event struct {
 	Message string `json:"message,omitempty"`
 	// Error 只在 Phase == PhaseError 时给。
 	Error string `json:"error,omitempty"`
-	// Seq 是单调递增序号。SSE 断线重连后前端用它判断有没有丢事件 ——
+	// Seq 是单调递增序号。SSE 断线重连后前端用它判断有没有丢事件，
 	// 丢了几条就说明进度可能跳变，可以据此做一次「补齐」请求。
 	Seq int64 `json:"seq"`
 }
@@ -71,7 +71,7 @@ func NewHub() *Hub {
 // Subscribe 注册一个订阅者，返回接收通道与注销函数。
 //
 // 通道带 32 容量缓冲：突发几条不会被丢，慢消费者也不会卡住上传线程。
-// **调用方必须 defer cancel()** —— 不注销会一直占着一个通道，
+// **调用方必须 defer cancel()**，不注销会一直占着一个通道，
 // 每次刷新页面就漏一个。
 func (h *Hub) Subscribe() (<-chan Event, func()) {
 	ch := make(chan Event, 32)
@@ -102,7 +102,7 @@ func (h *Hub) Count() int {
 //
 // 两个设计要点，改之前先读：
 //
-//  1. **在持锁状态下发送**。这样 cancel 的 close(ch) 与发送天然互斥 ——
+//  1. **在持锁状态下发送**。这样 cancel 的 close(ch) 与发送天然互斥，
 //     如果先复制一份订阅者切片、出锁再发，就会出现在「已 close 的通道上
 //     发送」的竞态（Go 里直接 panic）。持锁发送之所以安全，是因为
 //     下面一律用带 default 的 select：满了就丢，绝不会阻塞在锁里。
@@ -129,7 +129,7 @@ func (h *Hub) Publish(e Event) {
 // 它做两件上传链路不该操心的事：
 //  1. **节流**：git push 的进度输出是逐字节刷新的，原文转发会把
 //     SSE 灌爆（几百条/秒），浏览器光处理事件就卡了。这里合并到
-//     最多 10 条/秒 —— 人眼在这个频率下已经看不出差别。
+//     最多 10 条/秒，人眼在这个频率下已经看不出差别。
 //  2. **算速度**：按相邻两次上报的字节差 / 时间差算瞬时速度。
 //     调用方只管报「现在传了多少」，速度由这里统一算。
 //
@@ -150,7 +150,7 @@ type Reporter struct {
 // Task 创建某个任务的上报器。task 会出现在每条事件的 Task 字段里。
 //
 // 支持 nil receiver：Env.Progress 没接上（--check / 自检等无界面场景）时
-// 返回 nil，调用方照常写 `rep.Report(...)` 也不会崩 —— 见下面各方法的
+// 返回 nil，调用方照常写 `rep.Report(...)` 也不会崩，见下面各方法的
 // nil 判断。这样上传链路里一行判空都不用写。
 func (h *Hub) Task(task string) *Reporter {
 	if h == nil {
@@ -176,7 +176,7 @@ func (r *Reporter) Elapsed() time.Duration {
 // Emit 上报一次进度。
 //
 // bytes / total 是累计值与总量；total <= 0 表示总量未知（Percent 会置 -1）。
-// force 为 true 时跳过节流 —— 阶段切换、完成、失败必须立刻可见，
+// force 为 true 时跳过节流，阶段切换、完成、失败必须立刻可见，
 // 被节流吞掉会出现「进度条停在 87% 然后直接消失」这种观感。
 func (r *Reporter) Emit(phase string, bytes, total int64, msg string, force bool) {
 	if r == nil {
