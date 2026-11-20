@@ -644,10 +644,19 @@ async function syncLocalNotice() {
 async function prepareLocal(opts) {
   const cfg = state.cfg || {};
   const sync = cfg.sync || {};
-  // 没绑目录、或用户自己关了自动拉取 → 什么都不做，照常读列表
+
+  /*
+   * 首屏先列目录，git 的事并行做。
+   * 以前这里先 inspect / pull（网络不通时几秒不返回），load() 根本没被调用：
+   * 用户看到的就是「右侧空白 + 左侧只有一句静态文字、连遮罩都没有」。
+   * 右侧读的是本机磁盘，本来就不该被云端的 git 操作挡住。
+   */
+  const listing = load(opts);
+
+  // 没绑目录、或用户自己关了自动拉取 → 没有 git 活要干
   if (!cfg.localDir || sync.autoPull === false) {
     clearLocalNotice();
-    await load(opts);
+    await listing;
     return;
   }
 
@@ -657,10 +666,12 @@ async function prepareLocal(opts) {
   } catch (e) {
     // 探测不了就照旧，也别把上一次的报错一直挂着（确认不了的错误不该报错）
     clearLocalNotice();
-    await load(opts);
+    await listing;
     return;
   }
 
+  // 目录内容真被 clone / pull 改过时才补一次列表；失败或跳过就别再读一遍盘
+  let changed = false;
   switch (ins && ins.state) {
     case 'foreign-repo':
       showLocalNotice(
@@ -676,8 +687,10 @@ async function prepareLocal(opts) {
       showLocalNotice('busy', '本地是空的文件夹（不是Git仓库本地目录），正在向云端拉取文件，请稍后');
       try {
         const r = await window.cloudpic.git.clone({ dir: cfg.localDir });
-        if (r && r.ok) showLocalNotice('done', '已从云端拉取完成，本地仓库就绪');
-        else showLocalNotice('bad', (r && r.message) || '拉取失败，请稍后重试');
+        if (r && r.ok) {
+          showLocalNotice('done', '已从云端拉取完成，本地仓库就绪');
+          changed = true;
+        } else showLocalNotice('bad', (r && r.message) || '拉取失败，请稍后重试');
       } catch (e) {
         showLocalNotice('bad', (e && e.message) || String(e));
       }
@@ -686,7 +699,9 @@ async function prepareLocal(opts) {
       // 本地就是这份配置的仓库：过时提示收起来，再按策略正常拉取
       clearLocalNotice();
       try {
-        await window.cloudpic.git.pull();
+        const r = await window.cloudpic.git.pull();
+        // pull 失败会原样带回来，只有真拉到东西才需要补一遍列表
+        changed = !!(r && r.ok);
       } catch (e) {
         /* 拉取失败不挡着浏览 */
       }
@@ -695,7 +710,8 @@ async function prepareLocal(opts) {
       clearLocalNotice();
       break;
   }
-  await load(opts);
+  await listing;
+  if (changed) await load({ silent: true });
 }
 
 /* ---------------------------------------------------------------- 数据加载 */
@@ -718,6 +734,13 @@ async function load(opts) {
     load.__lastDir = dirKey;
   }
   view.loading = true;
+  /*
+   * 左侧检测与右侧列表同时起步。
+   * 放在 finally 里等列表读完才启动，是这次「首屏既没遮罩、又没文件」的根因之一：
+   * 列表一旦慢（比如同期的 git 拉取占着 IPC），遮罩连创建都不会创建。
+   * loadSide 内部自己管并发序号，重复进页不会叠加。
+   */
+  loadSide();
   /**
    * 延迟骨架：右侧读的是本地目录，正常情况下几十毫秒就回来了。
    * 以前一进来就无条件铺一屏骨架，等数据到了再整块换掉 —— 用户看到的就是
@@ -776,9 +799,6 @@ async function load(opts) {
     // 数据（或错误）已经落位：不管走哪条 return，都要把延迟骨架的定时器撤掉，
     // 否则它会在骨架刚被真实内容替换之后再补一屏骨架
     clearTimeout(sklTimer);
-    // 左侧状态和列表数据是两回事：未绑定目录 / 读取出错时也要把它刷到「不在检测中」，
-    // 否则侧栏那句「正在检测本地与云端…」会一直挂着，遮罩也永远不结束
-    loadSide();
   }
   view.loading = false;
   renderAll();
@@ -788,10 +808,13 @@ async function load(opts) {
 /**
  * 左侧「云端 · 本地检测器」的加载遮罩。
  *
- * 右侧列表读的是本地目录（快），左侧要跑 git、还要问云端（慢）—— 所以加载态
- * 只放在左侧，右侧一进来就是真实内容。遮罩延迟 120ms 出现：本机检测常常在这一
- * 拍之内就完了，直接显示只会闪一下。
+ * 以前延迟 120ms + 180ms 淡入，截图那一拍遮罩还没起来；加上实测主线程被 git
+ * 调用卡住时淡入会停在 0 好几帧，用户只看到一句静态文字。
+ * 现在遮罩同步出现，并至少留 600ms 再收 —— 本机检测几十毫秒完事时，
+ * 一闪而过等于没显示。
  */
+/** 遮罩最短展示时长：短于此看不清，长于此又拖慢交互 */
+const SIDE_CHECK_MIN_MS = 600;
 let sideCheckTimer = 0;
 /** 第几次检测：并发调用时，老的那次结束不能把新的遮罩提前摘掉 */
 let sideCheckSeq = 0;
@@ -810,7 +833,7 @@ function sideCheckingEl() {
   el.className = 'side-checking';
   el.id = 'mgSideChecking';
   el.setAttribute('aria-hidden', 'true');
-  el.innerHTML = '<span class="sc-text">正在核对云端与本地</span>';
+  el.innerHTML = '<span class="sc-spinner" aria-hidden="true"></span><span class="sc-text">正在检测本地与云端…</span>';
   side.insertAdjacentElement('afterend', el);
   return el;
 }
@@ -820,11 +843,13 @@ async function loadSide() {
   const side = $('#mgSide');
   sideCheckingEl();
   const seq = ++sideCheckSeq;
-  if (side) side.setAttribute('aria-busy', 'true');
+  const begunAt = Date.now();
   clearTimeout(sideCheckTimer);
-  sideCheckTimer = setTimeout(() => {
-    if (seq === sideCheckSeq && side) side.classList.add('is-checking');
-  }, 120);
+  if (side) {
+    side.setAttribute('aria-busy', 'true');
+    // 同步挂类：不排队、不淡入 —— 进入页面的第一帧就要看见遮罩
+    side.classList.add('is-checking');
+  }
   try {
     await refreshGitState();
     // 每次重画左侧都复核一遍本地目录状态 —— 提示条不能是「一次性写入、永不清除」；
@@ -836,10 +861,14 @@ async function loadSide() {
     // 出错也要摘掉：遮罩留着不走会被当成「一直卡在核对」
     if (seq === sideCheckSeq) {
       clearTimeout(sideCheckTimer);
-      if (side) {
+      const finish = () => {
+        if (seq !== sideCheckSeq || !side) return;
         side.classList.remove('is-checking');
         side.removeAttribute('aria-busy');
-      }
+      };
+      const left = SIDE_CHECK_MIN_MS - (Date.now() - begunAt);
+      if (left > 0) sideCheckTimer = setTimeout(finish, left);
+      else finish();
     }
   }
 }

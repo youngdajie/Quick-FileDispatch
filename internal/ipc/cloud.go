@@ -129,7 +129,8 @@ func (e *Env) cloudVerify() (any, error) {
 func (e *Env) cloudList(payload map[string]any) (any, error) {
 	dirRel := paths.Normalize(strOf(payload["dir"]))
 	cfg := e.Store.Raw()
-	localReady := e.localReady(cfg)
+	// 首屏热路径：只判 .git 在不在，不起 git 进程（见 localReadyFast）
+	localReady := localReadyFast(cfg)
 
 	// 管理页默认读本地（快）；本地不可用时**静默退回远程**，
 	// 而不是报错 —— 用户只是想看文件列表，不该被「本地目录没绑」挡住。
@@ -158,6 +159,27 @@ func (e *Env) localReady(cfg map[string]any) bool {
 		return false
 	}
 	return git.IsRepo(context.Background(), dir)
+}
+
+// localReadyFast 给 cloud:list 的首屏用：只看磁盘上有没有 .git。
+//
+// localReady() 每次都会同步起一个 `git rev-parse` 子进程，Windows 上冷启动
+// 几百毫秒起步 —— 列本地文件本该是几十毫秒的事，不该为一个布尔标记等它。
+// 真正的仓库身份判定由左侧检测器（git:status / git:inspect）异步去做，
+// 这里只决定「列本地还是退回远程」；普通仓库的 .git 是目录，worktree /
+// submodule 是文件，两种都算就绪。边界情况（父目录才是仓库）会退回远程，
+// 下次左侧检测出 isRepo 后界面照常显示本地内容。
+func localReadyFast(cfg map[string]any) bool {
+	dir := strOf(cfg["localDir"])
+	if dir == "" {
+		return false
+	}
+	st, err := os.Stat(dir)
+	if err != nil || !st.IsDir() {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
 }
 
 /* ------------------------------------------------------------ cloud:tree */

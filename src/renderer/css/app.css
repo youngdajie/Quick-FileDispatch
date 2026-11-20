@@ -3382,30 +3382,47 @@ input, textarea, [contenteditable="true"] { cursor: text; }
  *   · 不进 #mgSide 内部 —— 那里是 overflow-y:auto 的滚动容器，
  *     放进去会跟着内容一起滚，盖不住；
  *   · 宽度跟着 --mg-side-w 走，一点都不会溢到 mg-main 上。
- * 出现由 #mgSide 上的 is-checking 类驱动（loadSide 里延迟 120ms 才加）。
+ * 出现由 #mgSide 上的 is-checking 类驱动，JS 同步挂类、不淡入 ——
+ * 首屏第一帧就得是一整块实遮罩，而不是一句孤零零的静态文字。
  */
 .side-checking {
   position: absolute; left: 0; top: 0; bottom: 0;
   width: var(--mg-side-w);
-  z-index: 4;
-  display: flex; align-items: center; justify-content: center;
+  z-index: 5;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
   padding: 14px;
-  background: color-mix(in srgb, var(--panel) 76%, transparent);
-  backdrop-filter: blur(2px);
+  /* 实底 + 模糊：底下那句静态文字透不出来，一眼能看出「这块在加载」 */
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  backdrop-filter: blur(6px);
+  border-right: 1px solid var(--border-soft);
   overflow: hidden;
   opacity: 0; pointer-events: none;
-  transition: opacity .18s var(--ease);
+  /* 淡出才用 transition；显示态那条规则把 transition 关掉，避免首屏停在 0 */
+  transition: opacity .2s var(--ease);
 }
-.mg-side.is-checking + .side-checking { opacity: 1; }
+.mg-side.is-checking + .side-checking { opacity: 1; transition: none; }
 /* 一条从左扫到右的微光：说明「在跑」，而不是只糊一层灰 */
 .side-checking::before {
   content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 55%;
-  background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--accent) 16%, transparent) 50%, transparent 100%);
+  background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--accent) 22%, transparent) 50%, transparent 100%);
   transform: translateX(-120%);
   animation: sideSweep 1.5s var(--ease) infinite;
 }
 @keyframes sideSweep { to { transform: translateX(230%); } }
-.side-checking .sc-text { position: relative; font-size: 11.5px; color: var(--muted); text-align: center; }
+/* 转圈用 transform：主线程被 git / IPC 占住时它仍由合成器驱动，不会停在那儿 */
+.side-checking .sc-spinner {
+  position: relative; z-index: 1;
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent-hi);
+  animation: sideSpin .85s linear infinite;
+}
+@keyframes sideSpin { to { transform: rotate(360deg); } }
+.side-checking .sc-text {
+  position: relative; z-index: 1;
+  font-size: 12.5px; font-weight: 600; color: var(--accent-hi);
+  text-align: center; letter-spacing: .3px;
+}
 /* 侧栏收起时遮罩跟着让开：它盖的是一块已经滑出屏幕的区域 */
 #page-manage .mg-body.side-collapsed .side-checking { opacity: 0; }
 #page-manage .mg-main {
