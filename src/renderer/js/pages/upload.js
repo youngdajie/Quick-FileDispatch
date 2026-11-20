@@ -520,10 +520,10 @@ async function doUpload() {
 /* ---------------------------------------------------------------- 结果面板 */
 
 function fmtLabel(fmt) {
-  if (fmt === 'url') return '链接';
   if (fmt === 'markdown') return 'Markdown';
   if (fmt === 'html') return 'HTML';
-  return 'BBCode';
+  // 纯链接不需要包装，也是任何未知值的兜底
+  return '链接';
 }
 
 function renderResults() {
@@ -535,7 +535,7 @@ function renderResults() {
     return;
   }
   panel.hidden = false;
-  const fmt = $('#resultFormat').value || (state.cfg && state.cfg.linkFormat) || 'markdown';
+  const fmt = CPLinks.normalizeFormat($('#resultFormat').value || (state.cfg && state.cfg.linkFormat));
   list.innerHTML = done
     .map((it, idx) => {
       if (it.status === 'error') {
@@ -1064,11 +1064,206 @@ function bindUploadOptions() {
   const toggle = $('#upOptionsToggle');
   const body = $('#upOptionsBody');
   if (!toggle || !body) return;
+  const content = $('#content');
+  const shell = document.querySelector('.upload-options-shell');
+  /** 展开前内容区的滚动位置：折叠后要滚回这里，别把用户丢在别处 */
+  let topBeforeOpen = 0;
+  /** 展开期间插在 shell 后面的滚动占位：它只负责把 scrollHeight 垫够 */
+  let padEl = null;
+  let padRaf = 0;
+  let scrollTimer = 0;
+  /**
+   * 用户在展开期间自己滚开了没有。
+   *
+   * 用来决定 resize 时还要不要把 shell 拉回顶部：用户既然滚下去读参数了，
+   * 改窗口尺寸就不该把他弹回顶上。滚轮 / 触摸拖动 / 方向键翻滚都算「自己滚」；
+   * 拖滚动条这一种没监听 —— 它和「改窗口」同时发生的概率低到不值得为它加代码。
+   */
+  let userScrolledAway = false;
+  const markScrolledAway = () => { userScrolledAway = true; };
+
+  /**
+   * 占位高度 = 内容区可视高 − shell 自身高 − 40。
+   *
+   * 「上传选项」是上传页最后一个区块，下面只剩几十像素，所以原来展开后
+   * 根本滚不到它 —— scrollHeight 不够就是不够，scrollTo 再准也会被夹到 max
+   * （QA 实测：有文件时最多滚到 shell 顶部仍距内容区顶 584px；空队列时
+   * applyFit 直接判「没溢出」把滚动关掉，scrollTop 恒为 0）。
+   *
+   * 垫到「clientHeight − shellHeight」意味着：把 shell 顶到最上面之后，
+   * 剩下的滚动区间正好只够露出 shell 本身，不会再垫出一屏无处可去的空白。
+   * 再减 40 是留给上下呼吸和 shell 展开后的下边距，免得滚动条一路顶到底。
+   */
+  const padHeight = () => {
+    if (!content || !shell) return 0;
+    return Math.max(0, content.clientHeight - shell.offsetHeight - 40);
+  };
+
+  const syncPad = () => {
+    if (!padEl) return;
+    padEl.style.height = padHeight() + 'px';
+  };
+
+  /**
+   * 让占位「刚好够顶到顶部」。
+   *
+   * 上面那条公式只是拍脑袋的近似：页面底部除了占位还有 .page 自己的下内边距
+   * （以及它那条抵富余的负 margin），所以按公式垫出来的高度可能差十几个像素 ——
+   * 900 高窗口实测：滚到 max 时 shell 顶部仍在 27px 处，就是差这一口气。
+   *
+   * 这里直接反推：要让 shell 顶部落在 16px 处，滚动内容必须够长到
+   * 「shell 的绝对位置 − 16」；不够就把差值补进占位高度。
+   * 补多少就是多少，不会多垫出空白滚动区。
+   *
+   * shell 的绝对位置 = 当前 scrollTop + 它离内容区顶的距离 —— 这个和式
+   * 不受 scrollTop 被夹住的影响，所以随时量都准。
+   */
+  const growPadToReachTop = () => {
+    if (!padEl || !content || !shell) return;
+    const shellTop = content.scrollTop + (shell.getBoundingClientRect().top - content.getBoundingClientRect().top);
+    const shortfall = (shellTop - 16) - (content.scrollHeight - content.clientHeight);
+    if (shortfall > 0) {
+      const cur = parseFloat(padEl.style.height) || 0;
+      padEl.style.height = cur + Math.ceil(shortfall) + 'px';
+    }
+  };
+
+  /** 插入占位（插在 shell 之后，同属 .page 的正常流，直接抬高页面高度） */
+  const addPad = () => {
+    if (!shell || padEl || !shell.parentNode) return;
+    const el = document.createElement('div');
+    el.className = 'up-scroll-pad';
+    el.setAttribute('aria-hidden', 'true');
+    el.style.height = padHeight() + 'px';
+    shell.parentNode.insertBefore(el, shell.nextSibling);
+    padEl = el;
+  };
+
+  /** 移除占位：连节点一起摘掉，不留 0 高度的空壳（它不该参与任何布局） */
+  const removePad = () => {
+    if (padEl && padEl.parentNode) padEl.parentNode.removeChild(padEl);
+    padEl = null;
+  };
+
+  /**
+   * 展开后把「上传选项」顶到内容区顶部（留 16px 呼吸）。
+   *
+   * 滚动容器是 #content 自己，不是 window —— 这个页面里 body 根本不滚。
+   * 不用 scrollIntoView：那会把祖先滚动容器一起带着动。
+   *
+   * 目标值用两个 getBoundingClientRect 相减再叠加 scrollTop 求：
+   * shell 的 offsetParent 不一定是 #content（中间隔着带定位的层），
+   * 而 offsetTop 还受内边距影响；rect 之差是纯粹的「当前视口里差多远」，
+   * 这一段距离正好就是需要多滚的量，与内边距、定位祖先都无关。
+   */
+  const scrollToShell = () => {
+    if (!content || !shell) return;
+    // 走到这里时高度过渡已经跑完，shell 才是展开后的真实高度：
+    // 按它把占位收紧一次（展开瞬间量到的还是收起时的 68px，会多垫一截），
+    // 再补到「刚好能顶上去」，滚动的目标值才落得下来。
+    syncPad();
+    growPadToReachTop();
+    const delta = shell.getBoundingClientRect().top - content.getBoundingClientRect().top - 16;
+    content.scrollTo({ top: Math.max(0, content.scrollTop + delta), behavior: 'smooth' });
+  };
+
+  /** 展开期间让内容区可滚：类名是给 app.js 的 applyFit() 看的放行标记 */
+  const openContentScroll = () => {
+    if (!content) return;
+    content.classList.add('up-scroll-open');
+    content.style.overflowY = 'auto';
+  };
+
+  /** 折叠后交回给 applyFit 按真实高度重新分流 */
+  const releaseContentScroll = () => {
+    if (!content) return;
+    content.classList.remove('up-scroll-open');
+    content.style.overflowY = '';
+  };
+
+  /**
+   * 排一次「过渡跑完再滚」。
+   * transitionend 是主路径，定时器是兜底：用户在系统里关了动效、
+   * 或者过渡被中间某次重排打断时，transitionend 不会来。
+   * 两次调用都滚向同一个目标值，重复一次无害（只是把已在路上的滚动再对齐一遍）。
+   */
+  const scheduleScroll = (fn) => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(fn, 280);
+  };
+
+  /** 折叠后滚回展开前的位置 */
+  const scrollBack = () => {
+    if (!content) return;
+    content.scrollTo({ top: topBeforeOpen, behavior: 'smooth' });
+  };
+
+  // 等高度过渡跑完再滚：过渡期间 shell 的位置一直在变，提前滚只是在追一个移动的目标。
+  // 按 propertyName 过滤 —— 里面的输入框、下拉也各有过渡，别被它们触发。
+  body.addEventListener('transitionend', (e) => {
+    if (e.target !== body || e.propertyName !== 'grid-template-rows') return;
+    if (toggle.getAttribute('aria-expanded') === 'true') scrollToShell();
+    else scrollBack();
+  });
+
   toggle.addEventListener('click', () => {
     const open = toggle.getAttribute('aria-expanded') !== 'true';
+    if (open && content) topBeforeOpen = content.scrollTop;
     toggle.setAttribute('aria-expanded', String(open));
-    body.hidden = !open;
+    body.classList.toggle('open', open);
     $('#page-upload').classList.toggle('options-open', open);
+
+    if (open) {
+      // 顺序要紧：先把占位垫上、放开滚动，再滚 —— 反过来的话这次 scrollTo
+      // 会被旧的 scrollHeight 夹住，等于没滚
+      addPad();
+      openContentScroll();
+      userScrolledAway = false; // 新一次展开：重新算「贴在顶部」
+      scheduleScroll(scrollToShell);
+      return;
+    }
+    // 折叠：先撤占位（高度立刻变短），再把 overflowY 交还给 applyFit。
+    // ⚠️ 回滚必须等高度真的收完 —— 收的过程中内容越来越短，浏览器会把 scrollTop
+    // 一路夹回新的 max，正在跑的平滑滚动会被这次夹取顶掉，最后停在 max 上
+    // （QA 回合实测：10 个文件时折叠后停在 386，回不到展开前的 120）。
+    removePad();
+    releaseContentScroll();
+    scheduleScroll(scrollBack);
+  });
+
+  // 用户在展开期间自己滚开的三个入口（滚轮 / 触摸 / 键盘翻页）
+  if (content) {
+    content.addEventListener('wheel', markScrolledAway, { passive: true });
+    content.addEventListener('touchmove', markScrolledAway, { passive: true });
+    content.addEventListener('keydown', (e) => {
+      if (['PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', 'Home', 'End', ' '].indexOf(e.key) !== -1) {
+        markScrolledAway();
+      }
+    });
+  }
+
+  /**
+   * 窗口尺寸变了：占位高度是按 clientHeight 算的，必须跟着重算，
+   * 否则放大窗口后垫得不够（又滚不到顶）、缩小后垫得太多（底部多出空白滚动区）。
+   * 挪到 rAF 里做：resize 事件一轮能来几十个，逐帧同步写高度会把布局抖动放大。
+   */
+  window.addEventListener('resize', () => {
+    if (!padEl) return; // 没展开就什么都不用做
+    if (padRaf) cancelAnimationFrame(padRaf);
+    padRaf = requestAnimationFrame(() => {
+      padRaf = 0;
+      // 顺序：先按新的 clientHeight 重算占位，再补到刚好够，最后才谈贴顶
+      syncPad();
+      growPadToReachTop();
+      if (!content || !shell) return;
+      // 顺手把 shell 重新贴回顶部：视口一变，原来那个 scrollTop 对应的位置就歪了
+      // （实测 640→900 高时 shell 顶部掉到 275px 处 —— 变大那一下占位还没跟上，
+      // scrollTop 先被夹了一截，位置就是这么丢的）。
+      // 用瞬时赋值而不是平滑滚动：resize 每帧都在动，平滑滚动只会让画面一直追。
+      if (userScrolledAway) return; // 用户自己滚开去读下面的参数了，别把他拽回来
+      const rel = shell.getBoundingClientRect().top - content.getBoundingClientRect().top;
+      content.scrollTop = Math.max(0, content.scrollTop + rel - 16);
+    });
   });
 }
 
@@ -1097,7 +1292,7 @@ export default {
     syncLfsRow();
 
     $('#resultFormat').innerHTML = CPLinks.LINK_FORMATS.map((f) => '<option value="' + f.id + '">' + f.name + '</option>').join('');
-    $('#resultFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
+    $('#resultFormat').value = CPLinks.normalizeFormat(state.cfg && state.cfg.linkFormat);
     $('#resultFormat').onchange = () => {
       renderResults();
       persistQuickOptions();

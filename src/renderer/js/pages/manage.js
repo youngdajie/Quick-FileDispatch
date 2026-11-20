@@ -19,6 +19,7 @@ import {
 } from '../lib/dom.js';
 import { fileIcon, isImageName } from '../lib/fileicons.js';
 import { previewText } from '../lib/textview.js';
+import { previewVideo, previewAudio, isVideoName, isAudioName } from '../lib/videoview.js';
 import { openMiniUpload } from '../lib/upload-mini.js';
 import state from '../lib/state.js';
 
@@ -111,6 +112,24 @@ function isText(it) {
   return !!(CPHL && CPHL.isTextName(it.name || it.path || ''));
 }
 
+/**
+ * 是不是视频。
+ *
+ * 这里**不看**浏览器解不解得了：解得了的进内置播放器，解不了的（mkv / avi …）
+ * 也进同一个播放器，由它在画面里说「播放不了」并给出「在资源管理器中显示」。
+ * 只有在页面这一层就分岔，才不会有文件被重新甩给浏览器。
+ */
+function isVideo(it) {
+  if (!it || it.type === 'dir') return false;
+  return isVideoName(it.name || it.path || '');
+}
+
+/** 是不是音频。和视频同理：解不了的也进播放器，由它给提示 */
+function isAudio(it) {
+  if (!it || it.type === 'dir') return false;
+  return isAudioName(it.name || it.path || '');
+}
+
 function absLocalPath(rel) {
   const root = (state.cfg && state.cfg.localDir) || '';
   if (!root) return '';
@@ -135,13 +154,41 @@ function linkOf(it) {
 }
 
 /**
+ * 音视频预览的参数。
+ *
+ * src 用的是和图片预览、缩略图完全同一个拼法（absLocalPath + localUrl）——
+ * /__local 是唯一放行绑定目录的出口，换成别的方式拼路径会被后端 403 掉。
+ * localPath 只给「在资源管理器中显示」用，所以是绝对路径而不是 /__local 直链。
+ * link / format 给标题栏那两个按钮用：链接格式跟着文件管理页的设置走。
+ */
+function mediaArgs(it) {
+  return {
+    src: thumbSrc(it),
+    name: it.name || baseOf(it.path),
+    localPath: absLocalPath(it.path),
+    link: linkOf(it),
+    // 传函数而不是值：点「复制链接」时读当下的格式，弹层开着换格式也能跟上
+    format: currentFormat
+  };
+}
+
+/**
  * 双击 / 菜单「预览」的统一入口：
- * 图片还是老样子走图片查看器，文本文件才进代码预览器（可编辑、可保存）。
+ * 图片走图片查看器，视频/音频进内置播放器，文本文件才进代码预览器。
  */
 function openPreview(it) {
   if (!it) return;
   if (isImg(it)) {
-    previewImage(thumbSrc(it), it.path, linkOf(it));
+    previewImage(thumbSrc(it), it.path, linkOf(it), currentFormat);
+    return;
+  }
+  // 音视频就地播：以前它们落到「其余一律外链」那条路，双击等于丢给浏览器
+  if (isVideo(it)) {
+    previewVideo(mediaArgs(it));
+    return;
+  }
+  if (isAudio(it)) {
+    previewAudio(mediaArgs(it));
     return;
   }
   previewText({
@@ -149,6 +196,7 @@ function openPreview(it) {
     path: it.path,
     source: 'local',
     link: linkOf(it),
+    format: currentFormat,
     onSaved: () => {
       load();
       window.dispatchEvent(new CustomEvent('cloudpic:changed'));
@@ -319,7 +367,7 @@ function startMarquee(e, fromTile) {
 
 /** 复制单条链接（菜单里用，和工具栏的「复制链接」同一套格式） */
 function copyLinkOf(it) {
-  const fmt = ($('#mgFormat') && $('#mgFormat').value) || (state.cfg && state.cfg.linkFormat) || 'markdown';
+  const fmt = CPLinks.normalizeFormat(($('#mgFormat') && $('#mgFormat').value) || (state.cfg && state.cfg.linkFormat));
   window.cloudpic.clipboard
     .write(CPLinks.formatLink(linkOf(it), fmt, it.name, isImg(it)))
     .then(() => ok('已复制链接'));
@@ -331,9 +379,13 @@ async function copyPaths(paths) {
   ok('已复制 ' + paths.length + ' 条路径');
 }
 
+/** 当前链接格式：页面上的下拉优先，其次配置；老配置里的 bbcode 在这里归一 */
+function currentFormat() {
+  return CPLinks.normalizeFormat(($('#mgFormat') && $('#mgFormat').value) || (state.cfg && state.cfg.linkFormat));
+}
+
 function currentFormatName() {
-  const id = ($('#mgFormat') && $('#mgFormat').value) || (state.cfg && state.cfg.linkFormat) || 'markdown';
-  const f = (CPLinks.LINK_FORMATS || []).find((x) => x.id === id);
+  const f = (CPLinks.LINK_FORMATS || []).find((x) => x.id === currentFormat());
   return f ? f.name : '';
 }
 
@@ -350,7 +402,8 @@ function menuForItem(it) {
     {
       label: isText(it) ? '预览 / 编辑' : '预览',
       icon: ICONS.eye,
-      disabled: !isImg(it) && !isText(it),
+      // 音视频都要能从这里进 —— 和双击走同一个 openPreview，不新增菜单项
+      disabled: !isImg(it) && !isVideo(it) && !isAudio(it) && !isText(it),
       onClick: () => openPreview(it)
     },
     { label: '复制仓库内路径', icon: ICONS.path, onClick: () => copyPaths([it.path]) },
@@ -665,10 +718,19 @@ async function load(opts) {
     load.__lastDir = dirKey;
   }
   view.loading = true;
+  /**
+   * 延迟骨架：右侧读的是本地目录，正常情况下几十毫秒就回来了。
+   * 以前一进来就无条件铺一屏骨架，等数据到了再整块换掉 —— 用户看到的就是
+   * 「闪一下」。这里改成只有真的慢了（>350ms）才补骨架：快路径下页面直接从
+   * 「上屏内容 / 空白占位」过渡到真实列表，一帧骨架都不出现。
+   */
+  let sklTimer = 0;
   if (!silent) {
     view.selected.clear();
     updateSelectionBar();
-    showSkeleton();
+    sklTimer = setTimeout(() => {
+      if (view.loading) showSkeleton();
+    }, 350);
   }
   // 容量条和列表数据没关系，先挂上去：列表就算读失败（比如这台机器没配 Token），
   // 它也该照常显示，不该跟着一起消失
@@ -710,21 +772,76 @@ async function load(opts) {
     if (go) go.onclick = () => document.querySelector('.nav-item[data-page="settings"]').click();
     view.loading = false;
     return;
+  } finally {
+    // 数据（或错误）已经落位：不管走哪条 return，都要把延迟骨架的定时器撤掉，
+    // 否则它会在骨架刚被真实内容替换之后再补一屏骨架
+    clearTimeout(sklTimer);
+    // 左侧状态和列表数据是两回事：未绑定目录 / 读取出错时也要把它刷到「不在检测中」，
+    // 否则侧栏那句「正在检测本地与云端…」会一直挂着，遮罩也永远不结束
+    loadSide();
   }
   view.loading = false;
   renderAll();
-  loadSide();
   refreshStats();
+}
+
+/**
+ * 左侧「云端 · 本地检测器」的加载遮罩。
+ *
+ * 右侧列表读的是本地目录（快），左侧要跑 git、还要问云端（慢）—— 所以加载态
+ * 只放在左侧，右侧一进来就是真实内容。遮罩延迟 120ms 出现：本机检测常常在这一
+ * 拍之内就完了，直接显示只会闪一下。
+ */
+let sideCheckTimer = 0;
+/** 第几次检测：并发调用时，老的那次结束不能把新的遮罩提前摘掉 */
+let sideCheckSeq = 0;
+
+/**
+ * 取（必要时创建）遮罩节点。
+ * 插在 #mgSide 后面当相邻兄弟：显隐完全由 #mgSide 上的 is-checking 类驱动
+ * （CSS 用 `.mg-side.is-checking + .side-checking`），JS 只需要维护一个类名。
+ */
+function sideCheckingEl() {
+  const side = $('#mgSide');
+  if (!side) return null;
+  const existed = $('#mgSideChecking');
+  if (existed) return existed;
+  const el = document.createElement('div');
+  el.className = 'side-checking';
+  el.id = 'mgSideChecking';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = '<span class="sc-text">正在核对云端与本地</span>';
+  side.insertAdjacentElement('afterend', el);
+  return el;
 }
 
 /** 左侧只留「状态」+ 云端检测器：目录位置由面包屑负责，这里不再重复一遍 */
 async function loadSide() {
-  await refreshGitState();
-  // 每次重画左侧都复核一遍本地目录状态 —— 提示条不能是「一次性写入、永不清除」；
-  // 状态恢复成仓库后，这里会主动把过时的红字收起来
-  await syncLocalNotice();
-  // 本地状态和云端比对并行不了：都要跑 git / 网络，串行更省事
-  await refreshCloudDetect();
+  const side = $('#mgSide');
+  sideCheckingEl();
+  const seq = ++sideCheckSeq;
+  if (side) side.setAttribute('aria-busy', 'true');
+  clearTimeout(sideCheckTimer);
+  sideCheckTimer = setTimeout(() => {
+    if (seq === sideCheckSeq && side) side.classList.add('is-checking');
+  }, 120);
+  try {
+    await refreshGitState();
+    // 每次重画左侧都复核一遍本地目录状态 —— 提示条不能是「一次性写入、永不清除」；
+    // 状态恢复成仓库后，这里会主动把过时的红字收起来
+    await syncLocalNotice();
+    // 本地状态和云端比对并行不了：都要跑 git / 网络，串行更省事
+    await refreshCloudDetect();
+  } finally {
+    // 出错也要摘掉：遮罩留着不走会被当成「一直卡在核对」
+    if (seq === sideCheckSeq) {
+      clearTimeout(sideCheckTimer);
+      if (side) {
+        side.classList.remove('is-checking');
+        side.removeAttribute('aria-busy');
+      }
+    }
+  }
 }
 
 /**
@@ -1407,7 +1524,7 @@ function navigate(dir) {
 /* ---------------------------------------------------------------- 复制 / 导出 */
 
 async function copySelectedLinks() {
-  const fmt = $('#mgFormat').value || (state.cfg && state.cfg.linkFormat) || 'markdown';
+  const fmt = CPLinks.normalizeFormat($('#mgFormat').value || (state.cfg && state.cfg.linkFormat));
   const sel = selectedFiles();
   if (!sel.length) {
     warn('请先选择文件');
@@ -1834,23 +1951,6 @@ async function pushLocal() {
   }
 }
 
-async function pullLatest() {
-  const btn = $('#btnMgPull');
-  btn.classList.add('active');
-  try {
-    const r = await window.cloudpic.git.pull();
-    if (r.skipped) warn(r.message);
-    else if (r.ok) {
-      ok('已同步：' + r.message);
-      await load();
-    } else err(r.message);
-  } catch (e) {
-    err(e.message || String(e));
-  } finally {
-    btn.classList.remove('active');
-  }
-}
-
 /* ---------------------------------------------------------------- 事件 */
 
 function bind() {
@@ -1895,12 +1995,6 @@ function bind() {
     }, 200)
   );
 
-  $('#btnMgUp').onclick = () => {
-    const parts = view.dir.split('/').filter(Boolean);
-    parts.pop();
-    navigate(parts.join('/'));
-  };
-
   /*
    * 在资源管理器里打开**当前目录**（不是本地根目录）。
    * 按钮原来挂在顶栏，那会儿拿不到「当前在哪个目录」，只能开根 ——
@@ -1924,7 +2018,6 @@ function bind() {
     }
   };
   $('#btnMgRefresh').onclick = () => load();
-  $('#btnMgPull').onclick = pullLatest;
 
   const head = $('#mgListHead');
   if (head) {
@@ -2149,6 +2242,16 @@ function bind() {
     if (!tile) return;
     const it = findItem(tile.dataset.path);
     if (!it) return;
+    // 音视频先拦一道：以前它们掉进最后那条 else，被当成外链甩给浏览器。
+    // 解不了的格式也走这里 —— 播放器自己会说「播放不了」，而不是换个地方失败
+    if (isVideo(it)) {
+      previewVideo(mediaArgs(it));
+      return;
+    }
+    if (isAudio(it)) {
+      previewAudio(mediaArgs(it));
+      return;
+    }
     if (it.type === 'dir') navigate(it.path);
     else if (isImg(it) || isText(it)) openPreview(it);
     else window.cloudpic.shell.openExternal(linkOf(it));
@@ -2197,7 +2300,7 @@ function savedSideCollapsed() {
 export default {
   init() {
     $('#mgFormat').innerHTML = CPLinks.LINK_FORMATS.map((f) => '<option value="' + f.id + '">' + f.name + '</option>').join('');
-    $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
+    $('#mgFormat').value = CPLinks.normalizeFormat(state.cfg && state.cfg.linkFormat);
     $('#btnMgGrid').classList.add('active');
     applySideCollapsed(savedSideCollapsed(), false);
     const sideBtn = $('#btnMgSideToggle');
@@ -2220,7 +2323,7 @@ export default {
   },
 
   onConfigChanged() {
-    $('#mgFormat').value = (state.cfg && state.cfg.linkFormat) || 'markdown';
+    $('#mgFormat').value = CPLinks.normalizeFormat(state.cfg && state.cfg.linkFormat);
     // 收起状态是配置的一部分：还原默认设置之后要跟着回去
     applySideCollapsed(savedSideCollapsed(), false);
     // 切换归档配置会同时换掉远端仓库和本地目录，管理页里缓存的列表已经失效，

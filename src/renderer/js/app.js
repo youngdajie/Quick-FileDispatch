@@ -8,7 +8,7 @@ import * as fileIcons from './lib/fileicons.js';
 import state from './lib/state.js';
 import * as appearance from './lib/appearance.js';
 import { initUniverse, universeState, paintNow, suspendUniverse, resumeUniverse } from './lib/universe.js';
-import onboard from './lib/onboard.js';
+import { openConfigWizard } from './lib/config-wizard.js';
 import uploadPage from './pages/upload.js';
 import managePage from './pages/manage.js';
 import settingsPage from './pages/settings.js';
@@ -77,6 +77,15 @@ function revealOrigin(ev) {
  * 跟随系统时被 commitTheme 悄悄改写成 'dark'，之后再也不会跟着系统变。
  */
 let shownTheme = 'dark';
+
+/**
+ * 配置里现在记着的是哪一侧（可能是 'system'）—— 顶栏按钮据此判断「还要不要写盘」。
+ *
+ * 放模块级是因为它有两个写入方：揭幕落盘成功之后写，以及任何一次配置回灌
+ * （applyConfigEverywhere，比如在设置页选主题）。只让揭幕那条路写，会和配置
+ * 悄悄脱节。
+ */
+let savedCfgTheme = 'dark';
 
 function themeIsLight() {
   return shownTheme === 'light';
@@ -156,6 +165,22 @@ let deferredAppearance = false;
 function applyFit() {
   const content = $('#content');
   if (!content) return;
+  /*
+   * 「上传选项」展开期间不许关滚动。
+   *
+   * 展开时 pages/upload.js 会在 .upload-options-shell 后面插一块滚动占位
+   * （.up-scroll-pad），就是为了让 scrollHeight 够把 shell 顶到内容区顶部。
+   * 但占位高度 = clientHeight - shellHeight - 40，窗口矮、shell 又高的时候
+   * 它会被压到 0，这时 slack 可能落进下面那 20px 的「短页面」判据里 ——
+   * 一旦判成 hidden，收起前内容区就彻底滚不动，scrollTo 变成空操作
+   * （QA 实测：空队列时 scrollTop 恒为 0）。所以展开期间直接放行。
+   *
+   * 这里只在值真的不同时才写 style，理由和下面那段完全一样（防 RO 自激）。
+   */
+  if (content.classList.contains('up-scroll-open')) {
+    if (content.style.overflowY !== 'auto') content.style.overflowY = 'auto';
+    return;
+  }
   if (content.style.overflowY !== '') content.style.overflowY = '';
   const slack = content.scrollHeight - content.clientHeight;
   const want = (slack > 0 && slack < 20) ? 'hidden' : '';
@@ -337,6 +362,10 @@ async function checkForUpdates() {
 function applyConfigEverywhere(cfg) {
   // 配置落回来了：显示值以它为准（'system' 在这里解析成具体哪一侧）
   shownTheme = appearance.resolveTheme(((cfg && cfg.ui) || {}).theme);
+  // 「已落盘的主题」也跟着配置走。不跟的话，在设置页改主题（走的是同一份配置）
+  // 之后顶栏按钮会拿着旧的已落盘值做判重，点一下只换皮不写盘 —— 配置记的还是
+  // 设置页选的那一侧，看着像「点了没用」。
+  savedCfgTheme = ((cfg && cfg.ui) || {}).theme || savedCfgTheme;
   appearance.applyAppearance(cfg);
   updateChrome();
   Object.keys(PAGES).forEach((k) => {
@@ -354,10 +383,6 @@ function applyConfigEverywhere(cfg) {
 function bindChrome() {
   document.querySelectorAll('.nav-item').forEach((b) => {
     b.onclick = () => {
-      if (onboard.isOpen() && b.dataset.page !== 'upload') {
-        toast('先把新手指引走完，就可以自由切换了', 'warn');
-        return;
-      }
       go(b.dataset.page);
     };
   });
@@ -383,7 +408,8 @@ function bindChrome() {
   const btnTheme = $('#btnTheme');
   let themeQueued = null; // 待落盘的主题
   let themeWriting = false;
-  let themeSaved = themeIsLight() ? 'light' : 'dark';
+  // 启动时的落盘基准：和 shownTheme 一样按配置解析，别假定默认是深色
+  savedCfgTheme = (((state.cfg && state.cfg.ui) || {}).theme) || (themeIsLight() ? 'light' : 'dark');
 
   function freezeTransitions(on) {
     document.documentElement.classList.toggle('theme-instant', !!on);
@@ -414,18 +440,18 @@ function bindChrome() {
   }
 
   async function flushTheme() {
-    if (themeWriting || themeQueued === null || themeQueued === themeSaved) return;
+    if (themeWriting || themeQueued === null || themeQueued === savedCfgTheme) return;
     themeWriting = true;
     const t = themeQueued;
     try {
       await state.patch({ ui: { theme: t } });
-      themeSaved = t;
+      savedCfgTheme = t;
     } catch (e) {
       err(e.message || String(e));
     } finally {
       themeWriting = false;
       // 连点期间主题又变了 → 补写最后一次（中间的都会被合并掉）
-      if (themeQueued !== themeSaved) flushTheme();
+      if (themeQueued !== savedCfgTheme) flushTheme();
     }
   }
 
@@ -439,6 +465,9 @@ function bindChrome() {
     nextPaint().then(() => {
       freezeTransitions(false);
       resumeUniverse();
+      // 这一串连点到此落定（颜色早在 commitTheme 里同步换好了），清掉目标，
+      // 免得下一次点击还拿着一个过期的「终点」去算反色
+      targetTheme = null;
     });
   }
 
@@ -495,6 +524,7 @@ function bindChrome() {
       root.classList.remove('vt-expand', 'vt-shrink');
       freezeTransitions(false);
       resumeUniverse();
+      targetTheme = null; // 这一轮没起来，连点目标作废，下次从屏幕上的主题重新算
       if (persist) saveTheme(next);
       return;
     }
@@ -531,20 +561,36 @@ function bindChrome() {
         if (queued && queued !== shownTheme) {
           paintThemeSwitch(queued, null, true);
         }
+        // 处理完 pendingTheme 才清目标：这一串连点已经落定，下一串从屏幕上的
+        // 主题重新起算（清早了，补跑的那一轮会被下一次点击当成「没目标」）
+        targetTheme = null;
       });
   }
 
   /** 揭幕进行中又点了按钮：不打断这一圈，只记下最终该去哪 */
   let pendingTheme = null;
+  /**
+   * 「这一串连点最终要去的地方」。
+   *
+   * 为什么不能用 pendingTheme / shownTheme 当基数：
+   * 第一轮的 commitTheme() 是在 ViewTransition 的 update 回调里跑的，同一 tick
+   * 内连点时 shownTheme 还停在旧值上 —— 第 2、3 次点击于是都把目标又算回原方向，
+   * 三连点最后反而停在原主题（QA 实测：同 tick 三连点停浅色，还白跑了两圈过渡）。
+   * 单独记一份「期望终点」，连点才真的等于翻三次。
+   * 每一轮落定后清成 null（见 vt.finished / releaseInstantSoon），
+   * 这样新一轮永远从屏幕上的实际主题起算。
+   */
+  let targetTheme = null;
   /** 揭幕的「第几轮」：上一轮延迟摘 vt-shrink 的回调不能把下一轮的层序也摘了 */
   let vtSeq = 0;
 
   btnTheme.onclick = (ev) => {
     // 跟随系统时点一下 = 离开自动、钦定为当前的反色。
-    // 基数取「正在路上」的目标而不是屏幕上的主题：连点三下就等于翻三次，
+    // 基数取「这一串连点正在路上的目标」而不是屏幕上的主题：连点三下就等于翻三次，
     // 结果停在深色，而不是三次都算出「浅色」把自己绕回去。
-    const base = pendingTheme || shownTheme;
+    const base = targetTheme || shownTheme;
     const next = base === 'light' ? 'dark' : 'light';
+    targetTheme = next;
     if (revealing) {
       // 手速再快也不打断正在播的那一圈：界面按自己的节奏走完，
       // 点击也不丢 —— 记到最后一次的目标，这一圈结束后接着往那儿走
@@ -581,9 +627,6 @@ function bindChrome() {
     if (sysTheme.addEventListener) sysTheme.addEventListener('change', onSystemTheme);
     else if (sysTheme.addListener) sysTheme.addListener(onSystemTheme); // 老内核
   }
-
-  const rerun = $('#btnRerunGuide');
-  if (rerun) rerun.onclick = () => onboard.open();
 
   bindWindowControls();
 }
@@ -703,10 +746,10 @@ async function boot() {
 
   // 导航侧栏常驻；桌面工作区不因空闲状态改变布局。
 
-  // 没走完引导就不让用：配置齐全只是「能连上」，走完引导才算「会用了」
-  if (!state.cfg.onboarded || !state.configured) {
-    onboard.open();
-  }
+  // 首次安装（还没有任何仓库信息，也从没走完向导）直接把「新建配置」弹出来。
+  // 引导已经并进配置向导了：只有一套步骤条，不再有两个几乎一样的浮层。
+  const firstRun = !state.cfg.onboarded && !state.cfg.owner && !state.cfg.repo;
+  if (firstRun) openConfigWizard({ firstRun: true });
 
   // 界面到这就算落位了（引导浮层也挂好了），让启动画面开始退场
   dismissBootSplash();

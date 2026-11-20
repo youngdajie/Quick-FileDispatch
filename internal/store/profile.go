@@ -332,6 +332,20 @@ func migrate(cfg map[string]any) map[string]any {
 		}
 		cfg["version"] = 10
 	}
+	if v < 11 {
+		// 链接格式去掉 BBCode。迁移不删字段、只换值：留着 "bbcode" 会一路流到
+		// 设置页下拉（无对应 option → 空选中）和链接生成（formatLink 认不出 → 裸链接），
+		// 而链接格式是**全局**设置（见 ImportProfiles 的注释），顶层改完就全生效。
+		cfg["linkFormat"] = normalizeLinkFormat(cfg["linkFormat"])
+		if list, ok := cfg["profiles"].([]any); ok {
+			for _, it := range list {
+				if m, ok := it.(map[string]any); ok {
+					m["linkFormat"] = normalizeLinkFormat(m["linkFormat"])
+				}
+			}
+		}
+		cfg["version"] = 11
+	}
 
 	list, _ := cfg["profiles"].([]any)
 	if len(list) == 0 {
@@ -363,6 +377,8 @@ func profileFromTop(cfg map[string]any) map[string]any {
 	for _, k := range profileFields {
 		p[k] = defStr(cfg[k], profileDefaultOf(k))
 	}
+	// 走一遍归一，免得从老配置里带出一个已下线的格式
+	p["linkFormat"] = normalizeLinkFormat(cfg["linkFormat"])
 	if cfg["_tokenEnc"] != nil {
 		p["_tokenEnc"] = cfg["_tokenEnc"]
 	} else if cfg["_tokenPlain"] != nil {
@@ -383,6 +399,20 @@ func normalizePlatform(v any) string {
 		return "cnb"
 	}
 	return "github"
+}
+
+// normalizeLinkFormat 把「复制格式」收敛到当前支持的三种（url / markdown / html）。
+//
+// BBCode 已移除：它只对论坛有用，而这两个平台（GitHub / CNB）的用户吃的是
+// Markdown 或裸链接。存量配置里可能还选着它，放着不管会表现为
+// 「设置页下拉空着、复制出来的东西退化成裸地址」，所以一律回落到 Markdown ——
+// 那是移除前最接近用户本意的默认值。
+func normalizeLinkFormat(v any) string {
+	switch s := strings.TrimSpace(str(v)); s {
+	case "url", "markdown", "html":
+		return s
+	}
+	return "markdown"
 }
 
 /* ------------------------------------------------------------ profile 操作 */
@@ -664,7 +694,7 @@ func (s *Store) ExportProfiles() map[string]any {
 			// 当前生效那份的镜像，留给旧导入端当兜底
 			"linkRule":     defStr(cfg["linkRule"], "auto"),
 			"customDomain": defStr(cfg["customDomain"], ""),
-			"linkFormat":   defStr(cfg["linkFormat"], "markdown"),
+			"linkFormat":   normalizeLinkFormat(cfg["linkFormat"]),
 			"proxyUrl":     defStr(cfg["proxyUrl"], ""),
 		},
 		"profiles": profiles,
@@ -779,7 +809,8 @@ func (s *Store) ImportProfiles(payload map[string]any) (*ImportResult, error) {
 	if st0 != nil {
 		patch := map[string]any{}
 		if v := defStr(st0["linkFormat"], ""); v != "" {
-			patch["linkFormat"] = v
+			// 归档文件可能是老版本导出的，里面还存着已下线的格式
+			patch["linkFormat"] = normalizeLinkFormat(v)
 		}
 		if v, ok := st0["proxyUrl"].(string); ok {
 			patch["proxyUrl"] = v

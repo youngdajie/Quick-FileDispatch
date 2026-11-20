@@ -41,10 +41,12 @@ function newestProfile(platform) {
  * 打开配置向导。
  *
  * opts.profile 给了就是「修改这一份」，不给就是「新建一份」。
+ * opts.firstRun 为真表示首次安装：这是唯一的新手引导入口，首屏多一句欢迎语。
  * opts.onDone 在保存成功后调用（设置页用它重画列表）。
  */
 export function openConfigWizard(opts) {
   const o = opts || {};
+  const firstRun = !!o.firstRun;
   let editing = o.profile || null;
 
   const draft = {
@@ -58,7 +60,7 @@ export function openConfigWizard(opts) {
     localDir: (editing && editing.localDir) || '',
     linkRule: (editing && editing.linkRule) || 'auto',
     customDomain: (editing && editing.customDomain) || '',
-    linkFormat: (editing && editing.linkFormat) || (state.cfg && state.cfg.linkFormat) || 'markdown'
+    linkFormat: CPLinks.normalizeFormat((editing && editing.linkFormat) || (state.cfg && state.cfg.linkFormat))
   };
   const sync = Object.assign({ autoPull: true, strategy: 'pull' }, (state.cfg && state.cfg.sync) || {});
 
@@ -218,13 +220,23 @@ export function openConfigWizard(opts) {
   /* ------------------------------------------------------------ 渲染 */
 
   const m = modal({
-    title: (editing ? '修改配置' : '新建配置'),
+    title: firstRun ? '欢迎使用' : editing ? '修改配置' : '新建配置',
     className: 'wz-modal',
     buttons: false,
     onClose: () => {
+      endOnboarding();
       if (busy) return;
     }
   });
+
+  /**
+   * body 上的 is-onboarding 由向导自己维护：管理页 / 上传页靠它拦拖放，
+   * 样式里也靠它把背景虚化。向导一关就必须摘掉，否则拖放会被永久拦住。
+   */
+  function endOnboarding() {
+    document.body.classList.remove('is-onboarding');
+  }
+  document.body.classList.add('is-onboarding');
 
   /** 头部：只显示当前在填哪一项 + 进度。七项标签挤一行等于没有信息 */
   function headHtml() {
@@ -246,7 +258,9 @@ export function openConfigWizard(opts) {
   function paneBody() {
     if (step < panes.length) {
       const p = panes[step];
-      return '<h3 class="wz-title">' + escapeHtml(p.title) + '</h3>' + p.pane();
+      // 首次安装：首屏先说一句人话，别让人对着「这份配置放在哪个平台」发愣
+      const welcome = firstRun && step === 0 ? '<p class="wz-welcome">欢迎使用，先配一个仓库</p>' : '';
+      return welcome + '<h3 class="wz-title">' + escapeHtml(p.title) + '</h3>' + p.pane();
     }
     return resultHtml();
   }
@@ -463,7 +477,9 @@ export function openConfigWizard(opts) {
   /** 只落盘（克隆前要用到已保存的配置） */
   async function persist() {
     const conn = connOf();
-    await state.patch({ sync: { autoPull: sync.autoPull !== false, strategy: sync.strategy } });
+    // onboarded 跟着这次保存一起落盘：向导只该在首次安装时自动弹一次，
+    // 之后启动看到的就是「配置齐全 + 已引导」，不会再打扰
+    await state.patch({ onboarded: true, sync: { autoPull: sync.autoPull !== false, strategy: sync.strategy } });
     if (editing) {
       await state.updateProfile(editing.id, conn);
     } else {
@@ -488,6 +504,7 @@ export function openConfigWizard(opts) {
     btn.textContent = '正在拉取…';
     try {
       const id = await persist(); // 克隆读的是已落盘的配置
+      endOnboarding();
       const r = await window.cloudpic.git.clone({
         dir: draft.localDir.trim(),
         profileId: id || ''
@@ -533,6 +550,8 @@ export function openConfigWizard(opts) {
         draw();
         return;
       }
+      // 配置已经落盘：引导状态到此结束，背景虚化 / 拖放拦截都该让开
+      endOnboarding();
       const chk = await window.cloudpic.profile.check({ id: id });
       if (chk && chk.ok) {
         await state.verifyProfile(id, {

@@ -32,7 +32,7 @@ import (
 // 与 Electron 版 store.js 的 DEFAULT_CONFIG 逐字段对应，改一处必须改两处。
 func Defaults() map[string]any {
 	return map[string]any{
-		"version":       10,  // 必须跟 migrate 里最新那一档一致
+		"version":       11, // 必须跟 migrate 里最新那一档一致
 		"onboarded":     false,
 		"platform":      "github", // github | cnb
 		"owner":         "",

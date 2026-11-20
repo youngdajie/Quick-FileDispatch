@@ -13,7 +13,7 @@
  *     换行符与 BOM 按读进来时的样子原样写回（不然 Git 里就是满屏 diff）。
  */
 
-import { modal, ok, err, warn, toast, confirmDialog, escapeHtml, friendlyError } from './dom.js';
+import { modal, ok, err, warn, toast, confirmDialog, escapeHtml, friendlyError, previewActions } from './dom.js';
 
 const CPLinks = window.CPLinks;
 
@@ -21,7 +21,6 @@ const svg = (d, w) =>
   '<svg viewBox="0 0 24 24" width="' + (w || 14) + '" height="' + (w || 14) +
   '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
 
-const ICON_OPEN = svg('<path d="M13.5 4H20v6.5"/><path d="M20 4l-8.6 8.6"/><path d="M18.5 14v5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>');
 const ICON_EDIT = svg('<path d="M4 20h16"/><path d="M14.5 4.6l4 4L9 18H5v-4z"/>');
 
 /** 超过这个体积就不给在框里改（着色器也是这个上限，两者必须一致） */
@@ -86,12 +85,12 @@ export function previewText(opts) {
     // 否则用户得猜到还能按 Esc
     closeX: true,
     node: body,
+    // 和图片 / 音视频同一组右上角按钮，只是多一个「编辑」；
+    // 顺序固定为 复制链接 → 浏览器打开 → 编辑
     actions: [
-      link
-        ? { icon: ICON_OPEN, label: '浏览器打开', title: '用系统默认浏览器打开这个文件', className: 'mh-open', onClick: openExternal }
-        : null,
+      ...previewActions({ link, name, format: o.format }),
       { icon: ICON_EDIT, label: '编辑', title: '就地编辑并保存', className: 'mh-edit', onClick: () => setEditing(true) }
-    ].filter(Boolean)
+    ]
   });
 
   const foot = document.createElement('div');

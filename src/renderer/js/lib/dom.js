@@ -198,30 +198,75 @@ export function confirmDialog(title, message, confirmLabel) {
   });
 }
 
+/** 标题栏「在浏览器打开」的图标：斜向箭头出方框 */
+const ICON_OPEN_EXTERNAL =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M13.5 4H20v6.5"/><path d="M20 4l-8.6 8.6"/>' +
+  '<path d="M18.5 14v5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>';
+
+/** 标题栏「复制链接」的图标：两张叠起来的纸 */
+const ICON_COPY_LINK =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="9" y="8" width="11" height="12" rx="2"/>' +
+  '<path d="M15 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"/>' +
+  '<path d="M12.5 13.5h4M12.5 17h2.5"/></svg>';
+
+/**
+ * 图片 / 视频 / 音频三种预览框共用的标题栏操作。
+ *
+ * 「复制链接」的格式不在预览框里另设一套下拉 —— 它读文件管理页那个
+ * #mgFormat（或配置里的 linkFormat），用户在设置里选过什么，这里就用什么。
+ * 预览模块只认传进来的 format 字符串，格式化交给 CPLinks 那份唯一实现。
+ */
+export function previewActions(opts) {
+  const o = opts || {};
+  const link = String(o.link || '');
+  if (!link) return [];
+  const name = String(o.name || '');
+  return [
+    {
+      icon: ICON_COPY_LINK,
+      label: '复制链接',
+      title: '按当前链接格式复制到剪贴板',
+      className: 'mh-copy',
+      onClick: async () => {
+        try {
+          // format 可以是值，也可以是取值函数：传函数时每次点击都读当前设置，
+          // 否则弹层一打开就把格式定死了，用户中途换格式复制出来的还是旧的
+          const raw = typeof o.format === 'function' ? o.format() : o.format;
+          const fmt = window.CPLinks.normalizeFormat(raw || 'markdown');
+          const text = window.CPLinks.formatLink(link, fmt, name, !!o.image);
+          await window.cloudpic.clipboard.write(text);
+          ok('已复制链接');
+        } catch (e) {
+          err(e && e.message ? e.message : String(e));
+        }
+      }
+    },
+    {
+      icon: ICON_OPEN_EXTERNAL,
+      label: '浏览器打开',
+      title: '用系统默认浏览器打开这个文件',
+      className: 'mh-open',
+      onClick: () => window.cloudpic.shell.openExternal(link)
+    }
+  ];
+}
+
 /**
  * 图片预览。
- * link 给了就在标题栏挂一个「浏览器打开」—— 和文本预览保持同一套位置与图标，
- * 不然同一个页面上两种预览框的按钮一个在右上、一个没有，用起来要重新找。
+ * link 给了就在标题栏挂「复制链接 / 浏览器打开」—— 和视频、音频预览保持
+ * 同一套位置与图标，不然同一个页面上几种预览框的按钮要重新找。
  */
-export function previewImage(src, name, link) {
+export function previewImage(src, name, link, format) {
   modal({
     title: name || '预览',
-    wide: true,
+    // 宽高交给图片自己撑：横图宽、竖图窄，不再一律套一个 900px 的方框
+    className: 'preview-auto image-preview',
     html: `<img src="${escapeHtml(src)}" alt="" />`,
-    actions: link
-      ? [
-          {
-            icon:
-              '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
-              'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
-              '<path d="M13.5 4H20v6.5"/><path d="M20 4l-8.6 8.6"/>' +
-              '<path d="M18.5 14v5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>',
-            label: '浏览器打开',
-            title: '用系统默认浏览器打开这个文件',
-            onClick: () => window.cloudpic.shell.openExternal(link)
-          }
-        ]
-      : [],
+    actions: previewActions({ link, name, format, image: true }),
     buttons: [{ label: '关闭', primary: true }]
   });
 }

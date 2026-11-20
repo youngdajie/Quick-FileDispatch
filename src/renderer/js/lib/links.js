@@ -68,9 +68,19 @@
   const LINK_FORMATS = [
     { id: 'url', name: '纯链接' },
     { id: 'markdown', name: 'Markdown' },
-    { id: 'html', name: 'HTML' },
-    { id: 'bbcode', name: 'BBCode' }
+    { id: 'html', name: 'HTML' }
   ];
+
+  /**
+   * 链接格式的兜底归一。
+   * 老配置里可能还存着已经下线的格式（BBCode 就是被移除的那个），
+   * 直接拿去喂 <select>.value 会变成空选中、喂 formatLink 会退化成裸链接 ——
+   * 两种都不是用户当初选的那一项，所以统一按 Markdown 处理。
+   */
+  function normalizeFormat(fmt) {
+    const s = String(fmt == null ? '' : fmt);
+    return LINK_FORMATS.some((f) => f.id === s) ? s : 'markdown';
+  }
 
   /** 各平台的免费额度红线，程序本身不额外设限 */
   const FILE_LIMITS = {
@@ -199,7 +209,7 @@
     }
   }
 
-  /** 把直链包装成 Markdown / HTML / BBCode；非图片按普通链接处理 */
+  /** 把直链包装成 Markdown / HTML；非图片按普通链接处理 */
   function formatLink(url, format, altName, isImage) {
     const alt = String(altName || '').replace(/[[\]]/g, '');
     const img = isImage === undefined ? true : !!isImage;
@@ -208,8 +218,6 @@
         return img ? `![${alt}](${url})` : `[${alt}](${url})`;
       case 'html':
         return img ? `<img src="${url}" alt="${alt}" />` : `<a href="${url}" target="_blank">${alt}</a>`;
-      case 'bbcode':
-        return img ? `[img]${url}[/img]` : `[url=${url}]${alt}[/url]`;
       default:
         return url;
     }
@@ -257,6 +265,7 @@
     normalizeBaseUrl,
     autoRuleOf,
     ruleFits,
+    normalizeFormat,
     formatLink,
     formatBytes,
     extOf,
