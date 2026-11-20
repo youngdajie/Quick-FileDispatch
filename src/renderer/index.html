@@ -58,8 +58,6 @@
 </div>
 
 <canvas id="universe" aria-hidden="true"></canvas>
-<!-- 浅色模式的自定义背景图（仅浅色生效；深色永远星野） -->
-<div id="customBg" aria-hidden="true"></div>
 
 <div class="app" id="appRoot">
 
@@ -635,54 +633,6 @@
                 <span class="field-label">界面字体 <span class="hint" id="fontCount">本机装了哪些就列哪些，只改界面不改渲染结果</span></span>
                 <div class="font-row">
                   <select id="cfgFont"></select>
-                </div>
-              </div>
-              <!-- 背景图这一组整体装进一个框（预览/操作/说明/毛玻璃滑块都在里面） -->
-              <div class="bg-box">
-                <div class="bg-box-head">
-                  <span class="bg-box-title">自定义背景图</span>
-                  <span class="hint">只替换浅色模式的背景；深色模式永远是星野，不受影响</span>
-                </div>
-                <div class="bg-row">
-                  <div class="bg-preview" id="bgPreview" title="当前背景图预览"></div>
-                  <div class="bg-ops">
-                    <button type="button" class="btn btn-ghost btn-sm" id="btnBgPick">选择图片</button>
-                    <button type="button" class="btn btn-ghost btn-sm" id="btnBgClear">清除</button>
-                  </div>
-                </div>
-                <p class="field-note">程序会把图片复制一份进自己的配置目录，之后原图挪走、删掉都不影响背景</p>
-                <label class="field" style="margin-top:10px">
-                  <span class="field-label">
-                    面板不透明度 <b id="cfgBgBlurVal">50</b>
-                    <span class="hint">0 = 完全透明（背景图看得最清楚）· 设了背景图时在浅色模式下生效</span>
-                  </span>
-                  <input type="range" id="cfgBgBlur" min="0" max="100" step="1" />
-                </label>
-                <p class="field-note">控制顶栏和卡片遮住背景的程度：0 时完全不遮（自定义图一清二楚），100 时回到实心面板</p>
-
-                <!-- 智能推荐：分析背景图后给出 blur 推荐值 + 文字风格提示，
-                     点一下就让按钮一行出来，不动现有滑块逻辑 -->
-                <div class="bg-box-head" style="margin-top:14px;margin-bottom:8px">
-                  <span class="bg-box-title">智能调整</span>
-                  <span class="hint" id="cfgAdaptiveHint">点右边的按钮分析背景图</span>
-                  <button type="button" class="btn btn-primary btn-sm" id="btnBgAdaptive"
-                    style="margin-left:auto;flex:0 0 auto">分析背景图</button>
-                </div>
-                <div class="adaptive-result" id="adaptiveResult" hidden>
-                  <div class="adaptive-row">
-                    <span class="k">亮度</span><span class="v" id="arLum">—</span>
-                    <span class="k">饱和度</span><span class="v" id="arSat">—</span>
-                    <span class="k">对比度</span><span class="v" id="arContrast">—</span>
-                    <span class="k">色彩</span><span class="v" id="arBias">—</span>
-                  </div>
-                  <div class="adaptive-row">
-                    <span class="k">推荐 blur</span><span class="v" id="arBlur">—</span>
-                    <span class="k">推荐字重</span><span class="v" id="arWeight">—</span>
-                  </div>
-                  <div class="adaptive-actions">
-                    <button type="button" class="btn btn-sm" id="btnApplyBlur">应用推荐 blur</button>
-                    <span class="hint" id="adaptiveOk"></span>
-                  </div>
                 </div>
               </div>
             </div>

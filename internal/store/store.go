@@ -32,7 +32,7 @@ import (
 // 与 Electron 版 store.js 的 DEFAULT_CONFIG 逐字段对应，改一处必须改两处。
 func Defaults() map[string]any {
 	return map[string]any{
-		"version":       11, // 必须跟 migrate 里最新那一档一致
+		"version":       12, // 必须跟 migrate 里最新那一档一致
 		"onboarded":     false,
 		"platform":      "github", // github | cnb
 		"owner":         "",
@@ -89,14 +89,6 @@ func Defaults() map[string]any {
 			"theme":    defaultTheme(),
 			"font":     "",
 			"pageSize": 60,
-			// 自定义背景图的**副本**绝对路径（选图时拷进 <配置目录>/bg/ 里那份）。
-			// 仅浅色模式渲染；深色永远星野，完全不看这个字段
-			"bgImage": "",
-			// 浅色 + 有背景图时面板的背景模糊（px，0 = 关）。
-			// 只影响观感，深色模式读不到（没有背景图可透），但控件照旧可调
-			// 面板不透明度 0-100（0 = 完全透明，背景图看得最清楚）。
-			// 以前这里是「毛玻璃强度 0-24」，老值在 migrate 里换算过来
-			"bgBlur": 50,
 			// 管理页的视图模式：grid（网格）/ list（列表）。
 			// 记住上次选择，免得每次重启都退回网格
 			"manageView": "grid",

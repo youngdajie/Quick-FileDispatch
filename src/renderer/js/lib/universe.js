@@ -8,7 +8,7 @@
  *          尺寸仍然按 CSS px 算，画出来和网页上一样大。
  *
  * 浅色 —— 什么都不画（2026-09-24 杰哥定的）：浅色界面是白天，粒子点阵撤掉，
- *          想要质感就由设置页的「自定义背景图」接管（仅浅色生效，见 appearance.js）。
+ *          浅色靠扁平的面板与细边框建立层次，不需要粒子。
  *
  * 窗口尺寸与粒子分布：
  *   最小化再恢复（或最大化切换）时 WebView2 会报一串中间尺寸，粒子的坐标
@@ -361,7 +361,7 @@ export function universeState() {  let giants = 0;
   return {
     mounted: !!canvas,
     mode: mode,
-    light: false, // 浅色已经不画粒子（自定义背景图接管），字段留着兼容旧断言
+    light: false, // 浅色不画粒子，字段留着兼容旧断言
     running: running && !!raf,
     dots: 0,
     stars: field.length,

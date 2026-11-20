@@ -5,7 +5,7 @@
  * 全部搬进弹窗向导（lib/config-wizard.js）。这一页只留四件事：
  *   ① 新建配置的入口（平台选择 + 向导）
  *   ② 全部配置的卡片列表（点卡片切生效，点「修改」进向导）
- *   ③ 全局设置：提交信息、外观（主题 / 字体 / 背景图 / 毛玻璃）
+ *   ③ 全局设置：提交信息、外观（主题 / 字体）
  *   ④ 危险操作
  *
  * 之所以砍掉常驻表单：它必须带一个「当前编辑的是哪一份」的状态，
@@ -18,7 +18,6 @@ import state from '../lib/state.js';
 import {
   applyTheme,
   applyFont,
-  applyGlass,
   stackFor,
   installedFontGroups,
   installFontCount,
@@ -26,7 +25,6 @@ import {
 } from '../lib/appearance.js';
 import { brandIcon, BRAND_TILE } from '../lib/brandicons.js';
 import { openConfigWizard } from '../lib/config-wizard.js';
-import { analyzeImage, computeAdaptive } from '../lib/glass-adaptive.js';
 // git-lfs 安装进度走 SSE（与上传进度同一条流，靠 task 字段区分）
 import { openProgressStream } from '../lib/progress.js';
 
@@ -331,69 +329,6 @@ async function importProfiles() {
 
 let autoSave = null;
 
-async function fillBgPreview() {
-  const box = $('#bgPreview');
-  if (!box) return;
-  const img = (state.cfg && state.cfg.ui && state.cfg.ui.bgImage) || '';
-  if (!img) {
-    box.classList.add('empty');
-    box.style.backgroundImage = '';
-    return;
-  }
-  box.classList.remove('empty');
-  try {
-    box.style.backgroundImage = 'url("' + window.cloudpic.localUrl(img) + '")';
-  } catch (e) {
-    box.style.backgroundImage = '';
-    box.classList.add('empty');
-  }
-}
-
-/**
- * 选 / 清背景图后必须 `state.refresh()` 一把：
- * 这两个接口直接改了配置目录里的文件，返回的虽是整份配置，但**渲染层的 state 还是旧的**
- * → 不刷新的话毛玻璃那层 `--glass-img` 不会重算，看着就是「设了没反应」。
- * refresh 会 emit，app.js 的 state.on 里接着跑 applyAppearance（主题 / 字体 / 毛玻璃）。
- */
-async function pickBgImage() {
-  try {
-    // 选图 / 清除在 app 命名空间下（web/bridge.js），不是 config
-    const r = await window.cloudpic.app.chooseBgImage();
-    if (!r || r.canceled) return; // 取消是正常结果
-    await state.refresh();
-    await fillBgPreview();
-    ok('背景图已设置（浅色模式下生效）');
-  } catch (e) {
-    err(e.message || String(e));
-  }
-}
-
-async function clearBgImage() {
-  try {
-    await window.cloudpic.app.clearBgImage();
-    await state.refresh();
-    await fillBgPreview();
-    ok('已清除背景图');
-  } catch (e) {
-    err(e.message || String(e));
-  }
-}
-
-/** 滑块是 0.1 一档：取一位小数（避免 12.300000000000001 这种浮点噪声），
- *  显示时整数不带小数点 —— 12 而不是 12.0 */
-function round1(n) {
-  return Math.round((Number(n) || 0) * 10) / 10;
-}
-function fmtBlur(n) {
-  return String(Math.round(Number(n) || 0));
-}
-
-/** 面板不透明度落盘（防抖：拖动过程中别每帧都写一次配置） */
-const saveBlur = debounce(() => {
-  const v = Math.round(Number($('#cfgBgBlur').value) || 0);
-  state.patch({ ui: { bgBlur: v } }).catch((e) => err(e.message || String(e)));
-}, 260);
-
 function currentTheme() {
   const ui = (state.cfg && state.cfg.ui) || {};
   return ui.theme === 'dark' || ui.theme === 'system' ? ui.theme : 'light';
@@ -486,13 +421,6 @@ function fillGlobal() {
   const proxy = $('#cfgProxy');
   if (proxy && document.activeElement !== proxy) proxy.value = c.proxyUrl || '';
   syncProxyAction();
-  // 0-100 的「面板不透明度」（老配置的 0-24 强度值由 store 那边迁移过）
-  const blur = ui.bgBlur == null ? 50 : Number(ui.bgBlur);
-  const slider = $('#cfgBgBlur');
-  if (slider) slider.value = blur;
-  const blurVal = $('#cfgBgBlurVal');
-  if (blurVal) blurVal.textContent = fmtBlur(blur);
-  fillBgPreview();
 }
 
 /* ---------------- 网络代理 ----------------
@@ -572,67 +500,6 @@ async function detectProxy() {
     btn.classList.remove('is-busy');
     syncProxyAction();
   }
-}
-
-/* ---------------- 智能调整（adaptive glass） ----------------
-   用户主动触发：拿当前 bgImage，调算法，把推荐值显示在按钮下方。
-   完全不改现状 —— 必须用户再点「应用」才落盘。 */
-
-const BIAS_NAME = { warm: '暖', cool: '冷', green: '绿', neutral: '中性' };
-
-/** 分析当前背景图 + 显示推荐值 */
-async function runAdaptive() {
-  const hint = $('#cfgAdaptiveHint');
-  const result = $('#adaptiveResult');
-  hint.textContent = '分析中…';
-  result.hidden = true;
-
-  const img = (state.cfg && state.cfg.ui && state.cfg.ui.bgImage) || '';
-  if (!img) {
-    hint.textContent = '还没选背景图，先「选择图片」';
-    return;
-  }
-  // 用主进程代理 URL 加载（私有目录 /__local 才能读）
-  const url = window.cloudpic.localUrl(img);
-  const image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.onload = () => {
-    const a = analyzeImage(image);
-    const p = computeAdaptive(a);
-    $('#arLum').textContent = a.lum.toFixed(2);
-    $('#arSat').textContent = a.sat.toFixed(2);
-    $('#arContrast').textContent = a.contrast.toFixed(2);
-    $('#arBias').textContent = BIAS_NAME[a.colorBias] || a.colorBias;
-    $('#arBlur').textContent = p.blur + 'px';
-    $('#arWeight').textContent = String(p.fontWeight);
-    hint.textContent = '分析完成';
-    result.hidden = false;
-    $('#adaptiveOk').textContent = '';
-    // 暂存到 dataset，apply 时读
-    result.dataset.recommendedBlur = String(p.blur);
-  };
-  image.onerror = () => {
-    hint.textContent = '加载图片失败，请检查图片是否还在原位置';
-    result.hidden = true;
-  };
-  image.src = url;
-}
-
-/** 应用推荐 blur：动滑块 + 触发现有 onBlur（落盘 + 重算玻璃） */
-async function applyAdaptiveBlur() {
-  const result = $('#adaptiveResult');
-  const recommended = result.dataset.recommendedBlur;
-  if (!recommended) return;
-  const v = Number(recommended);
-  const slider = $('#cfgBgBlur');
-  const valEl = $('#cfgBgBlurVal');
-  if (slider) {
-    slider.value = v;
-    // 触发现有 input 事件 → onBlur → applyGlass + saveBlur
-    slider.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  if (valEl) valEl.textContent = fmtBlur(v);
-  $('#adaptiveOk').textContent = '已应用，再拖滑块可继续微调';
 }
 
 /* ---------------- git-lfs 状态与安装 ---------------- */
@@ -777,36 +644,16 @@ export default {
     $('#cfgFont').addEventListener('change', () => {
       setFont($('#cfgFont').value).catch((err2) => err(err2.message || String(err2)));
     });
-    // 外观：自定义背景图（仅浅色生效）
-    $('#btnBgPick').onclick = pickBgImage;
-    $('#btnBgClear').onclick = clearBgImage;
-
-    // 外观：智能调整背景图参数
-    $('#btnBgAdaptive').onclick = runAdaptive;
-    $('#btnApplyBlur').onclick = applyAdaptiveBlur;
-
     // git-lfs：状态查询 + 一键安装
     const lfsBtn = $('#btnLfsInstall');
     if (lfsBtn) lfsBtn.onclick = installLfs;
     refreshLfsStatus();
 
-    // 外观：毛玻璃强度。拖动时本地立刻重算整套玻璃状态，不等落盘往返
-    const blurInput = $('#cfgBgBlur');
-    const onBlur = () => {
-      const v = round1(Number(blurInput.value) || 0);
-      const valEl = $('#cfgBgBlurVal');
-      if (valEl) valEl.textContent = fmtBlur(v);
-      applyGlass({ ui: Object.assign({}, (state.cfg && state.cfg.ui) || {}, { bgBlur: v }) });
-      saveBlur();
-    };
-    blurInput.addEventListener('input', onBlur);
-    blurInput.addEventListener('change', onBlur);
-
     // 危险操作：恢复默认设置
     $('#btnResetConfig').onclick = async () => {
       const yes = await confirmDialog(
         '恢复默认设置',
-        '会清掉主题、字体、背景图与全局参数（归档的配置和 Token 保留）',
+        '会清掉主题、字体与全局参数（归档的配置和 Token 保留）',
         '恢复默认'
       );
       if (!yes) return;

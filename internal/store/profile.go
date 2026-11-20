@@ -346,6 +346,16 @@ func migrate(cfg map[string]any) map[string]any {
 		}
 		cfg["version"] = 11
 	}
+	if v < 12 {
+		// 自定义背景图与毛玻璃已整体下线，把老配置里那两个字段清掉 ——
+		// 留着不会报错，但会让 config.json 里一直躺着两个没人读的键，
+		// 也让「恢复默认设置」之后的配置和老版本长得一模一样，查问题费劲。
+		if ui, ok := cfg["ui"].(map[string]any); ok {
+			delete(ui, "bgImage")
+			delete(ui, "bgBlur")
+		}
+		cfg["version"] = 12
+	}
 
 	list, _ := cfg["profiles"].([]any)
 	if len(list) == 0 {

@@ -108,9 +108,6 @@
       /** 本机已安装字体的家族名清单（设置页的「界面字体」下拉靠它列出真装了的字体） */
       fonts: call('app:fonts'),
       setBackground: call('ui:setBackground'),
-      /** 选一张本机图片作为浅色模式的自定义背景（副本存进配置目录） */
-      chooseBgImage: call('ui:chooseBgImage'),
-      clearBgImage: call('ui:clearBgImage'),
       /** git-lfs 是否可用（只查本地，不触发下载） */
       lfsStatus: call('app:lfsStatus'),
       /** 下载安装 git-lfs（幂等；进度走 /ipc/events 的 SSE 流） */

@@ -85,13 +85,6 @@
   --hl-reg: #56c8d8;
   --hl-head: #63aef5;
 
-  /* 面板不透明度：浅色 + 已设自定义背景图时启用，值由设置页滑块写进 --glass-alpha。
-     0 = 完全透明（背景图看得最清楚），1 = 实心。
-     --glass-wash / --glass-wash-soft 是给 applyTone 判断「图偏暗时加厚一点」用的。 */
-  --glass-alpha: 0;
-  --glass-img: none;
-  --glass-wash: 0.42;
-  --glass-wash-soft: 0.36;
 
   /* 「全部配置」的归档卡片（pc = profile card）。
      刻意不做木纹/毛玻璃那类「质感」—— 这套界面是扁平、硬朗、细边框的单色系，
@@ -445,7 +438,7 @@ body.side-hidden .side-dock:hover { width: 18px; color: var(--text); }
 }
 
 /* 内容区铺满整个宽度，靠 padding 给浮在上面的侧栏让位 ——
-   这样底色是一整块，不管有没有背景图都不会和左边出现断层。
+   这样底色是一整块，不会和左边出现断层。
    92 = 10(缝) + 72(侧栏宽) + 10(呼吸) */
 .content {
   flex: 1; min-width: 0;
@@ -1078,56 +1071,6 @@ select.csel-native {
 }
 .wm-pre:hover { transform: translateY(-1px); border-color: var(--text-dim); }
 .wm-pre.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--accent); }
-
-/* ------------------------------------------------ 自定义背景图（外观） */
-/* 整组装进一个框：预览、操作、说明、毛玻璃滑块都在里面，和图片设置同一家族样式 */
-.bg-box {
-  margin-top: 14px; padding: 12px 14px 13px;
-  border: 1px solid var(--border-soft); border-radius: 10px;
-  background: var(--bg-soft);
-}
-.bg-box-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin-bottom: 11px; }
-.bg-box-title { font-size: 12.5px; color: var(--text); font-weight: 600; }
-.bg-row { display: flex; align-items: center; gap: 12px; }
-/* 预览缩略图：16:9 的小窗，一眼看出现在用的是哪张图 */
-.bg-preview {
-  flex: 0 0 auto;
-  width: 132px; height: 74px;
-  border: 1px solid var(--border); border-radius: 9px;
-  background: var(--bg-soft) center / cover no-repeat;
-  box-shadow: 0 2px 8px -4px rgba(10, 20, 40, 0.35);
-}
-.bg-preview.empty {
-  display: flex; align-items: center; justify-content: center;
-  color: var(--muted); font-size: 11px;
-  background: repeating-linear-gradient(45deg, var(--bg-soft) 0 8px, var(--panel-2) 8px 16px);
-}
-.bg-preview.empty::after { content: '未设置'; }
-.bg-ops { display: flex; gap: 8px; flex-wrap: wrap; }
-.bg-box .field { margin-bottom: 0; }
-
-/* ------------------------------------------------ 智能调整结果展示 */
-.adaptive-result {
-  margin-top: 4px; padding: 10px 12px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  font-family: var(--mono); font-size: 11.5px;
-  color: var(--text-dim);
-  animation: techFade 0.24s var(--ease) both;
-}
-.adaptive-row {
-  display: grid; grid-template-columns: 84px 1fr 84px 1fr 84px 1fr 84px 1fr;
-  gap: 4px 8px; align-items: center;
-  padding: 3px 0;
-}
-.adaptive-row .k { color: var(--muted); }
-.adaptive-row .v { color: var(--text); font-weight: 600; }
-.adaptive-actions {
-  display: flex; align-items: center; gap: 9px;
-  margin-top: 8px; padding-top: 8px;
-  border-top: 1px dashed var(--border-soft);
-}
 
 /* ------------------------------------------------ git-lfs 状态行（设置页） */
 .lfs-row {
@@ -2039,8 +1982,8 @@ html[data-theme="light"] .fi-default { --fc: #64748b; }
 .about-hero {
   position: relative; overflow: hidden;
   display: flex; flex-direction: column; align-items: center; text-align: center;
-  /* 毛玻璃：半透明底 + 背景模糊 —— 背后那层宇宙粒子会虚着透出来，
-     它自己在动，毛玻璃就自带动态 */
+  /* 半透明底：背后那层宇宙粒子会虚着透出来，
+     它自己在动，透出来就是活的 */
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 52%),
     color-mix(in srgb, var(--panel) 55%, transparent);
@@ -2064,7 +2007,7 @@ html[data-theme="light"] .about-hero {
     0 20px 42px -26px rgba(15, 30, 60, 0.3);
 }
 /* 单独的主色渐变：顶部一束居中辉光，颜色走全局主色（深浅主题自动适配），
-   不写死色值 —— 换主色时这里跟着走；缓慢漂移 + 呼吸，给毛玻璃添点活气 */
+   不写死色值 —— 换主色时这里跟着走；缓慢漂移 + 呼吸，给卡片添点活气 */
 .about-hero::after {
   content: ""; position: absolute; left: 50%; top: -130px; width: 440px; height: 300px;
   transform: translateX(-50%);
@@ -2653,94 +2596,6 @@ body.is-onboarding .toast-wrap { filter: none; }
 .dir-input-row input { flex: 1; }
 
 /* ============================================================
-   毛玻璃（浅色 + 已设自定义背景图时启用，强度由设置页滑块写进 --glass-blur）
-   ------------------------------------------------------------
-   为什么不用 backdrop-filter（踩过的坑，别再改回去）：
-     backdrop-filter 只模糊「本元素的 backdrop」，而 Chromium 里这个 backdrop
-     取不到 .app（z-index:1 的层叠上下文）**外面**的东西 —— 自定义背景图正好在
-     外面，于是卡片上 blur 完全不生效（实测：同一位置开关 blur 两态像素差 = 0，
-     而挂在 body 上的同款元素却能正常糊）。
-   改用「自己在面板里画一层背景图 + 上一层 CSS filter: blur」：
-     JS 按需给面板塞一个 .glass-layer（绝对定位、inset 外扩 28px 抵消模糊边缘），
-     层里画「白纱 + 背景图」，background-attachment: fixed 让每块面板看到的是
-     同一张按视口对齐的图 —— 视觉上就是「透过玻璃看背景」。
-     面板自身底色转透明，白纱在层里统一给，正文对比度由白纱透明度控制。
-   ============================================================ */
-
-.glass-layer { display: none; }
-
-/* 玻璃层挂在面板的**负层级**上：绘制顺序是「面板自身底色 → 负层级子元素 → 流内内容」，
-   所以它天然盖住底色、天然垫在内容下面 —— 不需要给任何子元素改 position/z-index
-   （之前的装饰边框曾被 position 覆盖；现在上传区由单一边框负责状态表达）。 */
-html[data-theme="light"].glass-ready .glass-host { position: relative; z-index: 0; overflow: hidden; }
-
-/* 玻璃层：面板上盖的那层「白纱」。
-   ------------------------------------------------------------
-   它**不再画背景图、也不再自己模糊**（2026-09-29 重新设计）。
-   模糊交给最底下那层固定的 #customBg 去做 —— 那里只有**一层**，而且它
-   position: fixed、滚动时完全不动，所以滚动不产生任何重绘。
-
-   旧做法是每块面板各画一份按视口对齐的背景图、各自 filter: blur()：
-   滚动时 JS 要逐面板量坐标改 background-position，十几块面板叠加起来
-   就是「背景跟内容有拉扯、黏黏的」那种感觉。
-   ⚠️ 中间试过把背景图挪进 100vw×100vh 的子层用 transform 平移，捅了大篓子：
-   那层盖住整个窗口，而玻璃层位于 .topbar 内部 —— 顶栏是
-   -webkit-app-region: drag，drag 判定又不认 pointer-events: none，
-   结果整个窗口变成可拖区、外加十几个全屏合成层把 GPU 压死。
-   所以：**模糊放 #customBg，面板这边只留半透明白纱**。
-   ------------------------------------------------------------ */
-/* 启用了自定义背景图时，面板自身不再涂色 —— 遮多少全交给 .glass-layer 那层纱，
-   浓度就是滑块那个「不透明度」。这样拖到 0 才是真的完全透明。
-   ⚠️ 两个不在这个列表里：
-     - 侧栏：按杰哥的要求保持 --panel 实心色
-     - 顶栏：它是**固定**的，不跟滑块走（有自己的一套底色） */
-html[data-theme="light"].glass-ready .card,
-html[data-theme="light"].glass-ready .queue-panel,
-html[data-theme="light"].glass-ready .result-panel,
-html[data-theme="light"].glass-ready .up-target,
-html[data-theme="light"].glass-ready .dropzone,
-html[data-theme="light"].glass-ready .up-options,
-html[data-theme="light"].glass-ready .up-imgset,
-html[data-theme="light"].glass-ready .about-hero {
-  background: transparent;
-}
-
-html[data-theme="light"].glass-ready .glass-host > .glass-layer {
-  display: block;
-  position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  /* 纱的浓度**就是**滑块那个不透明度：
-       0 → 完全透（自定义背景图看得一清二楚）
-       1 → 全白实心
-     以前这里算的是 (1 - (1 - wash) * alpha)，alpha=0 时纱是满的 —— 也就是
-     「调到 0 反而卡白卡白」，跟直觉完全相反（杰哥点名的）。现在直给。 */
-  background: linear-gradient(
-    rgba(255, 255, 255, var(--glass-alpha, 0)),
-    rgba(255, 255, 255, var(--glass-alpha, 0))
-  );
-}
-/* 顶栏这条白纱去掉了：它是固定元素，不跟「面板不透明度」滑块走，
-   底色继续用自己那套（见下面的 html[data-theme="…"] .topbar） */
-/* 卡片左侧那根 hover 主色条是 ::before，得抬到玻璃层上面，不然被白纱盖住 */
-html[data-theme="light"].glass-ready .glass-host::before { z-index: 2; }
-html[data-theme="light"].glass-ready .content {
-  background: linear-gradient(180deg, rgba(247, 249, 252, 0.88) 0%, rgba(247, 249, 252, 0.62) 120px, rgba(247, 249, 252, 0) 240px);
-}
-/* 暗图时顶部渐变同步加厚 —— 页面标题就在这段渐变里，之前 240px 后全透，
-   青蛙壁纸那种纯黑图直接把标题吞了（杰哥截图点名的） */
-html[data-theme="light"].glass-dark .content {
-  background: linear-gradient(180deg, rgba(247, 249, 252, 0.95) 0%, rgba(247, 249, 252, 0.82) 150px, rgba(247, 249, 252, 0.38) 340px);
-}
-/* 背景图偏暗时（JS 采样后加 glass-dark）：白纱加厚，保证正文对比度。
-   灰字（.hint / .field-note / .card-head p）在这种底上最容易糊，
-   一并抬到 --text-dim —— 这就是「字体颜色跟着背景动」那一半 */
-html[data-theme="light"].glass-dark .hint,
-html[data-theme="light"].glass-dark .field-note,
-html[data-theme="light"].glass-dark .card-head p,
-html[data-theme="light"].glass-dark .card-body .hint { color: var(--text-dim); }
-html[data-theme="light"].glass-dark .pf-rule,
-html[data-theme="light"].glass-dark .pf-path-label { color: var(--text-dim); }
-
-/* ============================================================
    深空背景（浅色 / 深色各一套形态，共用同一块画布）
    画布固定在最底层；两套主题都把几块大面积面板调成半透明，粒子才透得出来。
    浅色卡片留 0.84 —— 既能让粒子在它后面淡淡地动，正文又不糊；
@@ -2752,36 +2607,8 @@ html[data-theme="light"].glass-dark .pf-path-label { color: var(--text-dim); }
   display: none;            /* 主题没落定前不参与；下面两条按主题打开 */
   pointer-events: none;
 }
-/* 浅色不再渲染粒子（自定义背景图接管质感），画布只在深色出场 */
+/* 浅色界面本身够亮，不画粒子；画布只在深色出场 */
 html[data-theme="dark"] #universe { display: block; }
-
-/* ------------------------------------------------------------
-   浅色模式的自定义背景图（设置页「外观 → 自定义背景图」选的那张）。
-   只在浅色 + 已设置时渲染；深色永远星野，这个元素在深色下 display:none，
-   一条规则钉死，谁也影响不到星野。层级与画布同为 0（都在界面层之下），
-   画布在浅色下本来就不画，两者永远不会同时可见。
-   ------------------------------------------------------------ */
-/* 常驻、靠 opacity 显隐 —— 不再 display:none。
-   display 一关，浏览器会把这张图从渲染树里摘掉；深色待一会儿再切回浅色，
-   图要重新解码，揭幕快照里是空底，等动画放完图才「啪」地铺满整屏 ——
-   用户看到的就是整个界面闪一下。常驻之后图一直在手里，切过去就是现成的。 */
-#customBg {
-  position: fixed; inset: 0; z-index: 0;
-  pointer-events: none;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  opacity: 0;
-}
-#customBg.on { opacity: 1; }
-html[data-theme="dark"] #customBg { opacity: 0 !important; }
-
-/* 模糊先撤了（杰哥要求）：那套「强度」的语义反直觉，改成直白的不透明度。
-   以后要恢复模糊就在这里加回 filter —— 但那时得先想清楚「0 该是糊还是清」，
-   别再出现「调到 0 反而更糊/更白」。 */
-html[data-theme="light"].glass-ready #customBg {
-  inset: 0;
-}
 
 /* 界面整体压在画布之上。.content / .page 本来就没有底色，
    它们那一块会直接透出粒子；有底色的容器得半透明才透得过。 */
@@ -2793,12 +2620,6 @@ html[data-theme="light"] .card { background: rgba(255, 255, 255, 0.84); }
    跟卡片同色系 → 不会再出现「page 一块、左边一块」的色差断层；
    但又比卡片淡，卡片才立得出来。 */
 html[data-theme="light"] .shell { background: rgba(244, 247, 251, 0.72); }
-/* ⚠️ 这层底也得跟「面板不透明度」滑块走 —— 否则滑块拖到 0 时面板自己透明了，
-   却被这层固定的底挡着，背景图还是透不出来（杰哥截图点名的「卡白」）。 */
-html[data-theme="light"].glass-ready .shell {
-  background: rgba(244, 247, 251, calc(0.72 * var(--glass-alpha, 0)));
-}
-
 html[data-theme="dark"] .topbar { background: rgba(10, 16, 25, 0.78); }
 html[data-theme="dark"] .card { background: rgba(14, 22, 34, 0.88); }
 html[data-theme="dark"] .shell { background: rgba(11, 17, 26, 0.62); }
