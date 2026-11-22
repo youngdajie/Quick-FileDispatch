@@ -68,8 +68,12 @@
   const LINK_FORMATS = [
     { id: 'url', name: '纯链接' },
     { id: 'markdown', name: 'Markdown' },
-    { id: 'html', name: 'HTML' }
+    { id: 'html', name: 'HTML' },
+    { id: 'xjzj', name: '小杰杂记' }
   ];
+
+  /** 小杰杂记的 id：单条与批量都靠它判断要不要包成 pics block。 */
+  const XJZJ_FORMAT = 'xjzj';
 
   /**
    * 链接格式的兜底归一。
@@ -209,8 +213,44 @@
     }
   }
 
-  /** 把直链包装成 Markdown / HTML；非图片按普通链接处理 */
+  /**
+   * 小杰杂记的 ::pics 容器：所有图片合在一个 block 里，
+   * images: 下每条链接独占一行，末尾补换行，粘到笔记里不用再敲一行。
+   */
+  function formatPicsBlock(urls) {
+    const list = (Array.isArray(urls) ? urls : [urls])
+      .map((u) => String(u == null ? '' : u))
+      .filter((u) => !!u);
+    const lines = ['::pics', '---', 'images:'];
+    list.forEach((u) => lines.push('- src: ' + u));
+    lines.push('---', '::');
+    return lines.join('\n') + '\n';
+  }
+
+  /**
+   * 批量格式化链接。小杰杂记把全部链接收进同一个 pics block，
+   * 其余格式仍是一条一行；单条与批量共用这一处，避免调用方漏掉聚合规则。
+   * names / images 传数组时按下标取，传单值时所有条目共用。
+   */
+  function formatLinks(urls, format, names, images) {
+    const list = Array.isArray(urls) ? urls : [urls];
+    if (format === XJZJ_FORMAT) return formatPicsBlock(list);
+    return list
+      .map((url, i) =>
+        formatLink(
+          url,
+          format,
+          Array.isArray(names) ? names[i] : names,
+          Array.isArray(images) ? images[i] : images
+        )
+      )
+      .join('\n');
+  }
+
+  /** 把直链包装成 Markdown / HTML / 小杰杂记；非图片按普通链接处理 */
   function formatLink(url, format, altName, isImage) {
+    // 预览框、右键菜单等单文件入口只调用 formatLink，一条也要给出完整 block
+    if (format === XJZJ_FORMAT) return formatPicsBlock([url]);
     const alt = String(altName || '').replace(/[[\]]/g, '');
     const img = isImage === undefined ? true : !!isImage;
     switch (format) {
@@ -255,6 +295,7 @@
   return {
     LINK_RULES,
     LINK_FORMATS,
+    XJZJ_FORMAT,
     FILE_LIMITS,
     limitOf,
     normalizePath,
@@ -267,6 +308,7 @@
     ruleFits,
     normalizeFormat,
     formatLink,
+    formatLinks,
     formatBytes,
     extOf,
     baseNameOf,

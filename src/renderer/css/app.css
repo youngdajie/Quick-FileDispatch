@@ -2960,6 +2960,13 @@ html.vt-shrink::view-transition-old(root) {
   animation: fadeIn 0.16s ease;
 }
 html[data-theme="light"] .mini-up-wrap { background: rgba(20, 32, 48, 0.42); }
+/* 关窗先淡出再拆 DOM：上传成功自动关时，别让人觉得窗口闪一下就没了。
+   只有覆盖层淡出，内部卡片跟着轻轻下沉一点，退出有个交代。 */
+.mini-up-wrap.is-closing { opacity: 0; transition: opacity .18s var(--ease); }
+.mini-up-wrap.is-closing .mini-up {
+  transform: translateY(6px) scale(.99);
+  transition: transform .18s var(--ease);
+}
 
 .mini-up { max-width: 660px; width: 100%; }
 
@@ -3117,7 +3124,8 @@ input, textarea, [contenteditable="true"] { cursor: text; }
   display: block; margin-top: 5px; font-family: var(--mono); font-size: 11px;
   color: var(--text-dim); word-break: break-all;
 }
-.wz-preview-copy { margin-top: 6px; font-size: 11px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+/* 小杰杂记是多行 block，预览要按原样断行才看得清 images: 下每一条 */
+.wz-preview-copy { margin-top: 6px; font-size: 11px; color: var(--muted); font-family: var(--mono); word-break: break-all; white-space: pre-wrap; }
 
 .wz-final .wz-sum { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
 .wz-final .wz-sum dt { font-size: 11.5px; color: var(--muted); }

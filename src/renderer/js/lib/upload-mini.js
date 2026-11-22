@@ -92,6 +92,8 @@ let uploaded = false;
 let pool = null;
 let onDoneCb = null;
 let escHandler = null;
+let closeTimer = 0; // 上传成功后延迟关窗的计时器
+let closing = false; // 淡出已经开始，别再触发第二次拆除
 
 /* ---------------------------------------------------------------- 小工具 */
 
@@ -513,6 +515,8 @@ async function doUpload() {
     const m = uploadResultMessage(res, '个');
     if (m.ok) ok(m.text);
     else err(m.text);
+    // 全部成功才自动关。有失败的留着窗，让人看清哪几个没上去、错在哪
+    if (m.ok && !res.failed) scheduleAutoClose();
   } catch (e) {
     err(e.message || String(e));
   } finally {
@@ -522,6 +526,20 @@ async function doUpload() {
 }
 
 /* ---------------------------------------------------------------- 组装与关闭 */
+
+/**
+ * 全部成功后过一拍再关。
+ *
+ * 传完瞬间就拆 DOM 会让人觉得窗口「啪」地没了，连成功提示都没看清；
+ * 留 800ms 让列表里的完成态和那条 toast 落住，再走淡出。
+ */
+function scheduleAutoClose() {
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => {
+    closeTimer = 0;
+    close(true);
+  }, 800);
+}
 
 function build() {
   const el = document.createElement('div');
@@ -642,27 +660,43 @@ function wire(target) {
   });
 
   $('#miniStart', wrap).onclick = () => doUpload();
-  $('#miniClose', wrap).onclick = () => close();
+  $('#miniClose', wrap).onclick = () => close(true);
 
   // 点遮罩关闭（点弹窗本体不关）
   wrap.addEventListener('mousedown', (e) => {
-    if (e.target === wrap) close();
+    if (e.target === wrap) close(true);
   });
 
   escHandler = (e) => {
     if (e.key === 'Escape') {
       e.stopPropagation();
-      close();
+      close(true);
     }
   };
   document.addEventListener('keydown', escHandler, true);
 }
 
-function close() {
+function close(graceful) {
   if (running) {
     warn('正在上传，请稍候');
     return;
   }
+  if (closing) return;
+  clearTimeout(closeTimer);
+  closeTimer = 0;
+  if (graceful && wrap) {
+    // 先淡出再拆 DOM。直接 removeChild 会让窗口「闪没」，
+    // 尤其自动关窗时用户正盯着结果看，容易以为程序出问题了
+    closing = true;
+    wrap.classList.add('is-closing');
+    setTimeout(finalizeClose, 200);
+    return;
+  }
+  finalizeClose();
+}
+
+/** 真正拆窗与释放资源：淡出结束后、或非优雅关闭时走这里 */
+function finalizeClose() {
   if (escHandler) {
     document.removeEventListener('keydown', escHandler, true);
     escHandler = null;
@@ -680,6 +714,7 @@ function close() {
   queue = [];
   pendingImages = [];
   decisionStep = '';
+  closing = false;
   const done = uploaded;
   uploaded = false;
   if (done && onDoneCb) {
@@ -709,6 +744,9 @@ export function openMiniUpload(dir, onDone, initialFiles) {
   decisionStep = '';
   running = false;
   uploaded = false;
+  clearTimeout(closeTimer);
+  closeTimer = 0;
+  closing = false;
   pool = null;
   onDoneCb = typeof onDone === 'function' ? onDone : null;
 

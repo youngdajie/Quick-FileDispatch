@@ -411,15 +411,19 @@ func normalizePlatform(v any) string {
 	return "github"
 }
 
-// normalizeLinkFormat 把「复制格式」收敛到当前支持的三种（url / markdown / html）。
+// normalizeLinkFormat 把「复制格式」收敛到当前支持的四种
+// （url / markdown / html / xjzj 小杰杂记）。
 //
 // BBCode 已移除：它只对论坛有用，而这两个平台（GitHub / CNB）的用户吃的是
 // Markdown 或裸链接。存量配置里可能还选着它，放着不管会表现为
 // 「设置页下拉空着、复制出来的东西退化成裸地址」，所以一律回落到 Markdown，
 // 那是移除前最接近用户本意的默认值。
+//
+// xjzj 必须进白名单，否则配置迁移/合并会把它打回 markdown，用户选过的
+// 复制格式在重启后悄悄丢失。
 func normalizeLinkFormat(v any) string {
 	switch s := strings.TrimSpace(str(v)); s {
-	case "url", "markdown", "html":
+	case "url", "markdown", "html", "xjzj":
 		return s
 	}
 	return "markdown"

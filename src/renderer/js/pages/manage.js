@@ -1559,7 +1559,13 @@ async function copySelectedLinks() {
     warn('请先选择文件');
     return;
   }
-  const txt = sel.map((i) => CPLinks.formatLink(linkOf(i), fmt, i.name, isImg(i))).join('\n');
+  // 小杰杂记要把选中的几张图收进同一个 pics block，其余格式仍是一条一行
+  const txt = CPLinks.formatLinks(
+    sel.map((i) => linkOf(i)),
+    fmt,
+    sel.map((i) => i.name),
+    sel.map((i) => isImg(i))
+  );
   await window.cloudpic.clipboard.write(txt);
   ok('已复制 ' + sel.length + ' 条链接');
 }

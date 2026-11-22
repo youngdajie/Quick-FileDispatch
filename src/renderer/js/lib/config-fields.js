@@ -235,7 +235,7 @@ export const FIELDS = {
         d.customDomain = v;
         paint();
       });
-      bindSelect('#wzFormat', () => d.linkFormat, (v) => (d.linkFormat = v));
+      bindSelect('#wzFormat', () => d.linkFormat, (v) => (d.linkFormat = v), () => paint());
       paint();
     },
     valid: (d) => !(d.linkRule === 'custom' && !String(d.customDomain || '').trim()),

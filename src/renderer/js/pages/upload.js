@@ -522,6 +522,7 @@ async function doUpload() {
 function fmtLabel(fmt) {
   if (fmt === 'markdown') return 'Markdown';
   if (fmt === 'html') return 'HTML';
+  if (fmt === 'xjzj') return '小杰杂记';
   // 纯链接不需要包装，也是任何未知值的兜底
   return '链接';
 }
@@ -575,7 +576,11 @@ function bindResultActions() {
         window.cloudpic.shell.openExternal(it.url);
         return;
       }
-      const text = btn.dataset.act === 'copy-url' ? it.url : CPLinks.formatLink(it.url, fmt, it.outName, it.isImage);
+      // 「复制链接」平时给裸地址；小杰杂记的裸地址不成块，按单文件 block 输出
+      const text =
+        btn.dataset.act === 'copy-url' && fmt !== CPLinks.XJZJ_FORMAT
+          ? it.url
+          : CPLinks.formatLink(it.url, fmt, it.outName, it.isImage);
       await window.cloudpic.clipboard.write(text);
       ok('已复制');
       return;
@@ -590,10 +595,14 @@ function bindResultActions() {
 
 function allResultLinks() {
   const fmt = $('#resultFormat').value || 'markdown';
-  return queue
-    .filter((q) => q.status === 'done')
-    .map((q) => CPLinks.formatLink(resultUrl(q), fmt, q.outName, q.isImage))
-    .join('\n');
+  const done = queue.filter((q) => q.status === 'done');
+  // 小杰杂记全部结果只算一个 block；逐条 join 会得到好几个 ::pics
+  return CPLinks.formatLinks(
+    done.map((q) => resultUrl(q)),
+    fmt,
+    done.map((q) => q.outName),
+    done.map((q) => q.isImage)
+  );
 }
 
 /* ---------------------------------------------------------------- 配置联动 */
